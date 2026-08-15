@@ -1,0 +1,53 @@
+"""Central application configuration."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Mapping
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from issue_agent.errors import ConfigurationError
+
+
+class Settings(BaseModel):
+    """Trusted controller settings loaded from the host environment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    openai_api_key: str = Field(repr=False)
+    openai_model: str = "gpt-5.3-codex"
+    max_turns: int = Field(default=30, ge=1)
+    runs_dir: Path = Path(".issue-agent/runs")
+    sandbox_image: str = "issue-agent-sandbox:v0"
+    command_timeout_seconds: int = Field(default=60, ge=1)
+    max_tool_output_chars: int = Field(default=12_000, ge=1_000)
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
+        """Load settings from a single explicit environment boundary."""
+
+        values = os.environ if environ is None else environ
+        api_key = values.get("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise ConfigurationError("OPENAI_API_KEY is required.")
+
+        try:
+            return cls(
+                openai_api_key=api_key,
+                openai_model=values.get("OPENAI_MODEL", "gpt-5.3-codex"),
+                max_turns=values.get("ISSUE_AGENT_MAX_TURNS", "30"),
+                runs_dir=values.get("ISSUE_AGENT_RUNS_DIR", ".issue-agent/runs"),
+                sandbox_image=values.get(
+                    "ISSUE_AGENT_SANDBOX_IMAGE", "issue-agent-sandbox:v0"
+                ),
+                command_timeout_seconds=values.get(
+                    "ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS", "60"
+                ),
+                max_tool_output_chars=values.get(
+                    "ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS", "12000"
+                ),
+            )
+        except ValidationError as error:
+            raise ConfigurationError(f"Invalid IssueAgent configuration: {error}") from error

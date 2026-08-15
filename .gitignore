@@ -1,0 +1,30 @@
+github_issue_to_pr_multi_agent_research.md
+cost_research.md
+project_research.md
+project_research_updated.md
+
+# Python
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/dist/
+**/build/
+**/*.egg-info/
+
+# Node
+**/node_modules/
+**/.next/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Agent runs
+.issue-agent/runs/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
