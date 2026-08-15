@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --background: #070908;
+  --foreground: #e7e9e8;
+  --font-geist-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: rgba(110, 231, 183, 0.22);
+  color: #ffffff;
+}
+
+.site-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    radial-gradient(circle at 75% 18%, rgba(52, 211, 153, 0.055), transparent 24rem);
+  background-position: center top;
+  background-size: 48px 48px, 48px 48px, auto;
+}
+
+.section-kicker {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.625rem;
+  line-height: 1rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #6ee7b7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
