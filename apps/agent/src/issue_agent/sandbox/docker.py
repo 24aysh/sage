@@ -18,6 +18,8 @@ class DockerSandbox:
 
     def __init__(self, *, prepared_run: PreparedRun, settings: Settings) -> None:
         self._workspace_dir = prepared_run.workspace_dir.resolve()
+        workspace_stat = self._workspace_dir.stat()
+        self._workspace_owner = f"{workspace_stat.st_uid}:{workspace_stat.st_gid}"
         self._image = settings.sandbox_image
         self._default_timeout = settings.command_timeout_seconds
         self._container_name = f"issue-agent-{prepared_run.run_id}"
@@ -38,6 +40,8 @@ class DockerSandbox:
             "--rm",
             "--name",
             self._container_name,
+            "--user",
+            self._workspace_owner,
             "--network",
             "none",
             "--cpus",

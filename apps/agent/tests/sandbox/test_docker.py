@@ -28,8 +28,10 @@ def test_docker_sandbox_starts_with_only_isolated_workspace(
 
     start_command = commands[0]
     rendered = " ".join(start_command)
+    expected_user = f"{workspace.stat().st_uid}:{workspace.stat().st_gid}"
     assert start_command.count("--mount") == 1
     assert f"src={workspace.resolve()},dst=/workspace" in rendered
+    assert f"--user {expected_user}" in rendered
     assert "--network none" in rendered
     assert "--cap-drop ALL" in rendered
     assert "super-secret" not in rendered
