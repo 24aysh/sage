@@ -96,6 +96,10 @@ A healthy separation generally looks like:
 
 Do not force this exact layout onto an established repository if an equivalent structure already exists. Follow the existing architecture unless there is a clear reason to improve it.
 
+## 4. New features
+
+When implementing new features, make sure that after the feature is implemented, you should also create a detailed testing guide that specifally that feature. Keep in mind the guide should be user friendly
+
 ### Agent design
 
 Keep agent definitions thin.
@@ -413,6 +417,12 @@ Do not split tightly coupled implementation and tests merely to create more comm
 Do not mix unrelated formatting or cleanup into a feature commit.
 
 ### Commit messages
+
+While committing the changes, you should use the below command
+
+```bash
+git commit -s -m "<message>"
+```
 
 Use short, production-style Conventional Commit messages:
 
