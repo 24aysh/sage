@@ -17,7 +17,7 @@ from langgraph.prebuilt import ToolNode
 from pydantic import ValidationError
 
 from issue_agent.domain.results import AgentFinalOutput
-from issue_agent.errors import AgentRuntimeError
+from issue_agent.errors import AgentRuntimeError, RepositoryError
 from issue_agent.runtimes.langgraph.prompt import CODING_AGENT_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
@@ -186,7 +186,14 @@ def build_graph(
         "agent",
         build_agent_node(model=model, max_turns=max_turns),
     )
-    builder.add_node("tools", ToolNode(tools, name="tools"))
+    builder.add_node(
+        "tools",
+        ToolNode(
+            tools,
+            name="tools",
+            handle_tool_errors=_handle_repository_tool_error,
+        ),
+    )
     builder.add_node("finalize", finalize)
     builder.add_node("turn_limit", build_turn_limit_node(max_turns))
     builder.add_node(
@@ -210,6 +217,12 @@ def build_graph(
     builder.add_edge("turn_limit", END)
     builder.add_edge("invalid_response", END)
     return builder.compile(name=GRAPH_NAME)
+
+
+def _handle_repository_tool_error(error: RepositoryError) -> str:
+    """Return a safe tool result so the model can correct its next request."""
+
+    return f"Repository tool failed: {error}"
 
 
 def _latest_ai_message(state: AgentState) -> AIMessage | None:

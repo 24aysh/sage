@@ -48,9 +48,9 @@ class ScriptedModel(Runnable[Any, AIMessage]):
 
 
 class RecordingRepository:
-    def __init__(self, *, fail_read: bool = False) -> None:
+    def __init__(self, *, read_error: Exception | None = None) -> None:
         self.calls: list[str] = []
-        self.fail_read = fail_read
+        self.read_error = read_error
 
     def list_tree(self, **kwargs) -> str:
         self.calls.append("list_tree")
@@ -62,8 +62,8 @@ class RecordingRepository:
 
     def read_file(self, **kwargs) -> str:
         self.calls.append("read_file")
-        if self.fail_read:
-            raise RepositoryError("read failed")
+        if self.read_error is not None:
+            raise self.read_error
         return "1 | content"
 
     def apply_patch(self, **kwargs) -> str:
@@ -314,18 +314,41 @@ def test_graph_does_not_execute_tool_requested_on_last_turn(tmp_path: Path) -> N
     assert repository.calls == []
 
 
-def test_graph_propagates_model_and_repository_failures(tmp_path: Path) -> None:
+def test_graph_returns_repository_failure_before_next_decision(tmp_path: Path) -> None:
+    repository = RecordingRepository(read_error=RepositoryError("read failed"))
+    graph, model, repository = _graph(
+        tmp_path,
+        [
+            _tool_message("read_file", {"path": "app.py"}),
+            _final_message("blocked"),
+        ],
+        repository=repository,
+    )
+
+    result = asyncio.run(graph.ainvoke(_initial_state()))
+
+    assert result["final_output"].summary == "blocked"
+    assert repository.calls == ["read_file"]
+    tool_results = [
+        message for message in model.inputs[1] if isinstance(message, ToolMessage)
+    ]
+    assert len(tool_results) == 1
+    assert tool_results[0].status == "error"
+    assert tool_results[0].content == "Repository tool failed: read failed"
+
+
+def test_graph_propagates_model_and_unexpected_tool_failures(tmp_path: Path) -> None:
     model_graph, _model, _repository = _graph(tmp_path, [ValueError("model failed")])
     with pytest.raises(ValueError, match="model failed"):
         asyncio.run(model_graph.ainvoke(_initial_state()))
 
-    repository = RecordingRepository(fail_read=True)
+    repository = RecordingRepository(read_error=RuntimeError("unexpected failure"))
     tool_graph, _model, repository = _graph(
         tmp_path,
         [_tool_message("read_file", {"path": "app.py"})],
         repository=repository,
     )
-    with pytest.raises(RepositoryError, match="read failed"):
+    with pytest.raises(RuntimeError, match="unexpected failure"):
         asyncio.run(tool_graph.ainvoke(_initial_state()))
 
 
