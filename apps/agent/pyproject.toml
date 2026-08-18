@@ -5,7 +5,9 @@ description = "A local, execution-grounded GitHub issue solver"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "openai-agents>=0.21.0",
+    "langchain-core>=1.0,<2",
+    "langchain-openai>=1.0,<2",
+    "langgraph>=1.0,<2",
     "pydantic>=2.13.4",
 ]
 

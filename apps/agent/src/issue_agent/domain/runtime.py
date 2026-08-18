@@ -25,7 +25,7 @@ class RuntimeContext:
 
 
 class AgentRuntime(Protocol):
-    """Minimal interface implemented by the temporary V0 runtime."""
+    """Minimal interface implemented by the active coding-agent runtime."""
 
     async def solve(
         self,

@@ -14,7 +14,7 @@ from issue_agent.config import Settings
 from issue_agent.domain.requests import SolveRequest
 from issue_agent.domain.results import SolveResult
 from issue_agent.errors import ConfigurationError, IssueAgentError
-from issue_agent.runtimes.openai_agents import OpenAIAgentsRuntime
+from issue_agent.runtimes.langgraph import LangGraphRuntime
 from issue_agent.workflow import solve_issue
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         effective_image = request.sandbox_image or settings.sandbox_image
         _validate_prerequisites(request, settings, sandbox_image=effective_image)
-        runtime = OpenAIAgentsRuntime(settings)
+        runtime = LangGraphRuntime(settings)
         result = asyncio.run(solve_issue(request, runtime, settings))
     except IssueAgentError as error:
         if arguments.debug:
