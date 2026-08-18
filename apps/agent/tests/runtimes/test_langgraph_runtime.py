@@ -65,15 +65,20 @@ def test_default_model_uses_explicit_settings(monkeypatch, settings: Settings) -
     assert captured == {
         "model": settings.openai_model,
         "api_key": settings.openai_api_key,
+        "use_responses_api": True,
     }
 
 
-def test_locked_chat_openai_accepts_tools_and_structured_response(
+def test_locked_chat_openai_builds_responses_request_with_tools_and_output(
     tmp_path: Path,
 ) -> None:
-    settings = Settings(openai_api_key="test")
+    settings = Settings(openai_api_key="test", openai_model="gpt-5.4-mini")
     tools = build_tools(_context(tmp_path, settings))
-    model = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
+    model = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        use_responses_api=True,
+    )
 
     bound = model.bind_tools(
         tools,
@@ -82,7 +87,11 @@ def test_locked_chat_openai_accepts_tools_and_structured_response(
         strict=False,
     )
 
-    assert [schema["function"]["name"] for schema in bound.kwargs["tools"]] == [
+    payload = bound.bound._get_request_payload(  # type: ignore[attr-defined]
+        [HumanMessage(content="issue")],
+        **bound.kwargs,
+    )
+    assert [schema["name"] for schema in payload["tools"]] == [
         "list_tree",
         "search_text",
         "read_file",
@@ -90,8 +99,11 @@ def test_locked_chat_openai_accepts_tools_and_structured_response(
         "show_diff",
         "run_command",
     ]
-    assert bound.kwargs["response_format"] is AgentFinalOutput
-    assert bound.kwargs["parallel_tool_calls"] is False
+    assert all(schema["strict"] is False for schema in payload["tools"])
+    assert payload["text_format"] is AgentFinalOutput
+    assert payload["parallel_tool_calls"] is False
+    assert "messages" not in payload
+    assert "response_format" not in payload
 
 
 def test_runtime_binds_tools_and_invokes_graph_with_explicit_limits(

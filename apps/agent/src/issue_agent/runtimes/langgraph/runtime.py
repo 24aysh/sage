@@ -33,6 +33,7 @@ class LangGraphRuntime:
         self._model = model or ChatOpenAI(
             model=settings.openai_model,
             api_key=settings.openai_api_key,
+            use_responses_api=True,
         )
 
     async def solve(
