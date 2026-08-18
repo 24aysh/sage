@@ -12,7 +12,7 @@ export default function Home() {
             <span className="grid size-7 place-items-center rounded border border-emerald-300/30 bg-emerald-300/10 text-emerald-300">
               I
             </span>
-            issue-agent
+            sage
           </a>
           <nav className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500" aria-label="Primary navigation">
             <a className="transition hover:text-zinc-200" href="#architecture">Architecture</a>
@@ -31,7 +31,7 @@ export default function Home() {
       <footer className="mx-auto w-full max-w-7xl px-6 py-14 sm:px-10 lg:px-16">
         <div className="flex flex-col justify-between gap-8 border-t border-white/[0.08] pt-8 md:flex-row md:items-end">
           <div>
-            <p className="font-mono text-xs text-zinc-300">issue-agent / V0.1</p>
+            <p className="font-mono text-xs text-zinc-300">sage / V0.1</p>
             <p className="mt-3 max-w-xl text-xs leading-5 text-zinc-600">
               A project-owned LangGraph runtime controls reasoning and tool
               routing while repository execution remains isolated and

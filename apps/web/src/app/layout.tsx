@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IssueAgent — Issues into code changes",
+  title: "Sage — Issues into code changes",
   description:
     "An execution-grounded software-engineering agent built around isolated repository workspaces.",
 };

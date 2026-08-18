@@ -1,9 +1,9 @@
 import subprocess
 from pathlib import Path
 
-from issue_agent.config import Settings
-from issue_agent.domain.requests import SolveRequest
-from issue_agent.repository.workspace import prepare_run
+from sage.config import Settings
+from sage.domain.requests import SolveRequest
+from sage.repository.workspace import prepare_run
 
 
 def test_prepare_run_clones_only_committed_revision(tmp_path: Path) -> None:

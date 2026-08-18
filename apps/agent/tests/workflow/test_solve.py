@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from issue_agent.config import Settings
-from issue_agent.domain.requests import PreparedRun, SolveRequest
-from issue_agent.domain.results import AgentFinalOutput
-from issue_agent.errors import AgentRuntimeError
-from issue_agent.workflow.solve import solve_issue
+from sage.config import Settings
+from sage.domain.requests import PreparedRun, SolveRequest
+from sage.domain.results import AgentFinalOutput
+from sage.errors import AgentRuntimeError
+from sage.workflow.solve import solve_issue
 
 
 class FakeSandbox:
@@ -58,7 +58,7 @@ class FailingRuntime:
 
 def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    monkeypatch.setattr("issue_agent.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
     repository = FakeRepository()
     store = FakeStore()
@@ -84,7 +84,7 @@ def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch)
 
 def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    monkeypatch.setattr("issue_agent.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
 
     with pytest.raises(AgentRuntimeError, match="model failed"):

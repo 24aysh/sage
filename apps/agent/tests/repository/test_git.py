@@ -1,8 +1,8 @@
 import subprocess
 from pathlib import Path
 
-from issue_agent.repository.git import get_changed_files, get_complete_diff
-from issue_agent.sandbox.base import CommandResult
+from sage.repository.git import get_changed_files, get_complete_diff
+from sage.sandbox.base import CommandResult
 
 
 class LocalGitSandbox:

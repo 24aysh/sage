@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from issue_agent.errors import RepositoryError
-from issue_agent.repository.files import read_file
+from sage.errors import RepositoryError
+from sage.repository.files import read_file
 
 
 def test_read_file_returns_requested_numbered_region(tmp_path: Path) -> None:

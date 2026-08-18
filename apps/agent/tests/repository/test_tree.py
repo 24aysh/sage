@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from issue_agent.repository.tree import list_tree
+from sage.repository.tree import list_tree
 
 
 def test_list_tree_skips_generated_directories(tmp_path: Path) -> None:

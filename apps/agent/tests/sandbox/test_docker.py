@@ -1,9 +1,9 @@
 import subprocess
 from pathlib import Path
 
-from issue_agent.config import Settings
-from issue_agent.domain.requests import PreparedRun
-from issue_agent.sandbox.docker import DockerSandbox
+from sage.config import Settings
+from sage.domain.requests import PreparedRun
+from sage.sandbox.docker import DockerSandbox
 
 
 def test_docker_sandbox_starts_with_only_isolated_workspace(
@@ -16,7 +16,7 @@ def test_docker_sandbox_starts_with_only_isolated_workspace(
         commands.append(command)
         return subprocess.CompletedProcess(command, 0, stdout="container-id\n", stderr="")
 
-    monkeypatch.setattr("issue_agent.sandbox.docker._run_docker", fake_run)
+    monkeypatch.setattr("sage.sandbox.docker._run_docker", fake_run)
     workspace = tmp_path / "repo"
     workspace.mkdir()
     prepared = _prepared_run(tmp_path, workspace)
@@ -29,6 +29,7 @@ def test_docker_sandbox_starts_with_only_isolated_workspace(
     start_command = commands[0]
     rendered = " ".join(start_command)
     expected_user = f"{workspace.stat().st_uid}:{workspace.stat().st_gid}"
+    assert sandbox.container_name == f"sage-{prepared.run_id}"
     assert start_command.count("--mount") == 1
     assert f"src={workspace.resolve()},dst=/workspace" in rendered
     assert f"--user {expected_user}" in rendered
@@ -44,7 +45,7 @@ def test_docker_sandbox_returns_timeout_result(tmp_path: Path, monkeypatch) -> N
             return subprocess.CompletedProcess(command, 0, stdout="id\n", stderr="")
         raise subprocess.TimeoutExpired(command, timeout_seconds, output="partial")
 
-    monkeypatch.setattr("issue_agent.sandbox.docker._run_docker", fake_run)
+    monkeypatch.setattr("sage.sandbox.docker._run_docker", fake_run)
     workspace = tmp_path / "repo"
     workspace.mkdir()
     sandbox = DockerSandbox(
@@ -71,7 +72,7 @@ def test_docker_sandbox_enforces_timeout_inside_container(
         exit_code = 0 if command[1] == "run" else 124
         return subprocess.CompletedProcess(command, exit_code, stdout="", stderr="")
 
-    monkeypatch.setattr("issue_agent.sandbox.docker._run_docker", fake_run)
+    monkeypatch.setattr("sage.sandbox.docker._run_docker", fake_run)
     workspace = tmp_path / "repo"
     workspace.mkdir()
     sandbox = DockerSandbox(

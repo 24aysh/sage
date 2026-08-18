@@ -1,7 +1,7 @@
 import pytest
 
-from issue_agent.config import Settings
-from issue_agent.errors import ConfigurationError
+from sage.config import Settings
+from sage.errors import ConfigurationError
 
 
 def test_settings_loads_all_supported_environment_values() -> None:
@@ -9,11 +9,11 @@ def test_settings_loads_all_supported_environment_values() -> None:
         {
             "OPENAI_API_KEY": "secret",
             "OPENAI_MODEL": "test-model",
-            "ISSUE_AGENT_MAX_TURNS": "12",
-            "ISSUE_AGENT_RUNS_DIR": "/tmp/test-runs",
-            "ISSUE_AGENT_SANDBOX_IMAGE": "custom:v0",
-            "ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS": "20",
-            "ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS": "2000",
+            "SAGE_MAX_TURNS": "12",
+            "SAGE_RUNS_DIR": "/tmp/test-runs",
+            "SAGE_SANDBOX_IMAGE": "custom:v0",
+            "SAGE_COMMAND_TIMEOUT_SECONDS": "20",
+            "SAGE_MAX_TOOL_OUTPUT_CHARS": "2000",
         }
     )
 
@@ -32,10 +32,10 @@ def test_settings_rejects_missing_api_key() -> None:
 
 
 def test_settings_rejects_invalid_bounds() -> None:
-    with pytest.raises(ConfigurationError, match="Invalid IssueAgent configuration"):
+    with pytest.raises(ConfigurationError, match="Invalid Sage configuration"):
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "secret",
-                "ISSUE_AGENT_MAX_TURNS": "0",
+                "SAGE_MAX_TURNS": "0",
             }
         )

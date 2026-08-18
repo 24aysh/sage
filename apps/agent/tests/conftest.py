@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from issue_agent.config import Settings
+from sage.config import Settings
 
 
 @pytest.fixture

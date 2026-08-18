@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from issue_agent.config import Settings
-from issue_agent.domain.requests import PreparedRun
-from issue_agent.domain.runtime import RuntimeContext
-from issue_agent.errors import RepositoryError
-from issue_agent.runtimes.langgraph.tools import build_tools
-from issue_agent.sandbox.base import CommandResult
+from sage.config import Settings
+from sage.domain.requests import PreparedRun
+from sage.domain.runtime import RuntimeContext
+from sage.errors import RepositoryError
+from sage.runtimes.langgraph.tools import build_tools
+from sage.sandbox.base import CommandResult
 
 
 class RecordingRepository:

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from issue_agent.errors import PathSafetyError
-from issue_agent.repository.paths import resolve_workspace_path
+from sage.errors import PathSafetyError
+from sage.repository.paths import resolve_workspace_path
 
 
 def test_resolve_workspace_path_accepts_repository_relative_path(tmp_path: Path) -> None:

@@ -65,7 +65,7 @@ export function Hero() {
             <span aria-hidden="true">↓</span>
           </a>
           <a
-            href="https://github.com/your-org/issue-agent"
+            href="https://github.com/your-org/sage"
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-12 items-center justify-center gap-3 rounded-md border border-white/15 bg-white/[0.035] px-5 font-mono text-sm text-zinc-200 transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"

@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from issue_agent.artifacts import ArtifactStore
-from issue_agent.config import Settings
-from issue_agent.domain.requests import PreparedRun, SolveRequest
-from issue_agent.domain.results import AgentFinalOutput, SolveResult
+from sage.artifacts import ArtifactStore
+from sage.config import Settings
+from sage.domain.requests import PreparedRun, SolveRequest
+from sage.domain.results import AgentFinalOutput, SolveResult
 
 
 def test_artifact_store_persists_required_files_without_secret(tmp_path: Path) -> None:

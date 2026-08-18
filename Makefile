@@ -4,7 +4,7 @@ SHELL := /bin/bash
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 AGENT_PROJECT := apps/agent
-DEFAULT_SANDBOX_IMAGE := issue-agent-sandbox:v0
+DEFAULT_SANDBOX_IMAGE := sage-sandbox:v0
 
 ENV_FILE ?= .env
 ENV_PATH = $(if $(filter /%,$(ENV_FILE)),$(ENV_FILE),$(ROOT_DIR)/$(ENV_FILE))
@@ -21,7 +21,7 @@ DEBUG_FLAG :=
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
-		'IssueAgent V0.1 helper commands' \
+		'Sage V0.1 helper commands' \
 		'' \
 		'Getting started:' \
 		'  make first-run REPO=... ISSUE=...' \
@@ -107,11 +107,11 @@ first-run: ## Configure, install, build, verify, and solve with one command.
 		export OPENAI_API_KEY; \
 	fi; \
 	: "$${OPENAI_MODEL:=gpt-5.3-codex}"; export OPENAI_MODEL; \
-	: "$${ISSUE_AGENT_MAX_TURNS:=30}"; export ISSUE_AGENT_MAX_TURNS; \
-	: "$${ISSUE_AGENT_RUNS_DIR:=.issue-agent/runs}"; export ISSUE_AGENT_RUNS_DIR; \
-	: "$${ISSUE_AGENT_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export ISSUE_AGENT_SANDBOX_IMAGE; \
-	: "$${ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS:=60}"; export ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS; \
-	: "$${ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS:=12000}"; export ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS; \
+	: "$${SAGE_MAX_TURNS:=30}"; export SAGE_MAX_TURNS; \
+	: "$${SAGE_RUNS_DIR:=.sage/runs}"; export SAGE_RUNS_DIR; \
+	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
+	: "$${SAGE_COMMAND_TIMEOUT_SECONDS:=60}"; export SAGE_COMMAND_TIMEOUT_SECONDS; \
+	: "$${SAGE_MAX_TOOL_OUTPUT_CHARS:=12000}"; export SAGE_MAX_TOOL_OUTPUT_CHARS; \
 	echo "Step 1/6: syncing the Python environment"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
 	echo "Step 2/6: building the Docker sandbox"; \
@@ -151,7 +151,7 @@ doctor: ## Check all prerequisites needed for a live solve.
 		fi; \
 	fi; \
 	image="$(SANDBOX_IMAGE)"; \
-	if [[ -z "$$image" ]]; then image="$${ISSUE_AGENT_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
+	if [[ -z "$$image" ]]; then image="$${SAGE_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
 	if [[ "$$docker_ready" -eq 1 ]]; then \
 		if docker image inspect "$$image" >/dev/null 2>&1; then \
 			echo "OK: sandbox image exists ($$image)."; \
@@ -184,7 +184,7 @@ sandbox-build: ## Build the default or configured sandbox image.
 	docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not reachable." >&2; exit 1; }; \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
 	image="$(SANDBOX_IMAGE)"; \
-	if [[ -z "$$image" ]]; then image="$${ISSUE_AGENT_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
+	if [[ -z "$$image" ]]; then image="$${SAGE_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
 	echo "Building sandbox image: $$image"; \
 	docker build --tag "$$image" --file docker/sandbox/Dockerfile .
 
@@ -195,7 +195,7 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 	docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not reachable." >&2; exit 1; }; \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
 	image="$(SANDBOX_IMAGE)"; \
-	if [[ -z "$$image" ]]; then image="$${ISSUE_AGENT_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
+	if [[ -z "$$image" ]]; then image="$${SAGE_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
 	docker image inspect "$$image" >/dev/null 2>&1 || { echo "ERROR: sandbox image is missing ($$image). Run 'make sandbox-build'." >&2; exit 1; }; \
 	docker run --rm \
 		--network none \
@@ -258,7 +258,7 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	image_args=(); \
 	if [[ -n "$(SANDBOX_IMAGE)" ]]; then image_args=(--sandbox-image "$(SANDBOX_IMAGE)"); fi; \
 	set +e; \
-	uv run --project "$(AGENT_PROJECT)" issue-agent solve \
+	uv run --project "$(AGENT_PROJECT)" sage solve \
 		--repo "$(REPO)" \
 		--issue-file "$(ISSUE)" \
 		--base-ref "$(BASE_REF)" \
@@ -315,7 +315,7 @@ run-test: ## Run TEST_COMMAND against a completed candidate inside a fresh sandb
 	docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not reachable." >&2; exit 1; }; \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
 	image="$(SANDBOX_IMAGE)"; \
-	if [[ -z "$$image" ]]; then image="$${ISSUE_AGENT_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
+	if [[ -z "$$image" ]]; then image="$${SAGE_SANDBOX_IMAGE:-$(DEFAULT_SANDBOX_IMAGE)}"; fi; \
 	docker image inspect "$$image" >/dev/null 2>&1 || { echo "ERROR: sandbox image is missing ($$image)." >&2; exit 1; }; \
 	echo "Running in $$image: $(TEST_COMMAND)"; \
 	docker run --rm \
@@ -326,8 +326,8 @@ run-test: ## Run TEST_COMMAND against a completed candidate inside a fresh sandb
 		--cap-drop ALL \
 		--security-opt no-new-privileges \
 		--env HOME=/tmp \
-		--env "ISSUE_AGENT_TEST_COMMAND=$(TEST_COMMAND)" \
+		--env "SAGE_TEST_COMMAND=$(TEST_COMMAND)" \
 		--mount "type=bind,src=$$workspace,dst=/workspace" \
 		--workdir /workspace \
 		"$$image" \
-		bash -lc 'eval "$$ISSUE_AGENT_TEST_COMMAND"'
+		bash -lc 'eval "$$SAGE_TEST_COMMAND"'

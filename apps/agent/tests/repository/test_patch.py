@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from issue_agent.errors import PatchError
-from issue_agent.repository.patch import apply_patch
-from issue_agent.sandbox.base import CommandResult
+from sage.errors import PatchError
+from sage.repository.patch import apply_patch
+from sage.sandbox.base import CommandResult
 
 
 class SuccessfulSandbox:

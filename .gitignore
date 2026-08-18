@@ -22,7 +22,7 @@ project_research_updated.md
 !.env.example
 
 # Agent runs
-.issue-agent/runs/
+.sage/runs/
 
 # Editors / OS
 .DS_Store

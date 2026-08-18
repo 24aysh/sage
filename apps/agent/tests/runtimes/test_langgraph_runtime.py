@@ -9,14 +9,14 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphRecursionError
 
-from issue_agent.config import Settings
-from issue_agent.domain.requests import PreparedRun
-from issue_agent.domain.results import AgentFinalOutput
-from issue_agent.domain.runtime import RuntimeContext
-from issue_agent.errors import AgentRuntimeError
-from issue_agent.runtimes.langgraph.graph import GRAPH_NAME
-from issue_agent.runtimes.langgraph.runtime import LangGraphRuntime, recursion_limit
-from issue_agent.runtimes.langgraph.tools import build_tools
+from sage.config import Settings
+from sage.domain.requests import PreparedRun
+from sage.domain.results import AgentFinalOutput
+from sage.domain.runtime import RuntimeContext
+from sage.errors import AgentRuntimeError
+from sage.runtimes.langgraph.graph import GRAPH_NAME
+from sage.runtimes.langgraph.runtime import LangGraphRuntime, recursion_limit
+from sage.runtimes.langgraph.tools import build_tools
 
 
 class BindingModel:
@@ -55,7 +55,7 @@ def test_default_model_uses_explicit_settings(monkeypatch, settings: Settings) -
         return sentinel
 
     monkeypatch.setattr(
-        "issue_agent.runtimes.langgraph.runtime.ChatOpenAI",
+        "sage.runtimes.langgraph.runtime.ChatOpenAI",
         fake_chat_openai,
     )
 
@@ -121,7 +121,7 @@ def test_runtime_binds_tools_and_invokes_graph_with_explicit_limits(
         return graph
 
     monkeypatch.setattr(
-        "issue_agent.runtimes.langgraph.runtime.build_graph",
+        "sage.runtimes.langgraph.runtime.build_graph",
         fake_build_graph,
     )
     runtime = LangGraphRuntime(settings, model=model)  # type: ignore[arg-type]
@@ -177,7 +177,7 @@ def test_runtime_wraps_graph_failures_with_chaining(
     model = BindingModel(object())
     graph = FakeGraph(error=error)
     monkeypatch.setattr(
-        "issue_agent.runtimes.langgraph.runtime.build_graph",
+        "sage.runtimes.langgraph.runtime.build_graph",
         lambda **kwargs: graph,
     )
     runtime = LangGraphRuntime(settings, model=model)  # type: ignore[arg-type]
@@ -196,7 +196,7 @@ def test_runtime_preserves_existing_agent_runtime_errors(
     original = AgentRuntimeError("protocol failed")
     graph = FakeGraph(error=original)
     monkeypatch.setattr(
-        "issue_agent.runtimes.langgraph.runtime.build_graph",
+        "sage.runtimes.langgraph.runtime.build_graph",
         lambda **kwargs: graph,
     )
     runtime = LangGraphRuntime(
@@ -214,7 +214,7 @@ def test_runtime_rejects_invalid_graph_output(tmp_path: Path, monkeypatch) -> No
     settings = Settings(openai_api_key="test")
     graph = FakeGraph(result={})
     monkeypatch.setattr(
-        "issue_agent.runtimes.langgraph.runtime.build_graph",
+        "sage.runtimes.langgraph.runtime.build_graph",
         lambda **kwargs: graph,
     )
     runtime = LangGraphRuntime(
@@ -232,7 +232,7 @@ def test_runtime_propagates_cancellation(tmp_path: Path, monkeypatch) -> None:
     settings = Settings(openai_api_key="test")
     graph = FakeGraph(error=asyncio.CancelledError())
     monkeypatch.setattr(
-        "issue_agent.runtimes.langgraph.runtime.build_graph",
+        "sage.runtimes.langgraph.runtime.build_graph",
         lambda **kwargs: graph,
     )
     runtime = LangGraphRuntime(
@@ -250,7 +250,7 @@ def test_recursion_limit_is_distinct_from_model_turns(turns: int, expected: int)
 
 
 def test_graph_name_is_stable() -> None:
-    assert GRAPH_NAME == "issue_agent_v0_1"
+    assert GRAPH_NAME == "sage_v0_1"
 
 
 def _context(tmp_path: Path, settings: Settings) -> RuntimeContext:

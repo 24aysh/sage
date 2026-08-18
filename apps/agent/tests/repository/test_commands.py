@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from issue_agent.config import Settings
-from issue_agent.repository import RepositoryTools
-from issue_agent.repository.commands import run_command
-from issue_agent.sandbox.base import CommandResult
+from sage.config import Settings
+from sage.repository import RepositoryTools
+from sage.repository.commands import run_command
+from sage.sandbox.base import CommandResult
 
 
 class RecordingSandbox:

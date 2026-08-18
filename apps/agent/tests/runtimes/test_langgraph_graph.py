@@ -9,12 +9,12 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable
 
-from issue_agent.config import Settings
-from issue_agent.domain.requests import PreparedRun
-from issue_agent.domain.results import AgentFinalOutput
-from issue_agent.domain.runtime import RuntimeContext
-from issue_agent.errors import AgentRuntimeError, RepositoryError
-from issue_agent.runtimes.langgraph.graph import (
+from sage.config import Settings
+from sage.domain.requests import PreparedRun
+from sage.domain.results import AgentFinalOutput
+from sage.domain.runtime import RuntimeContext
+from sage.errors import AgentRuntimeError, RepositoryError
+from sage.runtimes.langgraph.graph import (
     AgentState,
     build_agent_node,
     build_graph,
@@ -23,8 +23,8 @@ from issue_agent.runtimes.langgraph.graph import (
     finalize,
     route_after_agent,
 )
-from issue_agent.runtimes.langgraph.prompt import CODING_AGENT_INSTRUCTIONS
-from issue_agent.runtimes.langgraph.tools import build_tools
+from sage.runtimes.langgraph.prompt import CODING_AGENT_INSTRUCTIONS
+from sage.runtimes.langgraph.tools import build_tools
 
 
 class ScriptedModel(Runnable[Any, AIMessage]):
