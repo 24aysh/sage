@@ -1,4 +1,4 @@
-# IssueAgent backend
+# Sage backend
 
 The Python package contains the trusted V0 controller, isolated workspace
 preparation, Docker sandbox, provider-neutral repository tools, artifact store,
@@ -8,7 +8,7 @@ Run from the repository root:
 
 ```bash
 uv sync --project apps/agent
-uv run --project apps/agent issue-agent --help
+uv run --project apps/agent sage --help
 uv run --project apps/agent pytest
 ```
 

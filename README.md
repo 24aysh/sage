@@ -1,13 +1,13 @@
-# IssueAgent
+# Sage
 
-IssueAgent is a GitHub-native issue-to-PR engineering agent in development. Its
+Sage is a GitHub-native issue-to-PR engineering agent in development. Its
 core design keeps model judgment separate from deterministic repository work:
 the agent decides what to inspect and change, while project-owned tools perform
 every read, search, command, patch, and Git operation.
 
 The current milestone is **V0.1: a local, single-agent issue solver with a
 project-owned LangGraph runtime**. Given a committed local Git repository and a
-Markdown or text issue, IssueAgent creates an isolated clone, runs one
+Markdown or text issue, Sage creates an isolated clone, runs one
 software-engineering agent against it through bounded tools, and persists the
 candidate patch. It does not modify the source checkout or interact with
 GitHub.
@@ -18,7 +18,7 @@ GitHub.
 local repository + issue.md
              │
              ▼
-       issue-agent CLI
+       sage CLI
              │
              ▼
      provider-neutral workflow
@@ -42,7 +42,7 @@ local repository + issue.md
 ```
 
 The project-owned runtime under
-`apps/agent/src/issue_agent/runtimes/langgraph/` explicitly owns model calls,
+`apps/agent/src/sage/runtimes/langgraph/` explicitly owns model calls,
 tool routing, turn limits, validation, and termination. Domain models,
 workflow, repository tools, sandboxing, and artifacts remain independent of
 LangGraph and provider-specific response shapes.
@@ -57,7 +57,7 @@ docker/
   sandbox/ Minimal repository execution image
 examples/
   issue.md Issue input template
-.issue-agent/
+.sage/
   runs/    Local run artifacts (created at runtime and ignored by Git)
 ```
 
@@ -110,7 +110,7 @@ Build the default repository sandbox:
 
 ```bash
 docker build \
-  -t issue-agent-sandbox:v0 \
+  -t sage-sandbox:v0 \
   -f docker/sandbox/Dockerfile \
   .
 ```
@@ -129,7 +129,7 @@ can be changed with `OPENAI_MODEL` without changing application code.
 ## Solve an issue
 
 ```bash
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo /absolute/path/to/repository \
   --issue-file /absolute/path/to/issue.md
 ```
@@ -146,7 +146,7 @@ writable workspace.
 
 ## Run artifacts
 
-Each invocation creates `.issue-agent/runs/<run-id>/` containing:
+Each invocation creates `.sage/runs/<run-id>/` containing:
 
 ```text
 request.json

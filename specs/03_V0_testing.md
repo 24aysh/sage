@@ -16,12 +16,14 @@ candidate patch. It covers:
 
 The instructions match the implementation described in
 [`V0_IMPLEMENTATION.md`](02_V0_implementation.md). Commands are run from the root
-of the IssueAgent repository unless a step explicitly says otherwise.
+of the Sage repository unless a step explicitly says otherwise.
 
 V0.1 replaces the internal Agents SDK loop with the project-owned LangGraph
 runtime without changing this issue-to-patch workflow. See
 [`06_V0.1_testing.md`](06_V0.1_testing.md) for migration-specific checks and the
 new all-in-one setup-and-solve command.
+
+All commands and paths in this guide use the current Sage identifiers.
 
 > A live solve sends the issue and selected repository context to the configured
 > OpenAI model and may incur API usage charges. The deterministic test suite and
@@ -33,7 +35,7 @@ V0 accepts a local Git repository, a Markdown or text issue, and a committed
 base reference. It then:
 
 1. resolves the base reference to a commit;
-2. creates a separate clone under `.issue-agent/runs/`;
+2. creates a separate clone under `.sage/runs/`;
 3. starts a temporary, network-disabled Docker container over that clone;
 4. lets one coding agent inspect, edit, and test through bounded tools;
 5. saves the candidate checkout, full Git patch, changed-file list, and run
@@ -68,7 +70,7 @@ Experienced users can use this checklist. New users should continue to the
 detailed sections.
 
 ```bash
-# From the IssueAgent repository root
+# From the Sage repository root
 make env
 # Edit .env and set OPENAI_API_KEY.
 
@@ -83,9 +85,9 @@ make solve \
   ISSUE=/absolute/path/to/my-issue.md
 
 # Copy the absolute run directory printed by the solve.
-make run-status RUN_DIR=/absolute/path/to/.issue-agent/runs/<run-id>
+make run-status RUN_DIR=/absolute/path/to/.sage/runs/<run-id>
 make run-test \
-  RUN_DIR=/absolute/path/to/.issue-agent/runs/<run-id> \
+  RUN_DIR=/absolute/path/to/.sage/runs/<run-id> \
   TEST_COMMAND="python3 -m unittest discover -v"
 ```
 
@@ -120,7 +122,7 @@ not needed to set up or manually test the V0 backend.
 
 The easiest environments are Linux, macOS with Docker Desktop, or Windows
 through WSL2 with Docker Desktop integration enabled. On Docker Desktop, the
-configured `ISSUE_AGENT_RUNS_DIR` must be in a location Docker is allowed to
+configured `SAGE_RUNS_DIR` must be in a location Docker is allowed to
 bind-mount.
 
 If uv is installed but Python 3.14 is not, run:
@@ -137,13 +139,13 @@ Enter the repository root—the directory containing `Makefile`, `apps/`, and
 `docker/`—and save its location for the walkthrough:
 
 ```bash
-cd /absolute/path/to/pull-smith
-export ISSUE_AGENT_ROOT="$PWD"
+cd /absolute/path/to/sage
+export SAGE_ROOT="$PWD"
 git status --short
 make help
 ```
 
-`git status --short` may show your own local work. IssueAgent does not require
+`git status --short` may show your own local work. Sage does not require
 its controller checkout to be clean, but you should understand those changes
 before doing development work. Never put an API key in a tracked file.
 
@@ -173,11 +175,11 @@ set `OPENAI_MODEL` to an enabled model appropriate for coding-agent tool use.
 Keep the remaining defaults for the first run:
 
 ```dotenv
-ISSUE_AGENT_MAX_TURNS=30
-ISSUE_AGENT_RUNS_DIR=.issue-agent/runs
-ISSUE_AGENT_SANDBOX_IMAGE=issue-agent-sandbox:v0
-ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS=60
-ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS=12000
+SAGE_MAX_TURNS=30
+SAGE_RUNS_DIR=.sage/runs
+SAGE_SANDBOX_IMAGE=sage-sandbox:v0
+SAGE_COMMAND_TIMEOUT_SECONDS=60
+SAGE_MAX_TOOL_OUTPUT_CHARS=12000
 ```
 
 Optional local permission hardening:
@@ -219,7 +221,7 @@ make bootstrap
 This performs four operations in order:
 
 1. `uv sync` installs the locked backend environment;
-2. Docker builds `issue-agent-sandbox:v0`;
+2. Docker builds `sage-sandbox:v0`;
 3. a disposable, network-disabled container verifies Git, Python, and ripgrep;
 4. the doctor checks tools, Docker, the image, the virtual environment, and the
    presence of the API key.
@@ -259,7 +261,7 @@ the Docker and model boundaries, so they do not make paid model calls.
 Expected result:
 
 ```text
-67 passed
+68 passed
 ```
 
 The exact timing and pytest progress formatting can vary. A different test
@@ -273,7 +275,7 @@ If GNU Make is unavailable, the equivalent commands are:
 uv sync --project apps/agent
 
 docker build \
-  --tag issue-agent-sandbox:v0 \
+  --tag sage-sandbox:v0 \
   --file docker/sandbox/Dockerfile \
   .
 
@@ -283,7 +285,7 @@ set +a
 
 uv run --project apps/agent pytest
 uv run --project apps/agent python -m compileall -q apps/agent/src
-uv run --project apps/agent issue-agent --help
+uv run --project apps/agent sage --help
 ```
 
 ## V0.1 runtime verification
@@ -332,7 +334,7 @@ You do not manually create a long-running sandbox for a solve. The controller
 does this automatically:
 
 1. it creates the isolated candidate clone on the host;
-2. it starts `issue-agent-<run-id>` with that clone mounted at `/workspace`;
+2. it starts `sage-<run-id>` with that clone mounted at `/workspace`;
 3. the model invokes repository commands inside the container;
 4. it captures Git results; and
 5. it force-removes the container in a cleanup path.
@@ -371,7 +373,7 @@ only the required runtime and dependencies, and build it explicitly. For
 example:
 
 ```dockerfile
-FROM issue-agent-sandbox:v0
+FROM sage-sandbox:v0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends <required-packages> \
@@ -381,7 +383,7 @@ RUN apt-get update \
 ```bash
 docker build \
   --tag my-project-sandbox:v0 \
-  --file /absolute/path/to/Dockerfile.issue-agent \
+  --file /absolute/path/to/Dockerfile.sage \
   /path/to/its/build-context
 
 make solve \
@@ -396,7 +398,7 @@ tag, not the Dockerfile contents.
 
 ## 5. Prepare a target repository
 
-**Recommended plan:** keep every test target repository outside the Pull Smith
+**Recommended plan:** keep every test target repository outside the Sage
 directory. This avoids nested `.git` directories, prevents the controller and
 target histories from being confused, and makes cleanup straightforward.
 
@@ -407,12 +409,12 @@ names separate prevents most path-related mistakes:
 
 | Name | Example host path | Purpose | Modified by V0? |
 | --- | --- | --- | --- |
-| Controller repository | `/home/user/pull-smith` | Contains IssueAgent, the Makefile, and Dockerfile. | No, unless it is deliberately also the target. |
-| Target/source repository | `/home/user/projects/pull-smith-manual-tests/repos/my-app` | The external Git repository whose issue should be solved. | No. V0 only reads and clones a committed revision. |
-| Run/candidate repository | `pull-smith/.issue-agent/runs/<run-id>/repo` | The isolated clone in which the candidate change is made. | Yes. This is the writable candidate. |
+| Controller repository | `/home/user/sage` | Contains Sage, the Makefile, and Dockerfile. | No, unless it is deliberately also the target. |
+| Target/source repository | `/home/user/projects/sage-manual-tests/repos/my-app` | The external Git repository whose issue should be solved. | No. V0 only reads and clones a committed revision. |
+| Run/candidate repository | `sage/.sage/runs/<run-id>/repo` | The isolated clone in which the candidate change is made. | Yes. This is the writable candidate. |
 
 `REPO=...` always means the **target/source repository**. It does not mean the
-IssueAgent controller repository unless the issue actually concerns Pull Smith
+Sage controller repository unless the issue actually concerns Sage
 itself.
 
 The target must be a local Git working tree with at least one commit. It does
@@ -421,13 +423,13 @@ Docker image.
 
 ### 5.2 Create a dedicated external testing workspace
 
-Choose an absolute directory that is outside `/absolute/path/to/pull-smith`.
+Choose an absolute directory that is outside `/absolute/path/to/sage`.
 The guide uses this layout:
 
 ```text
 /home/user/projects/
-  pull-smith/                         <- controller repository
-  pull-smith-manual-tests/            <- external test workspace
+  sage/                         <- controller repository
+  sage-manual-tests/            <- external test workspace
     repos/
       refactor-demo-.../              <- target Git repository
     issues/
@@ -437,14 +439,14 @@ The guide uses this layout:
 First save the controller location:
 
 ```bash
-cd /absolute/path/to/pull-smith
-export ISSUE_AGENT_ROOT="$PWD"
+cd /absolute/path/to/sage
+export SAGE_ROOT="$PWD"
 ```
 
-Then create a sibling workspace next to Pull Smith:
+Then create a sibling workspace next to Sage:
 
 ```bash
-export TEST_WORKSPACE_ROOT="$(dirname "$ISSUE_AGENT_ROOT")/pull-smith-manual-tests"
+export TEST_WORKSPACE_ROOT="$(dirname "$SAGE_ROOT")/sage-manual-tests"
 
 mkdir -p "$TEST_WORKSPACE_ROOT/repos"
 mkdir -p "$TEST_WORKSPACE_ROOT/issues"
@@ -453,14 +455,14 @@ mkdir -p "$TEST_WORKSPACE_ROOT/issues"
 Confirm the two roots are different and neither contains the other:
 
 ```bash
-printf 'Controller: %s\n' "$ISSUE_AGENT_ROOT"
+printf 'Controller: %s\n' "$SAGE_ROOT"
 printf 'Test data:  %s\n' "$TEST_WORKSPACE_ROOT"
 ```
 
-For example, if Pull Smith is at `/home/user/projects/pull-smith`, this creates
-`/home/user/projects/pull-smith-manual-tests`. You may select another absolute
-path you own, but do not choose a directory inside Pull Smith, including its
-`.issue-agent/` directory.
+For example, if Sage is at `/home/user/projects/sage`, this creates
+`/home/user/projects/sage-manual-tests`. You may select another absolute
+path you own, but do not choose a directory inside Sage, including its
+`.sage/` directory.
 
 ### 5.3 Create the external target repository
 
@@ -481,8 +483,8 @@ initial commit:
 ```bash
 git -C "$TARGET_REPO" add .
 git -C "$TARGET_REPO" \
-  -c user.name="IssueAgent Manual Test" \
-  -c user.email="issue-agent-test@example.invalid" \
+  -c user.name="Sage Manual Test" \
+  -c user.email="sage-test@example.invalid" \
   commit -m "test: create refactor fixture"
 ```
 
@@ -548,13 +550,13 @@ If the issue depends on local changes, commit them on an appropriate branch
 first or select a different already-committed base. Do not commit secrets merely
 to make them visible to the agent.
 
-### 5.6 Exception: solving an issue in Pull Smith itself
+### 5.6 Exception: solving an issue in Sage itself
 
 Use the controller root as `REPO` only if the issue is specifically intended to
-change Pull Smith itself. This is not the layout for an unrelated test project:
+change Sage itself. This is not the layout for an unrelated test project:
 
 ```bash
-export TARGET_REPO="$ISSUE_AGENT_ROOT"
+export TARGET_REPO="$SAGE_ROOT"
 export BASE_SHA="$(git -C "$TARGET_REPO" rev-parse HEAD)"
 
 make solve \
@@ -563,13 +565,13 @@ make solve \
   BASE_REF="$BASE_SHA"
 ```
 
-V0 still clones the selected Pull Smith commit and edits the run clone; it does
+V0 still clones the selected Sage commit and edits the run clone; it does
 not edit the controller checkout. Any uncommitted controller changes—including
 new specs, Makefile changes, or local test fixtures—will not appear in that
 clone. Commit the required non-secret inputs first or choose an existing commit
 that already contains them.
 
-Do not run `git init` in the Pull Smith root again. It is already a repository.
+Do not run `git init` in the Sage root again. It is already a repository.
 
 ### 5.7 How the target reaches the Docker sandbox
 
@@ -579,13 +581,13 @@ on every solve:
 
 1. The CLI converts `REPO` to an absolute path.
 2. Host-side Git resolves `BASE_REF` to a commit SHA.
-3. With the default `ISSUE_AGENT_RUNS_DIR`, host-side Git runs an isolated clone
+3. With the default `SAGE_RUNS_DIR`, host-side Git runs an isolated clone
    equivalent to:
 
    ```bash
    git clone --no-hardlinks --no-checkout \
      "$TARGET_REPO" \
-     "$ISSUE_AGENT_ROOT/.issue-agent/runs/<run-id>/repo"
+     "$SAGE_ROOT/.sage/runs/<run-id>/repo"
    ```
 
 4. Host-side Git checks out the resolved SHA in detached-HEAD mode inside the
@@ -617,8 +619,8 @@ external test workspace/
   issues/
     refactor-demo-....md        <- ISSUE; read by the host controller
 
-pull-smith/                     <- controller repository
-  .issue-agent/
+sage/                     <- controller repository
+  .sage/
     runs/
       <run-id>/
         issue.md                <- saved copy of the issue
@@ -637,7 +639,7 @@ container.
 
 No `docker cp`, Git remote, GitHub account, or network access inside the
 container is needed. On Docker Desktop, the path containing
-`ISSUE_AGENT_RUNS_DIR` must be allowed for file sharing because that generated
+`SAGE_RUNS_DIR` must be allowed for file sharing because that generated
 clone is the path Docker mounts.
 
 ### 5.8 Observe the mount during a live run
@@ -646,20 +648,20 @@ The container exists only while the agent is running. From a second terminal,
 you can inspect it without changing anything:
 
 ```bash
-docker ps --filter name=issue-agent-
+docker ps --filter name=sage-
 ```
 
 Copy the exact container name from that output, then run:
 
 ```bash
-docker inspect issue-agent-<exact-run-id> \
+docker inspect sage-<exact-run-id> \
   --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
 ```
 
 Expected output contains one mount ending in:
 
 ```text
-.../.issue-agent/runs/<run-id>/repo -> /workspace
+.../.sage/runs/<run-id>/repo -> /workspace
 ```
 
 The container may finish before you inspect it; that is normal. After cleanup,
@@ -726,7 +728,7 @@ Run these commands in the same terminal used for setup. This creates the target
 in the separate external testing workspace:
 
 ```bash
-cd "$ISSUE_AGENT_ROOT"
+cd "$SAGE_ROOT"
 
 export DEMO_REPO="$TEST_WORKSPACE_ROOT/repos/calculator-demo-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$DEMO_REPO"
@@ -758,8 +760,8 @@ PY
 git -C "$DEMO_REPO" init
 git -C "$DEMO_REPO" add calculator.py test_calculator.py
 git -C "$DEMO_REPO" \
-  -c user.name="IssueAgent Manual Test" \
-  -c user.email="issue-agent-test@example.invalid" \
+  -c user.name="Sage Manual Test" \
+  -c user.email="sage-test@example.invalid" \
   commit -m "test: add broken calculator fixture"
 
 git -C "$DEMO_REPO" status --short
@@ -773,7 +775,7 @@ Expected state:
 - the log shows `test: add broken calculator fixture`;
 - `git status --short` prints nothing because the source checkout is clean; and
 - `git -C "$DEMO_REPO" rev-parse --show-toplevel` prints the same path stored in
-  `$DEMO_REPO`, not the Pull Smith root.
+  `$DEMO_REPO`, not the Sage root.
 
 The bug is intentional: `add(2, 3)` currently returns `-1`.
 
@@ -802,10 +804,10 @@ sed -n '1,160p' "$ISSUE_FILE"
 
 ### 7.3 Run the solve
 
-Return to the IssueAgent root and run the live workflow:
+Return to the Sage root and run the live workflow:
 
 ```bash
-cd "$ISSUE_AGENT_ROOT"
+cd "$SAGE_ROOT"
 make doctor
 
 make solve \
@@ -820,7 +822,7 @@ cleanup. Tool-call count and ordering are model decisions and can vary.
 A successful changed result prints output shaped like:
 
 ```text
-IssueAgent V0
+Sage V0
 
 Run: <timestamp-and-random-id>
 Base: <12-character-SHA>
@@ -833,17 +835,17 @@ Summary:
   <model summary>
 
 Workspace:
-  /.../.issue-agent/runs/<run-id>/repo
+  /.../.sage/runs/<run-id>/repo
 
 Patch:
-  /.../.issue-agent/runs/<run-id>/diff.patch
+  /.../.sage/runs/<run-id>/diff.patch
 ```
 
 Copy the **run directory**, which is the patch path without `/diff.patch`, into
 an absolute shell variable:
 
 ```bash
-export RUN_DIR=/absolute/path/to/.issue-agent/runs/<run-id>
+export RUN_DIR=/absolute/path/to/.sage/runs/<run-id>
 ```
 
 Do not literally keep `<run-id>` or the example path. Use the path printed by
@@ -940,7 +942,7 @@ run.
 Every completed run has this layout:
 
 ```text
-.issue-agent/runs/<run-id>/
+.sage/runs/<run-id>/
   request.json          normalized input paths and selected options
   metadata.json         run ID, time, base ref/SHA, model, image
   issue.md              exact issue sent to the runtime
@@ -962,7 +964,7 @@ If you choose to accept it, create a branch in the target repository and apply
 the patch yourself:
 
 ```bash
-git -C /absolute/path/to/target switch -c issue-agent/manual-review
+git -C /absolute/path/to/target switch -c sage/manual-review
 git -C /absolute/path/to/target apply "$RUN_DIR/diff.patch"
 git -C /absolute/path/to/target status --short
 git -C /absolute/path/to/target diff
@@ -974,7 +976,7 @@ patch. V0 itself never performs this step.
 
 ## 10. Exit codes and Make behavior
 
-The raw `issue-agent solve` command uses:
+The raw `sage solve` command uses:
 
 | Exit code | Meaning |
 | --- | --- |
@@ -994,7 +996,7 @@ set -a
 source .env
 set +a
 
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo /absolute/path/to/repository \
   --issue-file /absolute/path/to/issue.md \
   --base-ref HEAD
@@ -1020,7 +1022,7 @@ The remaining failure-path checks are useful for release testing.
 | MT-09 | Invalid base | Pass `BASE_REF=does-not-exist`. | Exit `1`; error states that the base does not resolve to a commit. |
 | MT-10 | Missing image | Pass `SANDBOX_IMAGE=missing:image`. | Exit `1`; error identifies the missing sandbox image before a model call. |
 | MT-11 | No-change issue | Ask only for analysis with an explicit instruction not to edit. | Raw CLI exits `2`; artifacts show an empty authoritative diff. Model behavior can vary, so do not use this as a deterministic test. |
-| MT-12 | Cleanup | After a solve, run `docker ps --filter name=issue-agent-`. | No container from the completed run remains. |
+| MT-12 | Cleanup | After a solve, run `docker ps --filter name=sage-`. | No container from the completed run remains. |
 
 Failure-path live solves can still consume API usage if validation passes and
 the model starts. Prefer the deterministic preflight cases when testing error
@@ -1059,7 +1061,7 @@ make doctor
 ```
 
 On Linux, also confirm the current user is authorized to use the Docker daemon.
-Do not work around a permission problem by running the entire IssueAgent
+Do not work around a permission problem by running the entire Sage
 controller as root unless that is an intentional, reviewed environment policy.
 
 ### `Docker sandbox image does not exist`
@@ -1138,7 +1140,7 @@ limitation during review rather than weakening isolation casually.
 
 ### Repository mount is denied or empty
 
-On Docker Desktop, ensure `ISSUE_AGENT_RUNS_DIR` (the directory containing the
+On Docker Desktop, ensure `SAGE_RUNS_DIR` (the directory containing the
 generated candidate clone) is available for file sharing. The original target
 source is read and cloned by the host controller; Docker mounts only the run
 checkout. Prefer ordinary local filesystem paths rather than network drives,
@@ -1146,14 +1148,14 @@ virtual filesystem paths, or directories with restrictive mount policies.
 
 ### The run times out
 
-Repository commands are limited by `ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS`, and
-the overall agent loop is bounded by `ISSUE_AGENT_MAX_TURNS`. First determine
+Repository commands are limited by `SAGE_COMMAND_TIMEOUT_SECONDS`, and
+the overall agent loop is bounded by `SAGE_MAX_TURNS`. First determine
 whether the target test command is genuinely slow or blocked. If a larger
 bounded value is justified, change `.env`, for example:
 
 ```dotenv
-ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS=120
-ISSUE_AGENT_MAX_TURNS=40
+SAGE_COMMAND_TIMEOUT_SECONDS=120
+SAGE_MAX_TURNS=40
 ```
 
 Do not make limits unbounded. A deterministic validation error should be fixed,
@@ -1165,7 +1167,7 @@ V0.1 counts only executions of the `agent` graph node. If the model requests a
 tool on its final allowed turn, the graph refuses to execute it because no turn
 would remain to consume the result. First confirm the issue is focused and the
 repository is inspectable. If the task reasonably needs more decisions, raise
-`ISSUE_AGENT_MAX_TURNS` by a bounded amount and rerun. A retry creates a new run;
+`SAGE_MAX_TURNS` by a bounded amount and rerun. A retry creates a new run;
 it does not resume the failed graph.
 
 Use `make graph` to confirm the `agent -> tools -> agent` loop and use
@@ -1204,26 +1206,26 @@ sandbox or runtime then fails, `agent-final.json`, `changed-files.json`, and
 partial directory:
 
 ```bash
-find .issue-agent/runs/<run-id> -maxdepth 2 -type f -print
+find .sage/runs/<run-id> -maxdepth 2 -type f -print
 make solve-debug REPO=... ISSUE=...
 ```
 
 `make run-status` intentionally fails when a run is incomplete.
 
-### A stale `issue-agent-*` container remains
+### A stale `sage-*` container remains
 
 Normal success and failure paths remove the container. An abrupt host shutdown
 or forcibly killed controller may prevent cleanup. Inspect exact targets first:
 
 ```bash
-docker ps --all --filter name=issue-agent-
+docker ps --all --filter name=sage-
 ```
 
 If a listed container is confirmed to be stale, remove that exact container by
 name:
 
 ```bash
-docker rm --force issue-agent-<exact-run-id>
+docker rm --force sage-<exact-run-id>
 ```
 
 Do not use a broad deletion command; other runs or unrelated containers may be

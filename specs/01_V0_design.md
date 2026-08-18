@@ -6,6 +6,9 @@
 > the V0.1 LangGraph design and implementation specifications in
 > [`04_V0.1_design.md`](04_V0.1_design.md) and
 > [`05_V0.1_langgraph_implementation.md`](05_V0.1_langgraph_implementation.md).
+> Project identifiers and command examples in this historical document have
+> been updated to the current Sage name; the original V0 design decisions are
+> otherwise unchanged.
 
 **Purpose of this document:** implementation-ready specification for Codex to bootstrap and build **V0 only**.
 
@@ -297,7 +300,7 @@ V0 has one job:
 A successful V0 invocation should feel like:
 
 ```bash
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo ~/projects/example \
   --issue-file ./examples/issue.md
 ```
@@ -305,12 +308,12 @@ uv run --project apps/agent issue-agent solve \
 and finish with output similar to:
 
 ```text
-IssueAgent V0
+Sage V0
 
 Run ID: 20260816T020712Z-a81f093c
 Base SHA: 9c21c0e
 Model: gpt-5.3-codex
-Workspace: .issue-agent/runs/20260816T020712Z-a81f093c/repo
+Workspace: .sage/runs/20260816T020712Z-a81f093c/repo
 
 Agent completed.
 
@@ -323,19 +326,19 @@ Summary:
   successful write.
 
 Patch:
-  .issue-agent/runs/20260816T020712Z-a81f093c/diff.patch
+  .sage/runs/20260816T020712Z-a81f093c/diff.patch
 ```
 
 The developer can then inspect:
 
 ```text
-.issue-agent/runs/<run-id>/repo
+.sage/runs/<run-id>/repo
 ```
 
 or:
 
 ```text
-.issue-agent/runs/<run-id>/diff.patch
+.sage/runs/<run-id>/diff.patch
 ```
 
 ---
@@ -532,7 +535,7 @@ NO Docker socket
 Bootstrap the project as:
 
 ```text
-issue-agent/
+sage/
 │
 ├── apps/
 │   │
@@ -541,7 +544,7 @@ issue-agent/
 │   │   ├── uv.lock
 │   │   ├── .python-version
 │   │   └── src/
-│   │       └── issue_agent/
+│   │       └── sage/
 │   │           ├── __init__.py
 │   │           ├── cli.py
 │   │           ├── config.py
@@ -608,7 +611,7 @@ issue-agent/
 ├── examples/
 │   └── issue.md
 │
-├── .issue-agent/
+├── .sage/
 │   └── .gitkeep
 │
 ├── .env.example
@@ -633,7 +636,7 @@ It must **not** become the architecture.
 OpenAI-specific imports are allowed only under:
 
 ```text
-apps/agent/src/issue_agent/runtimes/openai_agents/
+apps/agent/src/sage/runtimes/openai_agents/
 ```
 
 The following modules must not import from `agents`:
@@ -684,7 +687,7 @@ This boundary is mandatory.
 Suppose the user invokes:
 
 ```bash
-issue-agent solve \
+sage solve \
   --repo /home/user/projects/project-a \
   --issue-file issue.md
 ```
@@ -700,7 +703,7 @@ as the writable agent workspace.
 Create:
 
 ```text
-.issue-agent/runs/<run-id>/repo
+.sage/runs/<run-id>/repo
 ```
 
 and perform the work there.
@@ -710,13 +713,13 @@ Recommended clone operation:
 ```bash
 git clone --no-hardlinks \
   /home/user/projects/project-a \
-  .issue-agent/runs/<run-id>/repo
+  .sage/runs/<run-id>/repo
 ```
 
 Then:
 
 ```bash
-git -C .issue-agent/runs/<run-id>/repo checkout <base-ref>
+git -C .sage/runs/<run-id>/repo checkout <base-ref>
 ```
 
 Record the exact SHA after checkout.
@@ -769,7 +772,7 @@ More importantly, the sandbox itself must make credential access impossible.
 Implement:
 
 ```text
-apps/agent/src/issue_agent/config.py
+apps/agent/src/sage/config.py
 ```
 
 Suggested model:
@@ -785,8 +788,8 @@ class Settings(BaseModel):
 
     max_turns: int = 30
 
-    runs_dir: Path = Path(".issue-agent/runs")
-    sandbox_image: str = "issue-agent-sandbox:v0"
+    runs_dir: Path = Path(".sage/runs")
+    sandbox_image: str = "sage-sandbox:v0"
 
     command_timeout_seconds: int = 60
     max_tool_output_chars: int = 12_000
@@ -800,11 +803,11 @@ Environment variables:
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.3-codex
 
-ISSUE_AGENT_MAX_TURNS=30
-ISSUE_AGENT_RUNS_DIR=.issue-agent/runs
-ISSUE_AGENT_SANDBOX_IMAGE=issue-agent-sandbox:v0
-ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS=60
-ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS=12000
+SAGE_MAX_TURNS=30
+SAGE_RUNS_DIR=.sage/runs
+SAGE_SANDBOX_IMAGE=sage-sandbox:v0
+SAGE_COMMAND_TIMEOUT_SECONDS=60
+SAGE_MAX_TOOL_OUTPUT_CHARS=12000
 ```
 
 Do not log the API key.
@@ -831,13 +834,13 @@ Add a console entrypoint to `pyproject.toml`:
 
 ```toml
 [project.scripts]
-issue-agent = "issue_agent.cli:main"
+sage = "sage.cli:main"
 ```
 
 The application should be runnable with:
 
 ```bash
-uv run --project apps/agent issue-agent --help
+uv run --project apps/agent sage --help
 ```
 
 Commit:
@@ -946,7 +949,7 @@ Example:
 Directory:
 
 ```text
-.issue-agent/runs/
+.sage/runs/
 └── 20260816T020712Z-a81f093c/
     ├── request.json
     ├── metadata.json
@@ -1093,7 +1096,7 @@ Always clean up in `finally`.
 Container name:
 
 ```text
-issue-agent-<run-id>
+sage-<run-id>
 ```
 
 ---
@@ -1106,7 +1109,7 @@ Start with the equivalent of:
 docker run \
   --detach \
   --rm \
-  --name issue-agent-<run-id> \
+  --name sage-<run-id> \
   --network none \
   --cpus 2 \
   --memory 4g \
@@ -1115,7 +1118,7 @@ docker run \
   --security-opt no-new-privileges \
   --mount type=bind,src=<workspace>,dst=/workspace \
   --workdir /workspace \
-  issue-agent-sandbox:v0 \
+  sage-sandbox:v0 \
   sleep infinity
 ```
 
@@ -1174,7 +1177,7 @@ Build with:
 
 ```bash
 docker build \
-  -t issue-agent-sandbox:v0 \
+  -t sage-sandbox:v0 \
   -f docker/sandbox/Dockerfile \
   .
 ```
@@ -1499,7 +1502,7 @@ Every tool result sent back to the model must be bounded.
 Configuration:
 
 ```text
-ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS=12000
+SAGE_MAX_TOOL_OUTPUT_CHARS=12000
 ```
 
 When truncating command output:
@@ -1747,7 +1750,7 @@ The prompt should encode the V0 operating rules.
 Suggested content:
 
 ```text
-You are the V0 software-engineering agent for IssueAgent.
+You are the V0 software-engineering agent for Sage.
 
 You are given an engineering issue and access to an isolated copy of a Git
 repository through explicit tools.
@@ -1955,7 +1958,7 @@ Example metadata:
   "base_ref": "HEAD",
   "base_sha": "9c21c0e",
   "model": "gpt-5.3-codex",
-  "sandbox_image": "issue-agent-sandbox:v0"
+  "sandbox_image": "sage-sandbox:v0"
 }
 ```
 
@@ -1983,7 +1986,7 @@ Use `argparse`.
 Commands:
 
 ```text
-issue-agent solve
+sage solve
 ```
 
 Required arguments:
@@ -2004,7 +2007,7 @@ Optional arguments:
 Usage:
 
 ```bash
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo /absolute/path/to/repository \
   --issue-file /absolute/path/to/issue.md
 ```
@@ -2059,7 +2062,7 @@ ERROR: Docker daemon is not reachable.
 When a diff exists:
 
 ```text
-IssueAgent V0
+Sage V0
 
 Run: 20260816T020712Z-a81f093c
 Base: 9c21c0e
@@ -2073,16 +2076,16 @@ Summary:
   Updated the cache invalidation path after user mutation.
 
 Workspace:
-  .issue-agent/runs/.../repo
+  .sage/runs/.../repo
 
 Patch:
-  .issue-agent/runs/.../diff.patch
+  .sage/runs/.../diff.patch
 ```
 
 If no code change exists:
 
 ```text
-IssueAgent V0
+Sage V0
 
 Agent completed without producing a repository change.
 
@@ -2093,7 +2096,7 @@ Remaining uncertainty:
   <blocker>
 
 Run artifacts:
-  .issue-agent/runs/<run-id>
+  .sage/runs/<run-id>
 ```
 
 ---
@@ -2174,11 +2177,11 @@ Create:
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.3-codex
 
-ISSUE_AGENT_MAX_TURNS=30
-ISSUE_AGENT_RUNS_DIR=.issue-agent/runs
-ISSUE_AGENT_SANDBOX_IMAGE=issue-agent-sandbox:v0
-ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS=60
-ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS=12000
+SAGE_MAX_TURNS=30
+SAGE_RUNS_DIR=.sage/runs
+SAGE_SANDBOX_IMAGE=sage-sandbox:v0
+SAGE_COMMAND_TIMEOUT_SECONDS=60
+SAGE_MAX_TOOL_OUTPUT_CHARS=12000
 ```
 
 Do not commit `.env`.
@@ -2212,7 +2215,7 @@ Include:
 !.env.example
 
 # Agent runs
-.issue-agent/runs/
+.sage/runs/
 
 # Editors / OS
 .DS_Store
@@ -2542,7 +2545,7 @@ The root README must explain:
 5. backend setup with `uv`;
 6. Docker sandbox image build;
 7. OpenAI API-key setup;
-8. how to run `issue-agent solve`;
+8. how to run `sage solve`;
 9. where run artifacts are stored;
 10. how to run the Next.js landing page;
 11. brief V1 context;
@@ -2606,7 +2609,7 @@ apps/agent
 apps/web
 docker/sandbox
 examples
-.issue-agent
+.sage
 ```
 
 Initialize:
@@ -2817,7 +2820,7 @@ cli.py
 Required working command:
 
 ```bash
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo <repo> \
   --issue-file <issue.md>
 ```
@@ -2862,7 +2865,7 @@ V0 is complete when:
 
 - [ ] the backend is a `uv` project;
 - [ ] `uv.lock` is committed;
-- [ ] `uv run --project apps/agent issue-agent --help` works;
+- [ ] `uv run --project apps/agent sage --help` works;
 - [ ] the default Docker sandbox image builds;
 - [ ] the CLI accepts a local Git repository;
 - [ ] the CLI accepts a Markdown/text issue file;
@@ -2947,7 +2950,7 @@ After implementation:
                                  │
                                  ▼
                      ┌────────────────────┐
-                     │ issue-agent CLI    │
+                     │ sage CLI           │
                      │ Python + uv        │
                      └─────────┬──────────┘
                                │
@@ -3108,7 +3111,7 @@ uv add pydantic
 Run:
 
 ```bash
-uv run --project apps/agent issue-agent --help
+uv run --project apps/agent sage --help
 ```
 
 ---
@@ -3117,7 +3120,7 @@ uv run --project apps/agent issue-agent --help
 
 ```bash
 docker build \
-  -t issue-agent-sandbox:v0 \
+  -t sage-sandbox:v0 \
   -f docker/sandbox/Dockerfile \
   .
 ```
@@ -3151,7 +3154,7 @@ src directory
 ```bash
 export OPENAI_API_KEY="..."
 
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo /absolute/path/to/repository \
   --issue-file /absolute/path/to/issue.md
 ```

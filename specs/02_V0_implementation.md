@@ -13,6 +13,10 @@ receive GitHub events, or mutate the source checkout.
 The implementation uses the default Python version available in the development
 environment, Python 3.14.
 
+The current tree uses the Sage project, package, CLI, configuration, sandbox,
+and artifact identifiers. This naming migration does not alter the V0 workflow
+or its safety boundaries.
+
 ## Implemented behavior
 
 Given:
@@ -50,7 +54,7 @@ starts from the committed revision selected by `--base-ref`.
 repository + issue file
           │
           ▼
-     issue-agent CLI
+     sage CLI
      validation/config
           │
           ▼
@@ -86,7 +90,7 @@ reasoning loop behind that boundary.
 apps/agent/
   pyproject.toml
   uv.lock
-  src/issue_agent/
+  src/sage/
     cli.py                         command-line boundary
     config.py                      typed environment configuration
     errors.py                      application exception hierarchy
@@ -192,11 +196,11 @@ Pydantic `Settings` model. Secrets are not passed to the repository container.
 | --- | --- | --- |
 | `OPENAI_API_KEY` | required | API credential used by the host runtime |
 | `OPENAI_MODEL` | `gpt-5.3-codex` | model used by the V0 coding agent |
-| `ISSUE_AGENT_MAX_TURNS` | `30` | maximum SDK agent turns |
-| `ISSUE_AGENT_RUNS_DIR` | `.issue-agent/runs` | local artifact root |
-| `ISSUE_AGENT_SANDBOX_IMAGE` | `issue-agent-sandbox:v0` | default Docker image |
-| `ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS` | `60` | maximum repository-command duration |
-| `ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS` | `12000` | maximum returned tool output |
+| `SAGE_MAX_TURNS` | `30` | maximum SDK agent turns |
+| `SAGE_RUNS_DIR` | `.sage/runs` | local artifact root |
+| `SAGE_SANDBOX_IMAGE` | `sage-sandbox:v0` | default Docker image |
+| `SAGE_COMMAND_TIMEOUT_SECONDS` | `60` | maximum repository-command duration |
+| `SAGE_MAX_TOOL_OUTPUT_CHARS` | `12000` | maximum returned tool output |
 
 Turn counts and timeouts must be at least one. The tool output cap must be at
 least 1,000 characters. Invalid values fail at the configuration boundary.
@@ -216,7 +220,7 @@ Build the default sandbox image:
 
 ```bash
 docker build \
-  -t issue-agent-sandbox:v0 \
+  -t sage-sandbox:v0 \
   -f docker/sandbox/Dockerfile \
   .
 ```
@@ -231,7 +235,7 @@ export OPENAI_MODEL="gpt-5.3-codex"
 Run a solve:
 
 ```bash
-uv run --project apps/agent issue-agent solve \
+uv run --project apps/agent sage solve \
   --repo /absolute/path/to/repository \
   --issue-file /absolute/path/to/issue.md
 ```
@@ -261,7 +265,7 @@ The controller resolves the source repository's top-level directory, verifies
 the base reference with `git rev-parse`, and creates:
 
 ```text
-.issue-agent/runs/<run-id>/repo/
+.sage/runs/<run-id>/repo/
 ```
 
 The clone uses `--no-hardlinks --no-checkout`, followed by a detached checkout
@@ -369,7 +373,7 @@ The graph explicitly owns five nodes:
 - `invalid_response`: rejects missing, mixed, multiple, or unknown responses.
 
 `tools` loops back to `agent`; all other routes are terminal. The explicit
-model-turn limit remains `ISSUE_AGENT_MAX_TURNS`, and LangGraph receives the
+model-turn limit remains `SAGE_MAX_TURNS`, and LangGraph receives the
 secondary recursion limit `(2 * max_turns) + 4`. No checkpointer or persistent
 message history is configured.
 
@@ -424,7 +428,7 @@ live model or Docker daemon.
 Each invocation leaves a local record under:
 
 ```text
-.issue-agent/runs/<run-id>/
+.sage/runs/<run-id>/
   request.json
   metadata.json
   issue.md
@@ -450,7 +454,7 @@ atomically replaced. The API key and complete host environment are not stored.
 ## Error handling and observability
 
 Expected failures use an application exception hierarchy rooted at
-`IssueAgentError`. Specific types distinguish configuration, workspace,
+`SageError`. Specific types distinguish configuration, workspace,
 repository, path safety, command execution, command timeout, patch, sandbox,
 runtime, and artifact failures.
 
@@ -502,10 +506,10 @@ The following checks were run against the implemented V0.1:
 ```bash
 uv run --project apps/agent pytest
 uv run --project apps/agent python -m compileall -q apps/agent/src
-uv run --project apps/agent issue-agent --help
+uv run --project apps/agent sage --help
 ```
 
-The test suite completed with 67 passing tests. The default Docker image also
+The test suite completed with 68 passing tests. The default Docker image also
 built successfully, and a start/execute/stop smoke test completed successfully.
 No paid live OpenAI solve was run as part of deterministic verification. A
 separate live `gpt-5.4-mini` calculator solve later completed successfully
