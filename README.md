@@ -5,11 +5,12 @@ core design keeps model judgment separate from deterministic repository work:
 the agent decides what to inspect and change, while project-owned tools perform
 every read, search, command, patch, and Git operation.
 
-The current milestone is **V0: a local, single-agent issue solver**. Given a
-committed local Git repository and a Markdown or text issue, V0 creates an
-isolated clone, runs one software-engineering agent against it through bounded
-tools, and persists the candidate patch. It does not modify the source checkout
-or interact with GitHub.
+The current milestone is **V0.1: a local, single-agent issue solver with a
+project-owned LangGraph runtime**. Given a committed local Git repository and a
+Markdown or text issue, IssueAgent creates an isolated clone, runs one
+software-engineering agent against it through bounded tools, and persists the
+candidate patch. It does not modify the source checkout or interact with
+GitHub.
 
 ## Architecture
 
@@ -25,8 +26,8 @@ local repository + issue.md
         ▼                    ▼
  AgentRuntime protocol   workspace manager
         │                isolated Git clone
- OpenAI Agents SDK           │
-  adapter (V0 only)          │
+ LangGraphRuntime            │
+ custom StateGraph           │
         └────────┬───────────┘
                  ▼
        repository tool layer
@@ -40,10 +41,11 @@ local repository + issue.md
        candidate clone + diff.patch
 ```
 
-The OpenAI Agents SDK is isolated under
-`apps/agent/src/issue_agent/runtimes/openai_agents/`. Domain models, workflow,
-repository tools, sandboxing, and artifacts do not depend on the SDK. This is a
-deliberate V0 bootstrap boundary, not the long-term orchestration architecture.
+The project-owned runtime under
+`apps/agent/src/issue_agent/runtimes/langgraph/` explicitly owns model calls,
+tool routing, turn limits, validation, and termination. Domain models,
+workflow, repository tools, sandboxing, and artifacts remain independent of
+LangGraph and provider-specific response shapes.
 
 ## Repository layout
 
@@ -70,6 +72,31 @@ examples/
 
 The original design targeted Python 3.13; this bootstrap uses Python 3.14 at the
 repository owner's request.
+
+## Manual testing
+
+For a first-time, end-to-end walkthrough—including environment setup, sandbox
+creation, a reproducible sample issue, artifact review, and troubleshooting—see
+[`specs/03_V0_testing.md`](specs/03_V0_testing.md). The root `Makefile` keeps the
+guide's common commands discoverable:
+
+```bash
+make help
+```
+
+For a complete first-time setup and live solve in one command:
+
+```bash
+make first-run \
+  REPO=/absolute/path/to/committed/repository \
+  ISSUE=/absolute/path/to/issue.md
+```
+
+The command loads `.env` when present or securely prompts for the API key, syncs
+the Python environment, builds and smoke-tests Docker, runs deterministic
+checks, and starts the solve. See
+[`specs/06_V0.1_testing.md`](specs/06_V0.1_testing.md) for V0.1-specific graph
+and migration checks.
 
 ## Backend setup
 
@@ -174,11 +201,13 @@ npm run build
 - **V0 — local issue solver:** the implementation in this repository. One agent,
   a local controller, an isolated Docker workspace, and persistent patch
   artifacts.
+- **V0.1 — project-owned runtime:** replaces the bootstrap Agents SDK adapter
+  with an explicit, tested LangGraph state machine while preserving V0 behavior.
 - **V1 — GitHub Actions integration:** later work will add authorized issue
   triggers, pinned GitHub checkout, branch publishing, and draft pull requests
   around the existing controller and sandbox.
-- **V2 — multi-agent workflow:** later work will replace the temporary runtime
-  with project-owned orchestration for exploration, implementation, and review.
+- **V2 — multi-agent workflow:** later work will extend project-owned
+  orchestration with exploration, implementation, and review roles.
 
 V0 deliberately contains no GitHub App, Actions workflow, HTTP API, database,
-queue, LangGraph runtime, or multi-agent flow.
+queue, checkpoint persistence, or multi-agent flow.

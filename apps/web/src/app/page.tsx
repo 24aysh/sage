@@ -31,15 +31,16 @@ export default function Home() {
       <footer className="mx-auto w-full max-w-7xl px-6 py-14 sm:px-10 lg:px-16">
         <div className="flex flex-col justify-between gap-8 border-t border-white/[0.08] pt-8 md:flex-row md:items-end">
           <div>
-            <p className="font-mono text-xs text-zinc-300">issue-agent / V0</p>
+            <p className="font-mono text-xs text-zinc-300">issue-agent / V0.1</p>
             <p className="mt-3 max-w-xl text-xs leading-5 text-zinc-600">
-              The OpenAI Agents SDK is a bootstrap runtime for V0. Repository
-              execution is project-owned so orchestration can be replaced later.
+              A project-owned LangGraph runtime controls reasoning and tool
+              routing while repository execution remains isolated and
+              deterministic.
             </p>
           </div>
           <div className="flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-600">
             <span>Python</span>
-            <span>OpenAI Agents SDK</span>
+            <span>LangGraph</span>
             <span>Docker</span>
             <span>Next.js</span>
           </div>

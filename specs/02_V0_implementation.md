@@ -1,8 +1,8 @@
-# V0 Backend Implementation
+# V0.1 Backend Implementation
 
 ## Status
 
-V0 is implemented as a local, single-agent issue solver. It accepts a local Git
+V0.1 is implemented as a local, single-agent issue solver. It accepts a local Git
 repository and a written issue, creates an isolated clone at a committed
 revision, lets one coding agent inspect and modify that clone through bounded
 repository tools, and saves the resulting Git patch and run metadata.
@@ -34,8 +34,8 @@ the controller performs the following work:
 5. Persists the request, issue, and initial metadata.
 6. Starts a disposable, network-disabled Docker container with only the cloned
    repository mounted at `/workspace`.
-7. Runs one OpenAI Agents SDK coding agent with a fixed set of project-owned
-   repository tools.
+7. Runs one project-owned LangGraph coding agent with a fixed set of
+   project-owned repository tools.
 8. Derives the changed-file list and complete binary-capable patch from Git.
 9. Persists the model's structured final response and the authoritative Git
    results.
@@ -62,8 +62,8 @@ AgentRuntime          workspace preparation
 protocol              isolated Git clone
      │                    │
      ▼                    ▼
-OpenAI Agents SDK ──► RepositoryTools façade
-adapter               tree/search/read/patch/
+LangGraph StateGraph ─► RepositoryTools façade
+runtime               tree/search/read/patch/
                       command/diff operations
                             │
                             ▼
@@ -77,8 +77,8 @@ adapter               tree/search/read/patch/
 
 The important boundary is the project-owned `AgentRuntime` protocol. Workflow,
 domain models, repository operations, sandboxing, and artifact persistence do
-not depend on OpenAI SDK response types. The OpenAI Agents SDK is a temporary V0
-runtime adapter behind that boundary.
+not depend on LangGraph or provider response types. `LangGraphRuntime` owns the
+reasoning loop behind that boundary.
 
 ## Source layout
 
@@ -110,10 +110,11 @@ apps/agent/
     sandbox/
       base.py                      sandbox protocol and command result
       docker.py                    Docker CLI implementation
-    runtimes/openai_agents/
-      runtime.py                   AgentRuntime implementation
-      prompt.py                    coding-agent instructions
-      tools.py                     thin SDK tool wrappers
+    runtimes/langgraph/
+      graph.py                     state, nodes, routing, and topology
+      runtime.py                   AgentRuntime and model adapter
+      prompt.py                    coding-agent instructions and input
+      tools.py                     thin LangChain tool wrappers
     artifacts/
       store.py                     atomic filesystem persistence
   tests/                            focused unit tests by responsibility
@@ -352,20 +353,45 @@ Before diffing, untracked files are marked with Git intent-to-add so new files
 are included in the authoritative patch without staging their content as a
 candidate commit.
 
-## OpenAI runtime
+## LangGraph runtime
 
-`OpenAIAgentsRuntime` is the only provider-specific runtime in V0. For each run
-it creates one agent with:
+`LangGraphRuntime` is the concrete V0.1 implementation. It constructs a
+host-side `ChatOpenAI` model, binds the same six repository tools and
+`AgentFinalOutput` response schema, and compiles a fresh graph for every solve.
+The graph explicitly owns five nodes:
 
-- the configured model;
-- fixed software-engineering instructions;
-- the six repository tools;
-- `AgentFinalOutput` as its structured output type;
-- the configured maximum-turn limit.
+- `agent`: makes one asynchronous model decision and increments model turns;
+- `tools`: executes exactly one project-owned repository tool through
+  `ToolNode`;
+- `finalize`: validates the provider-parsed value with Pydantic;
+- `turn_limit`: fails before executing a tool that cannot receive a subsequent
+  model decision; and
+- `invalid_response`: rejects missing, mixed, multiple, or unknown responses.
 
-The runtime input contains the resolved base SHA, issue text, and an explicit
-instruction to work only through provided tools. Runtime exceptions and invalid
-structured output are converted to `AgentRuntimeError` at the adapter boundary.
+`tools` loops back to `agent`; all other routes are terminal. The explicit
+model-turn limit remains `ISSUE_AGENT_MAX_TURNS`, and LangGraph receives the
+secondary recursion limit `(2 * max_turns) + 4`. No checkpointer or persistent
+message history is configured.
+
+The executable graph currently renders as:
+
+```mermaid
+graph TD;
+    __start__ --> agent;
+    agent -.-> finalize;
+    agent -.-> invalid_response;
+    agent -.-> tools;
+    agent -.-> turn_limit;
+    tools --> agent;
+    finalize --> __end__;
+    invalid_response --> __end__;
+    turn_limit --> __end__;
+```
+
+The runtime input contains the resolved base SHA, exact issue text, and an
+explicit instruction to work only through provided tools. Model, graph,
+routing, recursion, and validation failures become `AgentRuntimeError` at the
+adapter boundary.
 
 The coding instructions require inspection before editing, bounded tool use,
 minimal coherent changes, actual diff review, no credential or host-file
@@ -440,7 +466,9 @@ are not deliberately logged.
 
 Production dependencies are limited to:
 
-- `openai-agents` for the temporary V0 runtime;
+- `langgraph` for the explicit state graph and `ToolNode`;
+- `langchain-core` for messages, tools, and runnable contracts;
+- `langchain-openai` for the host-side `ChatOpenAI` adapter;
 - `pydantic` for typed settings and domain models.
 
 The package uses Hatchling for builds, uv for the locked environment, and
@@ -461,11 +489,15 @@ The deterministic test suite covers:
 - inclusion of new untracked files in Git results;
 - Docker isolation arguments and timeout behavior;
 - the exact six runtime tools exposed to the model;
+- pure graph routes, node behavior, compiled topology, and Mermaid rendering;
+- complete fake-model tool loops, termination, and failure paths;
+- model-turn and defensive recursion limits;
+- provider, graph, tool, and structured-output failure translation;
 - artifact persistence without storing the API key;
 - workflow use of authoritative Git results;
 - sandbox cleanup after success and runtime failure.
 
-The following checks were run against the implemented V0:
+The following checks were run against the implemented V0.1:
 
 ```bash
 uv run --project apps/agent pytest
@@ -473,7 +505,7 @@ uv run --project apps/agent python -m compileall -q apps/agent/src
 uv run --project apps/agent issue-agent --help
 ```
 
-The test suite completed with 26 passing tests. The default Docker image also
+The test suite completed with 66 passing tests. The default Docker image also
 built successfully, and a start/execute/stop smoke test completed successfully.
 No paid live OpenAI solve was run as part of deterministic verification.
 

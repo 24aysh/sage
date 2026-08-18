@@ -1,6 +1,12 @@
 # V0 Design Specification and Implementation Plan
 ## GitHub-Native Issue-to-PR Engineering Agent
 
+> **Historical V0 document:** the bootstrap design below intentionally records
+> the original OpenAI Agents SDK milestone. The active runtime was superseded by
+> the V0.1 LangGraph design and implementation specifications in
+> [`04_V0.1_design.md`](04_V0.1_design.md) and
+> [`05_V0.1_langgraph_implementation.md`](05_V0.1_langgraph_implementation.md).
+
 **Purpose of this document:** implementation-ready specification for Codex to bootstrap and build **V0 only**.
 
 **Current implementation target:** local single-agent issue solver.
