@@ -259,7 +259,7 @@ the Docker and model boundaries, so they do not make paid model calls.
 Expected result:
 
 ```text
-66 passed
+67 passed
 ```
 
 The exact timing and pytest progress formatting can vary. A different test
@@ -323,7 +323,7 @@ Run the focused runtime tests when diagnosing graph behavior:
 uv run --project apps/agent pytest apps/agent/tests/runtimes
 ```
 
-Expected: 41 passing runtime tests. `make check` runs these together with all
+Expected: 42 passing runtime tests. `make check` runs these together with all
 existing repository, workflow, sandbox, configuration, and artifact tests.
 
 ## 4. Understand the sandbox
