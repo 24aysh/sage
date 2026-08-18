@@ -16,14 +16,16 @@ RUN_DIR ?=
 TEST_COMMAND ?= python3 -m unittest discover -v
 DEBUG_FLAG :=
 
-.PHONY: help env setup bootstrap doctor sandbox-build sandbox-smoke test compile check \
-	new-issue solve solve-debug run-status run-test
+.PHONY: help env setup bootstrap first-run doctor sandbox-build sandbox-smoke \
+	test compile check graph new-issue solve solve-debug run-status run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
-		'IssueAgent V0 helper commands' \
+		'IssueAgent V0.1 helper commands' \
 		'' \
 		'Getting started:' \
+		'  make first-run REPO=... ISSUE=...' \
+		'                        Configure, set up, verify, and solve in one command.' \
 		'  make env              Create .env from .env.example (never overwrites).' \
 		'  make bootstrap        Install Python deps, build/smoke-test the sandbox, run doctor.' \
 		'  make doctor           Check tools, Docker, the sandbox image, and API-key setup.' \
@@ -33,6 +35,7 @@ help: ## Show the available commands and variables.
 		'  make sandbox-build    Build the Docker sandbox image.' \
 		'  make sandbox-smoke    Verify tools inside the network-disabled sandbox.' \
 		'  make check            Run unit tests and compile the Python package.' \
+		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
@@ -46,7 +49,7 @@ help: ## Show the available commands and variables.
 		'  SANDBOX_IMAGE=custom:v0        Override the configured sandbox image.' \
 		'  ENV_FILE=.env                  Shell-format configuration file to load.' \
 		'' \
-		'See specs/03_V0_testing.md for the complete walkthrough.'
+		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -71,6 +74,58 @@ bootstrap: ## Perform the complete one-time setup in order.
 	@$(MAKE) --no-print-directory sandbox-build
 	@$(MAKE) --no-print-directory sandbox-smoke
 	@$(MAKE) --no-print-directory doctor
+
+first-run: ## Configure, install, build, verify, and solve with one command.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -z "$(REPO)" ]]; then \
+		echo "ERROR: REPO is required. Use: make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
+		exit 1; \
+	fi; \
+	if [[ -z "$(ISSUE)" ]]; then \
+		echo "ERROR: ISSUE is required. Use: make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
+		exit 1; \
+	fi; \
+	inherited_api_key="$${OPENAI_API_KEY:-}"; \
+	if [[ -f "$(ENV_PATH)" ]]; then \
+		echo "Loading configuration from $(ENV_PATH)"; \
+		set -a; source "$(ENV_PATH)"; set +a; \
+	fi; \
+	if [[ -n "$$inherited_api_key" ]]; then export OPENAI_API_KEY="$$inherited_api_key"; fi; \
+	if [[ -z "$${OPENAI_API_KEY:-}" ]]; then \
+		if [[ ! -t 0 ]]; then \
+			echo "ERROR: OPENAI_API_KEY is not configured and no interactive terminal is available." >&2; \
+			echo "Set it in $(ENV_FILE) or export it before running make." >&2; \
+			exit 1; \
+		fi; \
+		read -r -s -p "OpenAI API key (input hidden; used only for this run): " OPENAI_API_KEY; \
+		echo; \
+		if [[ -z "$$OPENAI_API_KEY" ]]; then \
+			echo "ERROR: OPENAI_API_KEY cannot be empty." >&2; \
+			exit 1; \
+		fi; \
+		export OPENAI_API_KEY; \
+	fi; \
+	: "$${OPENAI_MODEL:=gpt-5.3-codex}"; export OPENAI_MODEL; \
+	: "$${ISSUE_AGENT_MAX_TURNS:=30}"; export ISSUE_AGENT_MAX_TURNS; \
+	: "$${ISSUE_AGENT_RUNS_DIR:=.issue-agent/runs}"; export ISSUE_AGENT_RUNS_DIR; \
+	: "$${ISSUE_AGENT_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export ISSUE_AGENT_SANDBOX_IMAGE; \
+	: "$${ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS:=60}"; export ISSUE_AGENT_COMMAND_TIMEOUT_SECONDS; \
+	: "$${ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS:=12000}"; export ISSUE_AGENT_MAX_TOOL_OUTPUT_CHARS; \
+	echo "Step 1/6: syncing the Python environment"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
+	echo "Step 2/6: building the Docker sandbox"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-build; \
+	echo "Step 3/6: smoke-testing the Docker sandbox"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-smoke; \
+	echo "Step 4/6: checking prerequisites"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null doctor; \
+	echo "Step 5/6: running deterministic checks"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null check; \
+	echo "Step 6/6: solving the issue"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null solve \
+		REPO="$(REPO)" ISSUE="$(ISSUE)" BASE_REF="$(BASE_REF)" \
+		SANDBOX_IMAGE="$(SANDBOX_IMAGE)"
 
 doctor: ## Check all prerequisites needed for a live solve.
 	@set -euo pipefail; \
@@ -153,7 +208,7 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 		bash -lc 'git --version && python3 --version && rg --version'
 
 test: ## Run deterministic unit tests (no API call required).
-	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" pytest
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" pytest
 
 compile: ## Compile all backend Python modules.
 	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" python -m compileall -q "$(AGENT_PROJECT)/src"
@@ -161,6 +216,11 @@ compile: ## Compile all backend Python modules.
 check: ## Run all deterministic backend checks.
 	@$(MAKE) --no-print-directory test
 	@$(MAKE) --no-print-directory compile
+
+graph: ## Print Mermaid generated from the compiled V0.1 LangGraph.
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest -q -s \
+		"$(AGENT_PROJECT)/tests/runtimes/test_langgraph_graph.py::test_compiled_graph_renders_expected_mermaid"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \

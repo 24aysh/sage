@@ -18,6 +18,11 @@ The instructions match the implementation described in
 [`V0_IMPLEMENTATION.md`](02_V0_implementation.md). Commands are run from the root
 of the IssueAgent repository unless a step explicitly says otherwise.
 
+V0.1 replaces the internal Agents SDK loop with the project-owned LangGraph
+runtime without changing this issue-to-patch workflow. See
+[`06_V0.1_testing.md`](06_V0.1_testing.md) for migration-specific checks and the
+new all-in-one setup-and-solve command.
+
 > A live solve sends the issue and selected repository context to the configured
 > OpenAI model and may incur API usage charges. The deterministic test suite and
 > sandbox smoke test do not call the model.
@@ -82,6 +87,13 @@ make run-status RUN_DIR=/absolute/path/to/.issue-agent/runs/<run-id>
 make run-test \
   RUN_DIR=/absolute/path/to/.issue-agent/runs/<run-id> \
   TEST_COMMAND="python3 -m unittest discover -v"
+```
+
+After a committed target repository and issue file exist, the V0.1 all-in-one
+alternative is:
+
+```bash
+make first-run REPO=/absolute/path/to/repository ISSUE=/absolute/path/to/issue.md
 ```
 
 Do not use a real repository for the first test if you are unsure how its build
@@ -247,7 +259,7 @@ the Docker and model boundaries, so they do not make paid model calls.
 Expected result:
 
 ```text
-26 passed
+66 passed
 ```
 
 The exact timing and pytest progress formatting can vary. A different test
@@ -273,6 +285,46 @@ uv run --project apps/agent pytest
 uv run --project apps/agent python -m compileall -q apps/agent/src
 uv run --project apps/agent issue-agent --help
 ```
+
+## V0.1 runtime verification
+
+These checks prove the internal runtime was migrated without making a live
+model call.
+
+Confirm the removed Agents SDK is absent:
+
+```bash
+uv tree --project apps/agent | rg "openai-agents"
+```
+
+Expected: no output and `rg` exit code `1`.
+
+Confirm the new runtime packages are present:
+
+```bash
+uv tree --project apps/agent | rg "langgraph|langchain-openai"
+```
+
+Expected: both `langgraph` and `langchain-openai` appear.
+
+Print the topology from the compiled executable graph:
+
+```bash
+make graph
+```
+
+Expected: Mermaid text containing `agent`, `tools`, `finalize`, `turn_limit`,
+and `invalid_response`. It must show `tools --> agent` and terminal edges to
+`__end__`. This target uses a fake model and makes no API call.
+
+Run the focused runtime tests when diagnosing graph behavior:
+
+```bash
+uv run --project apps/agent pytest apps/agent/tests/runtimes
+```
+
+Expected: 41 passing runtime tests. `make check` runs these together with all
+existing repository, workflow, sandbox, configuration, and artifact tests.
 
 ## 4. Understand the sandbox
 
@@ -1107,6 +1159,32 @@ ISSUE_AGENT_MAX_TURNS=40
 Do not make limits unbounded. A deterministic validation error should be fixed,
 not retried with more turns.
 
+### `Model turn limit (...) was reached with an unexecuted tool call`
+
+V0.1 counts only executions of the `agent` graph node. If the model requests a
+tool on its final allowed turn, the graph refuses to execute it because no turn
+would remain to consume the result. First confirm the issue is focused and the
+repository is inspectable. If the task reasonably needs more decisions, raise
+`ISSUE_AGENT_MAX_TURNS` by a bounded amount and rerun. A retry creates a new run;
+it does not resume the failed graph.
+
+Use `make graph` to confirm the `agent -> tools -> agent` loop and use
+`make solve-debug ...` for the application traceback. The API key, complete
+issue, file contents, and patches should not appear in logs.
+
+### LangGraph dependency or import failure
+
+Resync the exact lockfile and rerun the import audit:
+
+```bash
+make setup
+uv tree --project apps/agent | rg "langgraph|langchain-core|langchain-openai"
+uv run --project apps/agent python -c "import langgraph, langchain_core, langchain_openai"
+```
+
+If setup cannot download packages, fix host proxy/DNS access. This is separate
+from the intentionally network-disabled repository sandbox.
+
 ### The agent completes with no changes
 
 The raw CLI returns `2`; the Makefile prints a warning and returns success.
@@ -1162,9 +1240,11 @@ active.
 | `make sandbox-smoke` | Verifies tools in a disposable isolated container. | No |
 | `make doctor` | Checks host tools, daemon, image, key presence, and environment. | No |
 | `make bootstrap` | Runs setup, image build, smoke test, and doctor in order. | No model call. |
+| `make first-run REPO=... ISSUE=...` | Loads or prompts for configuration, performs complete setup and checks, then solves the issue. | Yes, at the final step. |
 | `make test` | Runs deterministic pytest tests. | No |
 | `make compile` | Compiles backend Python source. | No |
 | `make check` | Runs `test` followed by `compile`. | No |
+| `make graph` | Prints Mermaid from the compiled LangGraph using fakes. | No |
 | `make new-issue ISSUE=...` | Copies the issue template without overwriting. | No |
 | `make solve REPO=... ISSUE=...` | Runs the live V0 issue solver. | Yes |
 | `make solve-debug REPO=... ISSUE=...` | Runs a live solve with debug logging. | Yes |
@@ -1177,6 +1257,7 @@ A manual V0 validation is complete when:
 
 - [ ] `make doctor` reports all prerequisites as ready.
 - [ ] `make check` succeeds without a live API call.
+- [ ] `make graph` shows all five nodes and the `tools -> agent` loop.
 - [ ] `make sandbox-smoke` succeeds and removes its container.
 - [ ] The target base resolves to the intended committed SHA.
 - [ ] The issue contains concrete acceptance criteria.
