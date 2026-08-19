@@ -17,6 +17,14 @@ class WorkspaceError(SageError):
     """Raised when an isolated run workspace cannot be prepared."""
 
 
+class HostGitError(SageError):
+    """Raised when the trusted controller cannot execute Git."""
+
+
+class HostGitTimeoutError(HostGitError):
+    """Raised when a trusted host-side Git command exceeds its timeout."""
+
+
 class PathSafetyError(RepositoryError):
     """Raised when a requested repository path is unsafe."""
 
@@ -43,3 +51,36 @@ class AgentRuntimeError(SageError):
 
 class ArtifactError(SageError):
     """Raised when run artifacts cannot be persisted."""
+
+
+class GitHubIntegrationError(SageError):
+    """Base class for expected GitHub integration failures."""
+
+
+class GitHubConfigurationError(ConfigurationError, GitHubIntegrationError):
+    """Raised when trusted GitHub controller configuration is invalid."""
+
+
+class GitHubEventError(GitHubIntegrationError):
+    """Raised when a GitHub event cannot be validated safely."""
+
+
+class GitHubApiError(GitHubIntegrationError):
+    """Raised when a GitHub API operation fails safely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        request_id: str | None = None,
+        ambiguous: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.request_id = request_id
+        self.ambiguous = ambiguous
+
+
+class GitHubGateError(GitHubIntegrationError):
+    """Raised when a supported invocation cannot be gated safely."""

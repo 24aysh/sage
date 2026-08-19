@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import logging
 import secrets
-import subprocess
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from subprocess import CompletedProcess
 
 from sage.config import Settings
 from sage.domain.requests import PreparedRun, SolveRequest
-from sage.errors import WorkspaceError
+from sage.errors import HostGitError, HostGitTimeoutError, WorkspaceError
+from sage.repository.host_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +35,8 @@ def prepare_run(request: SolveRequest, settings: Settings) -> PreparedRun:
     run_id, run_dir = _create_run_directory(settings.runs_dir)
     workspace_dir = run_dir / "repo"
 
-    clone = _run_git(
+    clone = _run_workspace_git(
         [
-            "git",
             "clone",
             "--no-hardlinks",
             "--no-checkout",
@@ -47,14 +48,16 @@ def prepare_run(request: SolveRequest, settings: Settings) -> PreparedRun:
     if clone.returncode != 0:
         raise WorkspaceError(_git_failure("Unable to clone source repository", clone))
 
-    checkout = _run_git(
-        ["git", "-C", str(workspace_dir), "checkout", "--detach", base_sha]
+    checkout = _run_workspace_git(
+        ["checkout", "--detach", base_sha],
+        repository=workspace_dir,
     )
     if checkout.returncode != 0:
         raise WorkspaceError(_git_failure("Unable to check out base revision", checkout))
 
-    cloned_sha = _run_git(
-        ["git", "-C", str(workspace_dir), "rev-parse", "--verify", "HEAD"]
+    cloned_sha = _run_workspace_git(
+        ["rev-parse", "--verify", "HEAD"],
+        repository=workspace_dir,
     )
     if cloned_sha.returncode != 0:
         raise WorkspaceError(_git_failure("Unable to resolve cloned base SHA", cloned_sha))
@@ -79,7 +82,10 @@ def _validate_source_repository(requested_path: Path) -> Path:
     if not path.is_dir():
         raise WorkspaceError(f"Repository path does not exist: {path}")
 
-    result = _run_git(["git", "-C", str(path), "rev-parse", "--show-toplevel"])
+    result = _run_workspace_git(
+        ["rev-parse", "--show-toplevel"],
+        repository=path,
+    )
     if result.returncode != 0:
         raise WorkspaceError(f"Path is not a Git repository: {path}")
     return Path(result.stdout.strip()).resolve()
@@ -89,16 +95,14 @@ def _resolve_base_sha(source_repo: Path, base_ref: str) -> str:
     if not base_ref.strip():
         raise WorkspaceError("Base ref cannot be empty.")
 
-    result = _run_git(
+    result = _run_workspace_git(
         [
-            "git",
-            "-C",
-            str(source_repo),
             "rev-parse",
             "--verify",
             "--end-of-options",
             f"{base_ref}^{{commit}}",
-        ]
+        ],
+        repository=source_repo,
     )
     if result.returncode != 0:
         raise WorkspaceError(f"Base ref does not resolve to a commit: {base_ref}")
@@ -122,21 +126,23 @@ def _create_run_directory(runs_dir: Path) -> tuple[str, Path]:
     raise WorkspaceError("Unable to allocate a unique run directory.")
 
 
-def _run_git(command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_workspace_git(
+    arguments: Sequence[str],
+    *,
+    repository: Path | None = None,
+) -> CompletedProcess[str]:
     try:
-        return subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
+        return run_git(
+            arguments,
+            repository=repository,
+            timeout_seconds=60,
         )
-    except FileNotFoundError as error:
-        raise WorkspaceError("Git executable was not found.") from error
-    except subprocess.TimeoutExpired as error:
+    except HostGitTimeoutError as error:
         raise WorkspaceError("Git workspace preparation timed out.") from error
+    except HostGitError as error:
+        raise WorkspaceError("Git executable was not found.") from error
 
 
-def _git_failure(message: str, result: subprocess.CompletedProcess[str]) -> str:
+def _git_failure(message: str, result: CompletedProcess[str]) -> str:
     detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
     return f"{message}: {detail}"
