@@ -17,11 +17,12 @@ TEST_COMMAND ?= python3 -m unittest discover -v
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run doctor sandbox-build sandbox-smoke \
-	test compile check graph new-issue solve solve-debug run-status run-test
+	test github-test compile check graph new-issue solve solve-debug run-status \
+	run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
-		'Sage V0.1 helper commands' \
+		'Sage helper commands' \
 		'' \
 		'Getting started:' \
 		'  make first-run REPO=... ISSUE=...' \
@@ -35,6 +36,7 @@ help: ## Show the available commands and variables.
 		'  make sandbox-build    Build the Docker sandbox image.' \
 		'  make sandbox-smoke    Verify tools inside the network-disabled sandbox.' \
 		'  make check            Run unit tests and compile the Python package.' \
+		'  make github-test      Run the offline V1.0 GitHub gate checks.' \
 		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
 		'' \
 		'Manual solve:' \
@@ -49,7 +51,8 @@ help: ## Show the available commands and variables.
 		'  SANDBOX_IMAGE=custom:v0        Override the configured sandbox image.' \
 		'  ENV_FILE=.env                  Shell-format configuration file to load.' \
 		'' \
-		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.'
+		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.' \
+		'See specs/10_V1.0_testing.md for current GitHub migration checks.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -209,6 +212,11 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 
 test: ## Run deterministic unit tests (no API call required).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" pytest
+
+github-test: ## Run deterministic GitHub integration tests (no live API/model call).
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest "$(AGENT_PROJECT)/tests/integrations/github" \
+		"$(AGENT_PROJECT)/tests/test_cli.py"
 
 compile: ## Compile all backend Python modules.
 	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" python -m compileall -q "$(AGENT_PROJECT)/src"

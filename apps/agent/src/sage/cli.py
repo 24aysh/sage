@@ -1,19 +1,26 @@
-"""Command-line entrypoint for the local V0 issue solver."""
+"""Command-line entrypoints for local solves and trusted automation."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import logging
+import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from sage.config import Settings
 from sage.domain.requests import SolveRequest
 from sage.domain.results import SolveResult
-from sage.errors import ConfigurationError, SageError
+from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
+from sage.integrations.github.client import RestGitHubClient
+from sage.integrations.github.config import GitHubSettings
+from sage.integrations.github.events import load_issue_comment_event
+from sage.integrations.github.gate import evaluate_gate
+from sage.integrations.github.outputs import write_gate_outputs
 from sage.runtimes.langgraph import LangGraphRuntime
 from sage.workflow import solve_issue
 
@@ -28,17 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging(debug=arguments.debug)
 
     try:
-        settings = Settings.from_env()
-        request = SolveRequest(
-            repo_path=arguments.repo.expanduser().resolve(),
-            issue_path=arguments.issue_file.expanduser().resolve(),
-            base_ref=arguments.base_ref,
-            sandbox_image=arguments.sandbox_image,
-        )
-        effective_image = request.sandbox_image or settings.sandbox_image
-        _validate_prerequisites(request, settings, sandbox_image=effective_image)
-        runtime = LangGraphRuntime(settings)
-        result = asyncio.run(solve_issue(request, runtime, settings))
+        handler: Callable[[argparse.Namespace], int] = arguments.handler
+        return handler(arguments)
     except SageError as error:
         if arguments.debug:
             logger.exception("Sage failed")
@@ -53,14 +51,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: Unexpected failure: {error}", file=sys.stderr)
         return 1
 
-    _render_result(result, model=settings.openai_model)
-    return 0 if result.diff.strip() else 2
-
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sage",
-        description="Solve a written issue in an isolated local repository clone.",
+        description="Solve repository issues locally or through trusted automation.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     solve_parser = subparsers.add_parser(
@@ -72,7 +67,81 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--base-ref", default="HEAD")
     solve_parser.add_argument("--sandbox-image")
     solve_parser.add_argument("--debug", action="store_true")
+    solve_parser.set_defaults(handler=_run_local_solve)
+
+    github_parser = subparsers.add_parser(
+        "github",
+        help="Run trusted GitHub Actions controller commands.",
+    )
+    github_subparsers = github_parser.add_subparsers(
+        dest="github_command",
+        required=True,
+    )
+    gate_parser = github_subparsers.add_parser(
+        "gate",
+        help="Authorize and deduplicate one issue-comment invocation.",
+    )
+    gate_parser.add_argument(
+        "--event-file",
+        type=Path,
+        help="Override GITHUB_EVENT_PATH for deterministic local testing.",
+    )
+    gate_parser.add_argument(
+        "--output-file",
+        type=Path,
+        help="Override GITHUB_OUTPUT for deterministic local testing.",
+    )
+    gate_parser.add_argument("--debug", action="store_true")
+    gate_parser.set_defaults(handler=_run_github_gate)
     return parser
+
+
+def _run_local_solve(arguments: argparse.Namespace) -> int:
+    """Run the compatible local V0.1 solve path."""
+
+    settings = Settings.from_env()
+    request = SolveRequest(
+        repo_path=arguments.repo.expanduser().resolve(),
+        issue_path=arguments.issue_file.expanduser().resolve(),
+        base_ref=arguments.base_ref,
+        sandbox_image=arguments.sandbox_image,
+    )
+    effective_image = request.sandbox_image or settings.sandbox_image
+    _validate_prerequisites(request, settings, sandbox_image=effective_image)
+    runtime = LangGraphRuntime(settings)
+    result = asyncio.run(solve_issue(request, runtime, settings))
+    _render_result(result, model=settings.openai_model)
+    return 0 if result.diff.strip() else 2
+
+
+def _run_github_gate(arguments: argparse.Namespace) -> int:
+    """Run the model-free GitHub command gate and emit safe job outputs."""
+
+    environment = dict(os.environ)
+    if arguments.event_file is not None:
+        environment["GITHUB_EVENT_PATH"] = str(
+            arguments.event_file.expanduser().resolve()
+        )
+    output_path = arguments.output_file
+    if output_path is None:
+        raw_output_path = environment.get("GITHUB_OUTPUT", "").strip()
+        if not raw_output_path:
+            raise GitHubConfigurationError(
+                "GITHUB_OUTPUT or --output-file is required for the GitHub gate."
+            )
+        output_path = Path(raw_output_path)
+
+    settings = GitHubSettings.from_env(environment)
+    invocation = load_issue_comment_event(environment)
+    client = RestGitHubClient(settings)
+    result = evaluate_gate(
+        invocation,
+        client,
+        max_comment_pages=settings.max_comment_pages,
+    )
+    write_gate_outputs(result, output_path.expanduser())
+    print(f"GitHub gate outcome: {result.outcome.value}")
+    return 0
 
 
 def _configure_logging(*, debug: bool) -> None:
