@@ -84,3 +84,7 @@ class GitHubApiError(GitHubIntegrationError):
 
 class GitHubGateError(GitHubIntegrationError):
     """Raised when a supported invocation cannot be gated safely."""
+
+
+class GitHubContextError(GitHubIntegrationError):
+    """Raised when GitHub Issue context cannot be assembled safely."""

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from sage.integrations.github.models import (
     GIT_OBJECT_ID_PATTERN,
+    validate_github_login,
     validate_github_url,
 )
 
@@ -48,6 +49,11 @@ class GitHubIssueCommentSnapshot(BaseModel):
     author_login: str = Field(min_length=1, max_length=100)
     created_at: datetime
     html_url: str = Field(min_length=1, max_length=2_048)
+
+    @field_validator("author_login")
+    @classmethod
+    def validate_author_login(cls, value: str) -> str:
+        return validate_github_login(value)
 
     @field_validator("created_at")
     @classmethod

@@ -6,6 +6,7 @@ from sage.integrations.github.events import load_issue_comment_event
 from sage.integrations.github.gate_models import GateOutcome
 from sage.integrations.github.models import GitHubInvocation
 from sage.integrations.github.status import (
+    has_sage_status_marker,
     has_invocation_marker,
     invocation_marker,
     render_gate_status,
@@ -19,6 +20,7 @@ def test_invocation_marker_is_stable_and_exact() -> None:
 
     assert marker == "<!-- sage-invocation:1001 -->"
     assert has_invocation_marker(f"prefix\n{marker}\nsuffix", 1001)
+    assert has_sage_status_marker(f"prefix\n{marker}\nsuffix")
     assert not has_invocation_marker(marker, 1002)
 
 

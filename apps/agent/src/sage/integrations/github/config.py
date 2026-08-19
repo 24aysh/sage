@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sage.errors import GitHubConfigurationError
 
 GITHUB_API_URL = "https://api.github.com"
+MAX_CONTEXT_COMMENTS = 100
+MAX_COMMENT_PAGES = 20
+MIN_CONTEXT_CHARS = 2_000
+MAX_CONTEXT_CHARS = 200_000
 
 
 class GitHubSettings(BaseModel):
@@ -21,9 +25,13 @@ class GitHubSettings(BaseModel):
     github_token: str = Field(repr=False, min_length=1)
     api_url: Literal["https://api.github.com"] = GITHUB_API_URL
     api_timeout_seconds: int = Field(default=30, ge=1, le=120)
-    max_comments: int = Field(default=20, ge=0, le=100)
-    max_comment_pages: int = Field(default=5, ge=1, le=20)
-    max_context_chars: int = Field(default=40_000, ge=1_000, le=200_000)
+    max_comments: int = Field(default=20, ge=0, le=MAX_CONTEXT_COMMENTS)
+    max_comment_pages: int = Field(default=5, ge=1, le=MAX_COMMENT_PAGES)
+    max_context_chars: int = Field(
+        default=40_000,
+        ge=MIN_CONTEXT_CHARS,
+        le=MAX_CONTEXT_CHARS,
+    )
 
     @classmethod
     def from_env(

@@ -15,9 +15,10 @@ checkout or interact with GitHub.
 The V1.0 GitHub-native migration is now in progress. Its implemented foundation
 can validate Issue-comment events, call GitHub through a bounded typed REST
 client, authorize maintainers, reject existing Sage branches/PRs, and create or
-reuse a gate status. The context builder, solver/publisher lifecycle, composite
-actions, and installable workflow are not yet available, so `/sage solve` must
-not be enabled in a production workflow. See
+reuse a gate status. It can also build a bounded current-Issue task file outside
+the target checkout. The solver/publisher lifecycle, composite actions, and
+installable workflow are not yet available, so `/sage solve` must not be
+enabled in a production workflow. See
 [`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact status and
 offline checks.
 
@@ -227,9 +228,9 @@ npm run build
   with an explicit, tested LangGraph state machine while preserving V0 behavior.
 - **V1 — GitHub Actions integration (in progress):** event validation, the
   model-free authorization/duplicate gate, REST boundary, status reuse, and
-  safe Actions outputs are implemented. Context assembly, solve orchestration,
-  branch publication, draft PRs, composite actions, and the enabled workflow
-  remain.
+  safe Actions outputs are implemented. Bounded Issue-context assembly is also
+  implemented. Solve orchestration, branch publication, draft PRs, composite
+  actions, and the enabled workflow remain.
 - **V2 — multi-agent workflow:** later work will extend project-owned
   orchestration with exploration, implementation, and review roles.
 

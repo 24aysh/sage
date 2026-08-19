@@ -345,6 +345,17 @@ def test_pull_request_from_an_unexpected_head_repository_is_rejected() -> None:
         )
 
 
+def test_comment_with_invalid_author_login_is_rejected() -> None:
+    payload = _comment_payload(101)
+    user = payload["user"]
+    assert isinstance(user, dict)
+    user["login"] = "unsafe\nheading"
+    client = _client(FakeTransport([_response(200, [payload])]))
+
+    with pytest.raises(GitHubApiError, match="invalid response"):
+        client.list_issue_comments(_repository(), 17)
+
+
 def _client(
     transport: FakeTransport,
     *,

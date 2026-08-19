@@ -28,6 +28,12 @@ def has_invocation_marker(body: str, comment_id: int) -> bool:
     return invocation_marker(comment_id) in body
 
 
+def has_sage_status_marker(body: str) -> bool:
+    """Return whether a body contains a project-owned status marker."""
+
+    return _INVOCATION_MARKER_PREFIX in body
+
+
 def render_gate_status(
     invocation: GitHubInvocation,
     outcome: GateOutcome,

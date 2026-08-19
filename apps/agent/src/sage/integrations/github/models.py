@@ -98,9 +98,7 @@ class GitHubActor(BaseModel):
     @field_validator("login")
     @classmethod
     def validate_login(cls, value: str) -> str:
-        if _ACTOR_PATTERN.fullmatch(value) is None:
-            raise ValueError("GitHub actor login is invalid.")
-        return value
+        return validate_github_login(value)
 
 
 class GitHubComment(BaseModel):
@@ -197,6 +195,14 @@ def validate_github_url(value: str) -> str:
         or parsed.query
     ):
         raise ValueError("Expected a trusted GitHub.com HTTPS URL.")
+    return value
+
+
+def validate_github_login(value: str) -> str:
+    """Return a GitHub.com login only when it is safe structured metadata."""
+
+    if _ACTOR_PATTERN.fullmatch(value) is None:
+        raise ValueError("GitHub actor login is invalid.")
     return value
 
 

@@ -44,7 +44,7 @@ def test_github_settings_requires_token() -> None:
         ("SAGE_GITHUB_API_TIMEOUT_SECONDS", "0"),
         ("SAGE_GITHUB_MAX_COMMENTS", "101"),
         ("SAGE_GITHUB_MAX_COMMENT_PAGES", "0"),
-        ("SAGE_GITHUB_MAX_CONTEXT_CHARS", "999"),
+        ("SAGE_GITHUB_MAX_CONTEXT_CHARS", "1999"),
     ],
 )
 def test_github_settings_rejects_invalid_bounds(name: str, value: str) -> None:
