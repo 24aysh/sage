@@ -1,0 +1,33 @@
+{
+  "action": "created",
+  "comment": {
+    "body": "/sage solve",
+    "created_at": "2026-08-19T10:35:00Z",
+    "html_url": "https://github.com/24aysh/example/issues/17#issuecomment-1006",
+    "id": 1006,
+    "user": {
+      "id": 7,
+      "login": "maintainer"
+    }
+  },
+  "issue": {
+    "body": "The calculator returns the wrong total.",
+    "html_url": "https://github.com/24aysh/example/issues/17",
+    "number": 17,
+    "title": "Fix calculator total"
+  },
+  "repository": {
+    "default_branch": "main",
+    "full_name": "someone-else/example",
+    "html_url": "https://github.com/24aysh/example",
+    "id": 123,
+    "name": "example",
+    "owner": {
+      "login": "24aysh"
+    }
+  },
+  "sender": {
+    "id": 7,
+    "login": "maintainer"
+  }
+}
