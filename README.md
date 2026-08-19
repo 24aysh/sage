@@ -5,12 +5,21 @@ core design keeps model judgment separate from deterministic repository work:
 the agent decides what to inspect and change, while project-owned tools perform
 every read, search, command, patch, and Git operation.
 
-The current milestone is **V0.1: a local, single-agent issue solver with a
-project-owned LangGraph runtime**. Given a committed local Git repository and a
-Markdown or text issue, Sage creates an isolated clone, runs one
-software-engineering agent against it through bounded tools, and persists the
-candidate patch. It does not modify the source checkout or interact with
-GitHub.
+The currently supported end-to-end milestone is **V0.1: a local, single-agent
+issue solver with a project-owned LangGraph runtime**. Given a committed local
+Git repository and a Markdown or text issue, Sage creates an isolated clone,
+runs one software-engineering agent against it through bounded tools, and
+persists the candidate patch. The local command does not modify the source
+checkout or interact with GitHub.
+
+The V1.0 GitHub-native migration is now in progress. Its implemented foundation
+can validate Issue-comment events, call GitHub through a bounded typed REST
+client, authorize maintainers, reject existing Sage branches/PRs, and create or
+reuse a gate status. The context builder, solver/publisher lifecycle, composite
+actions, and installable workflow are not yet available, so `/sage solve` must
+not be enabled in a production workflow. See
+[`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact status and
+offline checks.
 
 ## Architecture
 
@@ -98,6 +107,13 @@ checks, and starts the solve. See
 [`specs/06_V0.1_testing.md`](specs/06_V0.1_testing.md) for V0.1-specific graph
 and migration checks.
 
+Developers can verify the current V1.0 GitHub controller foundation without a
+GitHub token, Docker, network call, or model call:
+
+```bash
+make github-test
+```
+
 ## Backend setup
 
 Install the locked Python environment from the repository root:
@@ -175,6 +191,12 @@ uv run --project apps/agent pytest
 uv run --project apps/agent python -m compileall -q apps/agent/src
 ```
 
+Run only the current offline GitHub integration and CLI checks with:
+
+```bash
+make github-test
+```
+
 The unit suite uses temporary repositories and fakes at provider and Docker
 boundaries; it does not make paid API calls.
 
@@ -203,11 +225,14 @@ npm run build
   artifacts.
 - **V0.1 — project-owned runtime:** replaces the bootstrap Agents SDK adapter
   with an explicit, tested LangGraph state machine while preserving V0 behavior.
-- **V1 — GitHub Actions integration:** later work will add authorized issue
-  triggers, pinned GitHub checkout, branch publishing, and draft pull requests
-  around the existing controller and sandbox.
+- **V1 — GitHub Actions integration (in progress):** event validation, the
+  model-free authorization/duplicate gate, REST boundary, status reuse, and
+  safe Actions outputs are implemented. Context assembly, solve orchestration,
+  branch publication, draft PRs, composite actions, and the enabled workflow
+  remain.
 - **V2 — multi-agent workflow:** later work will extend project-owned
   orchestration with exploration, implementation, and review roles.
 
-V0 deliberately contains no GitHub App, Actions workflow, HTTP API, database,
-queue, checkpoint persistence, or multi-agent flow.
+Sage still contains no GitHub App, enabled Actions workflow, database, queue,
+checkpoint persistence, or multi-agent flow. V1.0's project-owned REST client
+is used only by the trusted controller boundary.
