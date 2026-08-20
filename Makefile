@@ -16,9 +16,9 @@ RUN_DIR ?=
 TEST_COMMAND ?= python3 -m unittest discover -v
 DEBUG_FLAG :=
 
-.PHONY: help env setup bootstrap first-run doctor sandbox-build sandbox-smoke \
-	test github-test compile check graph new-issue solve solve-debug run-status \
-	run-test
+.PHONY: help env setup bootstrap first-run doctor github-doctor sandbox-build \
+	sandbox-smoke test github-test github-event-check actions-check v1-check \
+	compile check graph new-issue solve solve-debug run-status run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -37,6 +37,10 @@ help: ## Show the available commands and variables.
 		'  make sandbox-smoke    Verify tools inside the network-disabled sandbox.' \
 		'  make check            Run unit tests and compile the Python package.' \
 		'  make github-test      Run the offline V1.0 GitHub gate checks.' \
+		'  make github-event-check EVENT=...  Classify an event fixture offline.' \
+		'  make actions-check     Validate V1.0 action/workflow syntax and policy.' \
+		'  make v1-check          Run all deterministic V1.0 checks.' \
+		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
 		'' \
 		'Manual solve:' \
@@ -216,7 +220,30 @@ test: ## Run deterministic unit tests (no API call required).
 github-test: ## Run deterministic GitHub integration tests (no live API/model call).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest "$(AGENT_PROJECT)/tests/integrations/github" \
+		"$(AGENT_PROJECT)/tests/workflow/test_github_issue.py" \
 		"$(AGENT_PROJECT)/tests/test_cli.py"
+
+github-event-check: ## Parse and classify a local event fixture without API/model calls.
+	@set -euo pipefail; \
+	if [[ -z "$(EVENT)" ]]; then \
+		echo "ERROR: EVENT is required. Example: make github-event-check EVENT=apps/agent/tests/fixtures/github/issue_solve.json" >&2; \
+		exit 1; \
+	fi; \
+	cd "$(ROOT_DIR)"; \
+	uv run --project "$(AGENT_PROJECT)" sage github event-check --event-file "$(EVENT)"
+
+actions-check: ## Validate composite action/workflow syntax and security invariants.
+	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" \
+		pytest "$(AGENT_PROJECT)/tests/actions"
+
+v1-check: ## Run complete deterministic backend, GitHub, and Actions checks.
+	@$(MAKE) --no-print-directory check
+	@$(MAKE) --no-print-directory github-test
+	@$(MAKE) --no-print-directory actions-check
+
+github-doctor: ## Diagnose the installed GitHub workflow without printing secrets.
+	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" \
+		python -m sage.integrations.github.doctor
 
 compile: ## Compile all backend Python modules.
 	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" python -m compileall -q "$(AGENT_PROJECT)/src"

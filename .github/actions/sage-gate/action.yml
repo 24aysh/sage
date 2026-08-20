@@ -1,0 +1,79 @@
+name: Sage authorization gate
+description: Authorize, deduplicate, or finalize one Sage Issue invocation.
+
+inputs:
+  github-token:
+    description: Job-scoped GitHub token.
+    required: true
+  operation:
+    description: Trusted controller operation (gate or finalize).
+    required: false
+    default: gate
+
+outputs:
+  should-run:
+    description: Whether the separate solve job may run.
+    value: ${{ steps.controller.outputs.should_run }}
+  base-sha:
+    description: Exact accepted base commit.
+    value: ${{ steps.controller.outputs.base_sha }}
+  base-branch:
+    description: Validated default branch.
+    value: ${{ steps.controller.outputs.base_branch }}
+  status-comment-id:
+    description: Bot-owned invocation status comment.
+    value: ${{ steps.controller.outputs.status_comment_id }}
+  issue-number:
+    description: Validated Issue number.
+    value: ${{ steps.controller.outputs.issue_number }}
+  existing-pr-url:
+    description: Existing matching Pull Request when found.
+    value: ${{ steps.controller.outputs.existing_pr_url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python 3.14
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.14"
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        version: "0.11.5"
+        enable-cache: false
+
+    - name: Install locked Sage controller
+      shell: bash
+      env:
+        SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
+        UV_CACHE_DIR: ${{ runner.temp }}/sage-uv-cache
+      run: |
+        set -euo pipefail
+        uv sync --frozen --project "$SAGE_CONTROLLER_ROOT/apps/agent"
+
+    - name: Run trusted controller
+      id: controller
+      shell: bash
+      env:
+        SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
+        SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
+        SAGE_OPERATION: ${{ inputs.operation }}
+        UV_CACHE_DIR: ${{ runner.temp }}/sage-uv-cache
+      run: |
+        set -euo pipefail
+        case "$SAGE_OPERATION" in
+          gate)
+            uv run --frozen --project "$SAGE_CONTROLLER_ROOT/apps/agent" \
+              sage github gate
+            ;;
+          finalize)
+            uv run --frozen --project "$SAGE_CONTROLLER_ROOT/apps/agent" \
+              sage github finalize
+            ;;
+          *)
+            echo "ERROR: unsupported trusted controller operation" >&2
+            exit 1
+            ;;
+        esac
