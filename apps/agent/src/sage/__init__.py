@@ -1,3 +1,3 @@
-"""Sage V0 package."""
+"""Sage issue-to-PR engineering agent."""
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
