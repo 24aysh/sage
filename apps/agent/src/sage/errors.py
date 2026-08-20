@@ -88,3 +88,19 @@ class GitHubGateError(GitHubIntegrationError):
 
 class GitHubContextError(GitHubIntegrationError):
     """Raised when GitHub Issue context cannot be assembled safely."""
+
+
+class GitHubStatusError(GitHubIntegrationError):
+    """Raised when an invocation status cannot be transitioned safely."""
+
+
+class GitHubPublicationError(GitHubIntegrationError):
+    """Raised when a solved candidate cannot be published safely."""
+
+
+class GitHubOrphanBranchError(GitHubPublicationError):
+    """Raised when a branch was pushed but its Pull Request was not created."""
+
+    def __init__(self, message: str, *, branch_url: str) -> None:
+        super().__init__(message)
+        self.branch_url = branch_url

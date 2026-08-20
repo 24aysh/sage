@@ -18,11 +18,15 @@ from sage.domain.results import SolveResult
 from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
-from sage.integrations.github.events import load_issue_comment_event
+from sage.integrations.github.events import (
+    load_issue_comment_event,
+    load_issue_comment_fixture,
+)
 from sage.integrations.github.gate import evaluate_gate
 from sage.integrations.github.outputs import write_gate_outputs
 from sage.runtimes.langgraph import LangGraphRuntime
 from sage.workflow import solve_issue
+from sage.workflow.github_issue import finalize_github_issue, run_github_issue
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +97,39 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gate_parser.add_argument("--debug", action="store_true")
     gate_parser.set_defaults(handler=_run_github_gate)
+
+    solve_github_parser = github_subparsers.add_parser(
+        "solve",
+        help="Run one accepted GitHub Issue solve and publication lifecycle.",
+    )
+    solve_github_parser.add_argument("--event-file", type=Path)
+    solve_github_parser.add_argument("--target-checkout", required=True, type=Path)
+    solve_github_parser.add_argument("--context-dir", required=True, type=Path)
+    solve_github_parser.add_argument("--diagnostics-dir", required=True, type=Path)
+    solve_github_parser.add_argument("--runner-temp", required=True, type=Path)
+    solve_github_parser.add_argument(
+        "--status-comment-id",
+        required=True,
+        type=_positive_integer,
+    )
+    solve_github_parser.add_argument("--debug", action="store_true")
+    solve_github_parser.set_defaults(handler=_run_github_solve)
+
+    finalize_parser = github_subparsers.add_parser(
+        "finalize",
+        help="Repair a non-terminal GitHub invocation status safely.",
+    )
+    finalize_parser.add_argument("--event-file", type=Path)
+    finalize_parser.add_argument("--debug", action="store_true")
+    finalize_parser.set_defaults(handler=_run_github_finalize)
+
+    event_parser = github_subparsers.add_parser(
+        "event-check",
+        help="Classify one local event fixture without GitHub or a model.",
+    )
+    event_parser.add_argument("--event-file", required=True, type=Path)
+    event_parser.add_argument("--debug", action="store_true")
+    event_parser.set_defaults(handler=_run_github_event_check)
     return parser
 
 
@@ -142,6 +179,77 @@ def _run_github_gate(arguments: argparse.Namespace) -> int:
     write_gate_outputs(result, output_path.expanduser())
     print(f"GitHub gate outcome: {result.outcome.value}")
     return 0
+
+
+def _run_github_solve(arguments: argparse.Namespace) -> int:
+    """Run the trusted GitHub solve controller."""
+
+    environment = _github_environment(arguments.event_file)
+    github_settings = GitHubSettings.from_env(environment)
+    invocation = load_issue_comment_event(environment)
+    client = RestGitHubClient(github_settings)
+    result = asyncio.run(
+        run_github_issue(
+            invocation,
+            client,
+            github_settings,
+            target_checkout=arguments.target_checkout,
+            context_dir=arguments.context_dir,
+            diagnostics_dir=arguments.diagnostics_dir,
+            runner_temp=arguments.runner_temp,
+            status_comment_id=arguments.status_comment_id,
+            settings_factory=lambda: Settings.from_env(environment),
+        )
+    )
+    print(f"GitHub solve outcome: {result.outcome.value}")
+    return 0
+
+
+def _run_github_finalize(arguments: argparse.Namespace) -> int:
+    """Repair an interrupted invocation without loading model configuration."""
+
+    environment = _github_environment(arguments.event_file)
+    settings = GitHubSettings.from_env(environment)
+    invocation = load_issue_comment_event(environment)
+    client = RestGitHubClient(settings)
+    finalize_github_issue(
+        invocation,
+        client,
+        max_comment_pages=settings.max_comment_pages,
+    )
+    print("GitHub finalizer completed.")
+    return 0
+
+
+def _run_github_event_check(arguments: argparse.Namespace) -> int:
+    """Classify a fixture through the production event parser offline."""
+
+    invocation = load_issue_comment_fixture(arguments.event_file)
+    if invocation.issue.is_pull_request:
+        classification = "ignored_pull_request_comment"
+    elif invocation.command is None:
+        classification = "ignored_ordinary_comment"
+    else:
+        classification = f"supported_{invocation.command.value}"
+    print(f"GitHub event classification: {classification}")
+    return 0
+
+
+def _github_environment(event_file: Path | None) -> dict[str, str]:
+    environment = dict(os.environ)
+    if event_file is not None:
+        environment["GITHUB_EVENT_PATH"] = str(event_file.expanduser().resolve())
+    return environment
+
+
+def _positive_integer(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("expected a positive integer") from error
+    if parsed < 1 or str(parsed) != value:
+        raise argparse.ArgumentTypeError("expected a positive integer")
+    return parsed
 
 
 def _configure_logging(*, debug: bool) -> None:
