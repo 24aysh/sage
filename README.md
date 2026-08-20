@@ -1,54 +1,52 @@
 # Sage
 
-Sage is a GitHub-native issue-to-PR engineering agent in development. Its
+Sage is a GitHub-native issue-to-draft-PR engineering agent. Its
 core design keeps model judgment separate from deterministic repository work:
 the agent decides what to inspect and change, while project-owned tools perform
 every read, search, command, patch, and Git operation.
 
-The currently supported end-to-end milestone is **V0.1: a local, single-agent
-issue solver with a project-owned LangGraph runtime**. Given a committed local
-Git repository and a Markdown or text issue, Sage creates an isolated clone,
-runs one software-engineering agent against it through bounded tools, and
-persists the candidate patch. The local command does not modify the source
-checkout or interact with GitHub.
+V1.0 adds the complete GitHub Actions controller: an authorized maintainer can
+comment exactly `/sage solve` or `/sage fix` on an Issue, Sage solves against a
+recorded default-branch commit in its isolated Docker workspace, then publishes
+a creation-only `sage/issue-<number>` branch and draft Pull Request. Gate,
+solve, and finalizer jobs have separate permissions; action dependencies are
+pinned to immutable commits; the model secret is available only to the solve
+job; and the sandbox receives neither GitHub nor model credentials.
 
-The V1.0 GitHub-native migration is now in progress. Its implemented foundation
-can validate Issue-comment events, call GitHub through a bounded typed REST
-client, authorize maintainers, reject existing Sage branches/PRs, and create or
-reuse a gate status. It can also build a bounded current-Issue task file outside
-the target checkout. The solver/publisher lifecycle, composite actions, and
-installable workflow are not yet available, so `/sage solve` must not be
-enabled in a production workflow. See
-[`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact status and
-offline checks.
+The local V0.1 command remains supported and does not modify the source checkout
+or interact with GitHub. The V1.0 implementation passes deterministic local
+verification; a controlled live canary is still required before production
+rollout. See [`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact
+installation, user-side setup, and canary procedure.
 
 ## Architecture
 
 ```text
-local repository + issue.md
-             │
-             ▼
-       sage CLI
-             │
-             ▼
-     provider-neutral workflow
-        ┌────┴───────────────┐
-        ▼                    ▼
- AgentRuntime protocol   workspace manager
-        │                isolated Git clone
- LangGraphRuntime            │
- custom StateGraph           │
-        └────────┬───────────┘
-                 ▼
-       repository tool layer
- tree · search · read · patch · command · diff
-                 │
-                 ▼
-       disposable Docker sandbox
-       /workspace · no network · no provider secret
-                 │
-                 ▼
-       candidate clone + diff.patch
+GitHub Issue comment                   local repository + issue.md
+        │                                          │
+        ▼                                          ▼
+authorize · deduplicate · exact base            sage CLI
+        │                                          │
+        └──────────────────┬───────────────────────┘
+                           ▼
+                 provider-neutral workflow
+                    ┌──────┴────────────┐
+                    ▼                   ▼
+             AgentRuntime          workspace manager
+             LangGraphRuntime      isolated Git clone
+                    └──────┬────────────┘
+                           ▼
+                 repository tool layer
+          tree · search · read · patch · command · diff
+                           │
+                           ▼
+                 disposable Docker sandbox
+             /workspace · no network · no credentials
+                           │
+               ┌───────────┴────────────┐
+               ▼                        ▼
+     local candidate artifacts   validated creation-only branch
+                                    + draft Pull Request
 ```
 
 The project-owned runtime under
@@ -108,12 +106,15 @@ checks, and starts the solve. See
 [`specs/06_V0.1_testing.md`](specs/06_V0.1_testing.md) for V0.1-specific graph
 and migration checks.
 
-Developers can verify the current V1.0 GitHub controller foundation without a
-GitHub token, Docker, network call, or model call:
+Developers can verify the V1.0 GitHub controller, publisher, composite actions,
+and workflow policies without a GitHub token, network call, or model call:
 
 ```bash
-make github-test
+make v1-check
 ```
+
+Use `make github-doctor` to check the local workflow installation and Docker
+availability before a live canary.
 
 ## Backend setup
 
@@ -226,14 +227,16 @@ npm run build
   artifacts.
 - **V0.1 — project-owned runtime:** replaces the bootstrap Agents SDK adapter
   with an explicit, tested LangGraph state machine while preserving V0 behavior.
-- **V1 — GitHub Actions integration (in progress):** event validation, the
-  model-free authorization/duplicate gate, REST boundary, status reuse, and
-  safe Actions outputs are implemented. Bounded Issue-context assembly is also
-  implemented. Solve orchestration, branch publication, draft PRs, composite
-  actions, and the enabled workflow remain.
+- **V1 — GitHub Actions integration:** event validation, model-free
+  authorization/deduplication, bounded Issue context, solve orchestration,
+  creation-only branch publication, draft PR reconciliation, terminal status
+  repair, pinned composite actions, and the installable workflow are
+  implemented. Production enablement remains gated on the documented live
+  canary.
 - **V2 — multi-agent workflow:** later work will extend project-owned
   orchestration with exploration, implementation, and review roles.
 
-Sage still contains no GitHub App, enabled Actions workflow, database, queue,
-checkpoint persistence, or multi-agent flow. V1.0's project-owned REST client
-is used only by the trusted controller boundary.
+Sage still contains no long-running GitHub App service, database, queue,
+checkpoint persistence, auto-merge, or multi-agent flow. V1.0 uses the
+job-scoped GitHub Actions token through its project-owned REST client at the
+trusted controller boundary.
