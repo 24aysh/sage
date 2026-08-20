@@ -716,7 +716,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pyyaml", specifier = ">=6.0.3,<7" },
+    { name = "pyyaml", specifier = "==6.0.3" },
 ]
 
 [[package]]
