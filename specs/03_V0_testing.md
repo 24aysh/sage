@@ -164,7 +164,7 @@ existing file. Open `.env` in a text editor and set at least:
 
 ```dotenv
 OPENAI_API_KEY=replace-with-your-real-key
-OPENAI_MODEL=gpt-5.3-codex
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 Use a model that is available to the API project associated with the key. The
@@ -200,7 +200,7 @@ is sourced by the shell.
 
 ```bash
 export OPENAI_API_KEY="replace-with-your-real-key"
-export OPENAI_MODEL="gpt-5.3-codex"
+export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 If a `.env` file exists, Makefile commands source it after inheriting the shell

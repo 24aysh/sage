@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.3-codex' }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
     permissions:
       contents: write
       issues: write

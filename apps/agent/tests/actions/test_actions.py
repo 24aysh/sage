@@ -89,7 +89,7 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         "pull-requests": "write",
     }
     assert jobs["solve"]["env"] == {
-        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.3-codex' }}"
+        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}"
     }
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",

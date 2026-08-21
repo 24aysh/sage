@@ -1,6 +1,6 @@
 import pytest
 
-from sage.config import Settings
+from sage.config import DEFAULT_OPENAI_MODEL, Settings
 from sage.errors import ConfigurationError
 
 
@@ -26,6 +26,12 @@ def test_settings_loads_all_supported_environment_values() -> None:
     assert settings.sandbox_image == "custom:v0"
     assert settings.command_timeout_seconds == 20
     assert settings.max_tool_output_chars == 2_000
+
+
+def test_settings_uses_the_project_default_openai_model() -> None:
+    settings = Settings.from_env({"OPENAI_API_KEY": "secret"})
+
+    assert settings.openai_model == DEFAULT_OPENAI_MODEL == "gpt-5.4-mini"
 
 
 def test_settings_rejects_missing_api_key() -> None:

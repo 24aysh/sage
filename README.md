@@ -15,11 +15,9 @@ job; and the sandbox receives neither GitHub nor model credentials.
 
 The local V0.1 command remains supported and does not modify the source checkout
 or interact with GitHub. The V1.0 implementation passes deterministic local
-verification. The first controlled live canary reached OpenAI but was rejected
-with HTTP 429 before a model response; Sage now distinguishes exhausted
-credits/account limits from temporary request/token throttling and reports the
-matching safe recovery action. The remaining canary is still required before
-production rollout. See
+verification and a controlled GitHub canary has produced a correct draft Pull
+Request from an Issue command. Earlier canaries also verified safe recovery for
+provider HTTP 429 responses and actionable Git whitespace diagnostics. See
 [`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact installation,
 user-side setup, provider recovery, and canary procedure.
 
@@ -142,7 +140,7 @@ dependency:
 
 ```bash
 export OPENAI_API_KEY="your-key"
-export OPENAI_MODEL="gpt-5.3-codex"
+export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 All supported values are documented in [.env.example](.env.example). The model
@@ -152,7 +150,7 @@ and accepts values from `0` through `10`. Increasing retries does not repair
 exhausted credits or organization/project limits.
 
 The GitHub workflow reads the optional non-secret `OPENAI_MODEL` repository
-variable, defaulting to `gpt-5.3-codex`. Each solve logs the selected model and
+variable, defaulting to `gpt-5.4-mini`. Each solve logs the selected model and
 a safe API-key state (`configured`, `accepted_by_api`, or
 `invalid_or_unauthorized`) without logging the key or a key fingerprint. A 429
 log also includes only OpenAI's available retry/reset headers.
@@ -218,7 +216,7 @@ make github-test
 ```
 
 The unit suite uses temporary repositories and fakes at provider and Docker
-boundaries; it does not make paid API calls.
+boundaries; it does not make live external API calls.
 
 ## Landing page
 
@@ -249,9 +247,8 @@ npm run build
   authorization/deduplication, bounded Issue context, solve orchestration,
   creation-only branch publication, draft PR reconciliation, terminal status
   repair, pinned composite actions, and the installable workflow are
-  implemented. The first live run reached the provider boundary; production
-  enablement remains gated on resolving the provider's HTTP 429 rejection and
-  completing the documented canary.
+  implemented. A controlled live run completed the provider, sandbox,
+  publication, and draft Pull Request path successfully.
 - **V2 — multi-agent workflow:** later work will extend project-owned
   orchestration with exploration, implementation, and review roles.
 
@@ -259,3 +256,10 @@ Sage still contains no long-running GitHub App service, database, queue,
 checkpoint persistence, auto-merge, or multi-agent flow. V1.0 uses the
 job-scoped GitHub Actions token through its project-owned REST client at the
 trusted controller boundary.
+
+Sage uses standard GitHub Actions and the job-scoped `GITHUB_TOKEN`; it does
+not require a paid GitHub API, personal access token, or separately hosted
+service. Model access comes from the operator-provided `OPENAI_API_KEY`. Sage
+does not enable billing or purchase capacity; whether that account's model
+allocation is free, credit-backed, or billable is controlled by the account
+owner and OpenAI.
