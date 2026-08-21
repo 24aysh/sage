@@ -151,6 +151,17 @@ OpenAI failures use bounded SDK backoff; `OPENAI_MAX_RETRIES` defaults to `2`
 and accepts values from `0` through `10`. Increasing retries does not repair
 exhausted credits or organization/project limits.
 
+The GitHub workflow reads the optional non-secret `OPENAI_MODEL` repository
+variable, defaulting to `gpt-5.3-codex`. Each solve logs the selected model and
+a safe API-key state (`configured`, `accepted_by_api`, or
+`invalid_or_unauthorized`) without logging the key or a key fingerprint. A 429
+log also includes only OpenAI's available retry/reset headers.
+
+Before publication, Sage keeps Git's whitespace gate enabled. If it rejects a
+candidate, the Actions error includes bounded, control-safe Git stderr/stdout so
+the offending filename and line remain visible. The coding agent is also told
+to run `git diff --check HEAD --` and remove transient caches before finishing.
+
 ## Solve an issue
 
 ```bash
