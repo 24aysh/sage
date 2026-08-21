@@ -1,0 +1,102 @@
+name: Sage Issue solver
+description: Solve one authorized Issue and publish a deterministic draft PR.
+
+inputs:
+  github-token:
+    description: Job-scoped GitHub token.
+    required: true
+  openai-api-key:
+    description: Model credential scoped to the solve controller step.
+    required: true
+  openai-max-retries:
+    description: Bounded OpenAI SDK retries for temporary rate limits.
+    required: false
+    default: "2"
+  base-sha:
+    description: Exact SHA accepted by the gate.
+    required: true
+  status-comment-id:
+    description: Bot-owned invocation status comment ID.
+    required: true
+
+outputs:
+  diagnostics-path:
+    description: Runner-owned allowlisted diagnostics directory.
+    value: ${{ steps.paths.outputs.diagnostics_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Define runner-owned paths
+      id: paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "diagnostics_path=$RUNNER_TEMP/sage-diagnostics" >> "$GITHUB_OUTPUT"
+
+    - name: Check out the exact target commit
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ inputs.base-sha }}
+        path: sage-target
+        fetch-depth: 0
+        persist-credentials: false
+        token: ${{ inputs.github-token }}
+
+    - name: Set up Python 3.14
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.14"
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        version: "0.11.5"
+        enable-cache: false
+
+    - name: Install locked Sage controller
+      shell: bash
+      env:
+        SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
+        UV_CACHE_DIR: ${{ runner.temp }}/sage-uv-cache
+      run: |
+        set -euo pipefail
+        uv sync --frozen --project "$SAGE_CONTROLLER_ROOT/apps/agent"
+
+    - name: Build trusted Sage sandbox image
+      shell: bash
+      env:
+        SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
+        SAGE_SANDBOX_IMAGE: sage-sandbox:v1
+      run: |
+        set -euo pipefail
+        docker build \
+          --tag "$SAGE_SANDBOX_IMAGE" \
+          --file "$SAGE_CONTROLLER_ROOT/docker/sandbox/Dockerfile" \
+          "$SAGE_CONTROLLER_ROOT"
+
+    - name: Solve and publish the authorized Issue
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
+        SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
+        SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
+        SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
+        SAGE_TARGET_CHECKOUT: ${{ github.workspace }}/sage-target
+        SAGE_CONTEXT_DIR: ${{ runner.temp }}/sage-context
+        SAGE_DIAGNOSTICS_DIR: ${{ runner.temp }}/sage-diagnostics
+        SAGE_RUNNER_TEMP: ${{ runner.temp }}
+        SAGE_RUNS_DIR: ${{ runner.temp }}/sage-runs
+        SAGE_SANDBOX_IMAGE: sage-sandbox:v1
+        UV_CACHE_DIR: ${{ runner.temp }}/sage-uv-cache
+      run: |
+        set -euo pipefail
+        uv run --frozen --project "$SAGE_CONTROLLER_ROOT/apps/agent" \
+          sage github solve \
+          --target-checkout "$SAGE_TARGET_CHECKOUT" \
+          --context-dir "$SAGE_CONTEXT_DIR" \
+          --diagnostics-dir "$SAGE_DIAGNOSTICS_DIR" \
+          --runner-temp "$SAGE_RUNNER_TEMP" \
+          --status-comment-id "$SAGE_STATUS_COMMENT_ID"

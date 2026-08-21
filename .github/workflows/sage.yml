@@ -1,0 +1,102 @@
+name: Sage Issue Solver
+
+"on":
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: >-
+    ${{
+      (github.event.issue.pull_request == null &&
+       (github.event.comment.body == '/sage solve' ||
+        github.event.comment.body == '/sage fix'))
+      && format('sage-{0}-issue-{1}', github.event.repository.id, github.event.issue.number)
+      || format('sage-{0}-comment-{1}', github.event.repository.id, github.event.comment.id)
+    }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Authorize Sage request
+    if: >-
+      github.event.issue.pull_request == null &&
+      (github.event.comment.body == '/sage solve' ||
+       github.event.comment.body == '/sage fix')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    outputs:
+      should-run: ${{ steps.gate.outputs.should-run }}
+      base-sha: ${{ steps.gate.outputs.base-sha }}
+      base-branch: ${{ steps.gate.outputs.base-branch }}
+      status-comment-id: ${{ steps.gate.outputs.status-comment-id }}
+      issue-number: ${{ steps.gate.outputs.issue-number }}
+      existing-pr-url: ${{ steps.gate.outputs.existing-pr-url }}
+    steps:
+      - name: Authorize and deduplicate
+        id: gate
+        uses: 24aysh/sage/.github/actions/sage-gate@9556a8b5ec722d7acdaac0d056464ced40d1e6ca # V1.0
+        with:
+          github-token: ${{ github.token }}
+
+  solve:
+    name: Solve and publish draft PR
+    needs: gate
+    if: needs.gate.outputs.should-run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Solve the accepted Issue
+        id: solve
+        uses: 24aysh/sage/.github/actions/sage-solve@9556a8b5ec722d7acdaac0d056464ced40d1e6ca # V1.0
+        with:
+          github-token: ${{ github.token }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
+          base-sha: ${{ needs.gate.outputs.base-sha }}
+          status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
+
+      - name: Upload allowlisted Sage diagnostics
+        if: always() && steps.solve.outputs.diagnostics-path != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sage-issue-${{ needs.gate.outputs.issue-number }}-run-${{ github.run_id }}
+          path: |
+            ${{ steps.solve.outputs.diagnostics-path }}/metadata.json
+            ${{ steps.solve.outputs.diagnostics-path }}/github.json
+            ${{ steps.solve.outputs.diagnostics-path }}/agent-final.json
+            ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json
+            ${{ steps.solve.outputs.diagnostics-path }}/diff.patch
+          if-no-files-found: ignore
+          retention-days: 7
+          include-hidden-files: false
+
+  finalize:
+    name: Finalize interrupted Sage request
+    needs: [gate, solve]
+    if: >-
+      always() &&
+      needs.gate.outputs.should-run == 'true' &&
+      needs.gate.outputs.status-comment-id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Preserve or repair terminal status
+        uses: 24aysh/sage/.github/actions/sage-gate@9556a8b5ec722d7acdaac0d056464ced40d1e6ca # V1.0
+        with:
+          github-token: ${{ github.token }}
+          operation: finalize

@@ -49,6 +49,22 @@ class AgentRuntimeError(SageError):
     """Raised when the configured agent runtime fails."""
 
 
+class ModelAuthenticationError(AgentRuntimeError):
+    """Raised when the model provider rejects configured authentication."""
+
+
+class ModelAPIError(AgentRuntimeError):
+    """Raised when an authenticated model API request is rejected."""
+
+
+class ModelQuotaError(AgentRuntimeError):
+    """Raised when model credits or configured account limits are exhausted."""
+
+
+class ModelRateLimitError(AgentRuntimeError):
+    """Raised when a temporary model rate limit outlives bounded retries."""
+
+
 class ArtifactError(SageError):
     """Raised when run artifacts cannot be persisted."""
 
@@ -88,3 +104,19 @@ class GitHubGateError(GitHubIntegrationError):
 
 class GitHubContextError(GitHubIntegrationError):
     """Raised when GitHub Issue context cannot be assembled safely."""
+
+
+class GitHubStatusError(GitHubIntegrationError):
+    """Raised when an invocation status cannot be transitioned safely."""
+
+
+class GitHubPublicationError(GitHubIntegrationError):
+    """Raised when a solved candidate cannot be published safely."""
+
+
+class GitHubOrphanBranchError(GitHubPublicationError):
+    """Raised when a branch was pushed but its Pull Request was not created."""
+
+    def __init__(self, message: str, *, branch_url: str) -> None:
+        super().__init__(message)
+        self.branch_url = branch_url

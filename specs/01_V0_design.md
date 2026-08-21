@@ -312,7 +312,7 @@ Sage V0
 
 Run ID: 20260816T020712Z-a81f093c
 Base SHA: 9c21c0e
-Model: gpt-5.3-codex
+Model: gpt-5.4-mini
 Workspace: .sage/runs/20260816T020712Z-a81f093c/repo
 
 Agent completed.
@@ -455,7 +455,7 @@ The Agents SDK is intentionally temporary.
 Default model:
 
 ```text
-gpt-5.3-codex
+gpt-5.4-mini
 ```
 
 Configuration:
@@ -784,7 +784,7 @@ from pydantic import BaseModel
 
 class Settings(BaseModel):
     openai_api_key: str
-    openai_model: str = "gpt-5.3-codex"
+    openai_model: str = "gpt-5.4-mini"
 
     max_turns: int = 30
 
@@ -801,7 +801,7 @@ Environment variables:
 
 ```dotenv
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.3-codex
+OPENAI_MODEL=gpt-5.4-mini
 
 SAGE_MAX_TURNS=30
 SAGE_RUNS_DIR=.sage/runs
@@ -1957,7 +1957,7 @@ Example metadata:
   "created_at": "2026-08-16T02:07:12+05:30",
   "base_ref": "HEAD",
   "base_sha": "9c21c0e",
-  "model": "gpt-5.3-codex",
+  "model": "gpt-5.4-mini",
   "sandbox_image": "sage-sandbox:v0"
 }
 ```
@@ -2066,7 +2066,7 @@ Sage V0
 
 Run: 20260816T020712Z-a81f093c
 Base: 9c21c0e
-Model: gpt-5.3-codex
+Model: gpt-5.4-mini
 
 Changed files:
   src/cache.py
@@ -2175,7 +2175,7 @@ Create:
 
 ```dotenv
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.3-codex
+OPENAI_MODEL=gpt-5.4-mini
 
 SAGE_MAX_TURNS=30
 SAGE_RUNS_DIR=.sage/runs

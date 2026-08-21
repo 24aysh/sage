@@ -195,7 +195,7 @@ Pydantic `Settings` model. Secrets are not passed to the repository container.
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | required | API credential used by the host runtime |
-| `OPENAI_MODEL` | `gpt-5.3-codex` | model used by the V0 coding agent |
+| `OPENAI_MODEL` | `gpt-5.4-mini` | model used by the V0 coding agent |
 | `SAGE_MAX_TURNS` | `30` | maximum SDK agent turns |
 | `SAGE_RUNS_DIR` | `.sage/runs` | local artifact root |
 | `SAGE_SANDBOX_IMAGE` | `sage-sandbox:v0` | default Docker image |
@@ -229,7 +229,7 @@ Set the required credential and, optionally, select a different model:
 
 ```bash
 export OPENAI_API_KEY="your-key"
-export OPENAI_MODEL="gpt-5.3-codex"
+export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 Run a solve:
@@ -511,7 +511,7 @@ uv run --project apps/agent sage --help
 
 The test suite completed with 68 passing tests. The default Docker image also
 built successfully, and a start/execute/stop smoke test completed successfully.
-No paid live OpenAI solve was run as part of deterministic verification. A
+No live OpenAI solve was run as part of deterministic verification. A
 separate live `gpt-5.4-mini` calculator solve later completed successfully
 through the Responses API and passed both documented addition assertions.
 

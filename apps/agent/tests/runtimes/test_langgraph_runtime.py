@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,13 @@ from sage.config import Settings
 from sage.domain.requests import PreparedRun
 from sage.domain.results import AgentFinalOutput
 from sage.domain.runtime import RuntimeContext
-from sage.errors import AgentRuntimeError
+from sage.errors import (
+    AgentRuntimeError,
+    ModelAPIError,
+    ModelAuthenticationError,
+    ModelQuotaError,
+    ModelRateLimitError,
+)
 from sage.runtimes.langgraph.graph import GRAPH_NAME
 from sage.runtimes.langgraph.runtime import LangGraphRuntime, recursion_limit
 from sage.runtimes.langgraph.tools import build_tools
@@ -65,6 +72,7 @@ def test_default_model_uses_explicit_settings(monkeypatch, settings: Settings) -
     assert captured == {
         "model": settings.openai_model,
         "api_key": settings.openai_api_key,
+        "max_retries": settings.openai_max_retries,
         "use_responses_api": True,
     }
 
@@ -109,8 +117,14 @@ def test_locked_chat_openai_builds_responses_request_with_tools_and_output(
 def test_runtime_binds_tools_and_invokes_graph_with_explicit_limits(
     tmp_path: Path,
     monkeypatch,
+    caplog,
 ) -> None:
-    settings = Settings(openai_api_key="test", max_turns=7)
+    caplog.set_level(logging.INFO, logger="sage.runtimes.langgraph.runtime")
+    settings = Settings(
+        openai_api_key="must-not-be-logged",
+        openai_model="logged-model",
+        max_turns=7,
+    )
     bound_model = object()
     model = BindingModel(bound_model)
     graph = FakeGraph(result={"final_output": {"summary": "done"}})
@@ -158,6 +172,15 @@ def test_runtime_binds_tools_and_invokes_graph_with_explicit_limits(
     assert "Work only through the provided repository tools." in str(
         initial_message.content
     )
+    assert (
+        "OpenAI request configuration: model='logged-model' "
+        "api_key_status=configured validation=pending" in caplog.text
+    )
+    assert (
+        "OpenAI request completed: model='logged-model' "
+        "api_key_status=accepted_by_api" in caplog.text
+    )
+    assert settings.openai_api_key not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -186,6 +209,159 @@ def test_runtime_wraps_graph_failures_with_chaining(
         asyncio.run(runtime.solve(issue_text="issue", context=_context(tmp_path, settings)))
 
     assert raised.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    ("code", "error_type", "expected_error", "message"),
+    [
+        (
+            "credit_balance_exhausted",
+            "insufficient_quota",
+            ModelQuotaError,
+            "credits or configured spend/usage limits",
+        ),
+        (
+            "rate_limit_exceeded",
+            "requests",
+            ModelRateLimitError,
+            "rate limits remained active",
+        ),
+        (
+            None,
+            "insufficient_quota",
+            ModelQuotaError,
+            "credits or configured spend/usage limits",
+        ),
+    ],
+)
+def test_runtime_classifies_openai_rate_limit_failures(
+    tmp_path: Path,
+    monkeypatch,
+    code: str | None,
+    error_type: str,
+    expected_error: type[AgentRuntimeError],
+    message: str,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO, logger="sage.runtimes.langgraph.runtime")
+
+    class FakeResponse:
+        headers = {
+            "retry-after": "2",
+            "x-ratelimit-reset-requests": "2s",
+            "x-ratelimit-reset-tokens": "45s",
+            "x-ratelimit-reset-project-tokens": "3s",
+        }
+
+    class FakeRateLimitError(Exception):
+        def __init__(self, message: str) -> None:
+            super().__init__(message)
+            self.code = code
+            self.type = error_type
+            self.response = FakeResponse()
+
+    error = FakeRateLimitError("provider payload must not be surfaced")
+    graph = FakeGraph(error=error)
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.RateLimitError",
+        FakeRateLimitError,
+    )
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.build_graph",
+        lambda **kwargs: graph,
+    )
+    settings = Settings(openai_api_key="test")
+    runtime = LangGraphRuntime(
+        settings,
+        model=BindingModel(object()),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(expected_error, match=message) as raised:
+        asyncio.run(
+            runtime.solve(issue_text="issue", context=_context(tmp_path, settings))
+        )
+
+    assert raised.value.__cause__ is error
+    assert "provider payload" not in str(raised.value)
+    assert "api_key_status=accepted_by_api" in caplog.text
+    assert "retry_after='2'" in caplog.text
+    assert "reset_requests='2s'" in caplog.text
+    assert "reset_tokens='45s'" in caplog.text
+    assert "reset_project_tokens='3s'" in caplog.text
+
+
+def test_runtime_classifies_openai_authentication_failures(
+    tmp_path: Path,
+    monkeypatch,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO, logger="sage.runtimes.langgraph.runtime")
+
+    class FakeAuthenticationError(Exception):
+        pass
+
+    error = FakeAuthenticationError("credential detail must stay private")
+    graph = FakeGraph(error=error)
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.AuthenticationError",
+        FakeAuthenticationError,
+    )
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.build_graph",
+        lambda **kwargs: graph,
+    )
+    settings = Settings(openai_api_key="must-not-be-logged")
+    runtime = LangGraphRuntime(
+        settings,
+        model=BindingModel(object()),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ModelAuthenticationError, match="configured API key"):
+        asyncio.run(
+            runtime.solve(issue_text="issue", context=_context(tmp_path, settings))
+        )
+
+    assert "api_key_status=invalid_or_unauthorized" in caplog.text
+    assert "category=openai_authentication" in caplog.text
+    assert settings.openai_api_key not in caplog.text
+    assert "credential detail" not in caplog.text
+
+
+def test_runtime_logs_authenticated_openai_api_rejections(
+    tmp_path: Path,
+    monkeypatch,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO, logger="sage.runtimes.langgraph.runtime")
+
+    class FakeAPIStatusError(Exception):
+        status_code = 404
+
+    error = FakeAPIStatusError("provider response must stay private")
+    graph = FakeGraph(error=error)
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.APIStatusError",
+        FakeAPIStatusError,
+    )
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.build_graph",
+        lambda **kwargs: graph,
+    )
+    settings = Settings(openai_api_key="must-not-be-logged")
+    runtime = LangGraphRuntime(
+        settings,
+        model=BindingModel(object()),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ModelAPIError, match="HTTP 404"):
+        asyncio.run(
+            runtime.solve(issue_text="issue", context=_context(tmp_path, settings))
+        )
+
+    assert "api_key_status=accepted_by_api" in caplog.text
+    assert "category=openai_api status_code=404" in caplog.text
+    assert settings.openai_api_key not in caplog.text
+    assert "provider response" not in caplog.text
 
 
 def test_runtime_preserves_existing_agent_runtime_errors(

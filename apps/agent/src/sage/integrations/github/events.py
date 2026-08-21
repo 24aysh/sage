@@ -85,6 +85,34 @@ def load_issue_comment_event(
 
     values = os.environ if environ is None else environ
     event_path = Path(_required_environment(values, "GITHUB_EVENT_PATH"))
+    payload = _load_event_payload(event_path)
+    return parse_issue_comment_event(payload, values)
+
+
+def load_issue_comment_fixture(event_path: Path) -> GitHubInvocation:
+    """Classify a local fixture through the production parser without APIs."""
+
+    payload = _load_event_payload(event_path.expanduser().resolve())
+    try:
+        parsed = _IssueCommentPayload.model_validate(payload)
+    except ValidationError as error:
+        raise GitHubEventError(
+            "GitHub event payload is missing required fields."
+        ) from error
+    environment = {
+        "GITHUB_EVENT_NAME": "issue_comment",
+        "GITHUB_REPOSITORY": parsed.repository.full_name,
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_RUN_ID": "1",
+        "GITHUB_SERVER_URL": GITHUB_WEB_URL,
+        "GITHUB_SHA": "0" * 40,
+    }
+    return parse_issue_comment_event(payload, environment)
+
+
+def _load_event_payload(event_path: Path) -> object:
+    """Read one bounded UTF-8 JSON event file."""
+
     try:
         size = event_path.stat().st_size
         if size > MAX_EVENT_BYTES:
@@ -96,8 +124,7 @@ def load_issue_comment_event(
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise GitHubEventError("Unable to read the GitHub event payload.") from error
-
-    return parse_issue_comment_event(payload, values)
+    return payload
 
 
 def parse_issue_comment_event(

@@ -8,8 +8,8 @@ from sage.integrations.github.client import GitHubClient
 from sage.integrations.github.gate_models import GateOutcome, GateResult
 from sage.integrations.github.models import GitHubInvocation
 from sage.integrations.github.status import (
-    STATUS_BOT_LOGIN,
-    has_invocation_marker,
+    find_invocation_status,
+    has_terminal_status,
     render_gate_status,
 )
 
@@ -81,12 +81,14 @@ def _create_or_reuse_status(
     body: str,
     max_comment_pages: int,
 ) -> GitHubIssueCommentSnapshot:
-    existing = _find_status_comment(
+    existing = find_invocation_status(
         invocation,
         client,
         max_comment_pages=max_comment_pages,
     )
     if existing is not None:
+        if has_terminal_status(existing.body):
+            return existing
         return client.update_issue_comment(
             invocation.repository,
             existing.comment_id,
@@ -103,7 +105,7 @@ def _create_or_reuse_status(
         if not error.ambiguous:
             raise
 
-    reconciled = _find_status_comment(
+    reconciled = find_invocation_status(
         invocation,
         client,
         max_comment_pages=max_comment_pages,
@@ -115,39 +117,6 @@ def _create_or_reuse_status(
         invocation.issue.number,
         body,
     )
-
-
-def _find_status_comment(
-    invocation: GitHubInvocation,
-    client: GitHubClient,
-    *,
-    max_comment_pages: int,
-) -> GitHubIssueCommentSnapshot | None:
-    first_page = client.list_issue_comments(
-        invocation.repository,
-        invocation.issue.number,
-        page=1,
-        per_page=100,
-    )
-    oldest_page = max(1, first_page.last_page - max_comment_pages + 1)
-    for page_number in range(first_page.last_page, oldest_page - 1, -1):
-        page = (
-            first_page
-            if page_number == 1
-            else client.list_issue_comments(
-                invocation.repository,
-                invocation.issue.number,
-                page=page_number,
-                per_page=100,
-            )
-        )
-        for comment in reversed(page.comments):
-            if comment.author_login == STATUS_BOT_LOGIN and has_invocation_marker(
-                comment.body,
-                invocation.comment.comment_id,
-            ):
-                return comment
-    return None
 
 
 def _result(

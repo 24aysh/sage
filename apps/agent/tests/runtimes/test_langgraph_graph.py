@@ -133,6 +133,11 @@ def test_agent_node_prepends_system_prompt_and_uses_ainvoke() -> None:
     assert update["pending_output"] == response.additional_kwargs["parsed"]
 
 
+def test_agent_prompt_requires_candidate_hygiene_validation() -> None:
+    assert "git diff --check HEAD --" in CODING_AGENT_INSTRUCTIONS
+    assert "remove transient caches and build outputs" in CODING_AGENT_INSTRUCTIONS
+
+
 def test_agent_node_refuses_an_extra_model_turn() -> None:
     model = ScriptedModel([_final_message("unused")])
     node = build_agent_node(model=model, max_turns=2)

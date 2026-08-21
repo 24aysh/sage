@@ -164,7 +164,7 @@ existing file. Open `.env` in a text editor and set at least:
 
 ```dotenv
 OPENAI_API_KEY=replace-with-your-real-key
-OPENAI_MODEL=gpt-5.3-codex
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 Use a model that is available to the API project associated with the key. The
@@ -200,7 +200,7 @@ is sourced by the shell.
 
 ```bash
 export OPENAI_API_KEY="replace-with-your-real-key"
-export OPENAI_MODEL="gpt-5.3-codex"
+export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 If a `.env` file exists, Makefile commands source it after inheriting the shell
@@ -256,7 +256,7 @@ make check
 ```
 
 This runs the unit suite and Python bytecode compilation. The unit tests fake
-the Docker and model boundaries, so they do not make paid model calls.
+the Docker and model boundaries, so they do not make live model calls.
 
 Expected result:
 
@@ -495,7 +495,7 @@ files if you do not already have a fixture.
 
 ### 5.4 Prove that `REPO` resolves to the external repository
 
-Run these checks before a paid API call:
+Run these checks before a live API call:
 
 ```bash
 export TARGET_TOPLEVEL="$(git -C "$TARGET_REPO" rev-parse --show-toplevel)"

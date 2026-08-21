@@ -1,13 +1,14 @@
 [project]
 name = "sage"
-version = "0.1.0"
-description = "A local, execution-grounded GitHub issue solver"
+version = "1.0.0"
+description = "A GitHub-native, execution-grounded issue-to-draft-PR agent"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "langchain-core>=1.0,<2",
     "langchain-openai>=1.0,<2",
     "langgraph>=1.0,<2",
+    "openai>=3.1,<4",
     "pydantic>=2.13.4",
 ]
 
@@ -17,6 +18,7 @@ sage = "sage.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
+    "pyyaml==6.0.3",
 ]
 
 [build-system]
