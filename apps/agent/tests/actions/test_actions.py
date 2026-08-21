@@ -34,12 +34,19 @@ def test_composite_action_manifests_are_valid_and_pinned() -> None:
 
 def test_gate_action_is_model_secret_free_and_uses_pinned_source() -> None:
     body = (ACTIONS / "sage-gate" / "action.yml").read_text(encoding="utf-8")
+    document = yaml.safe_load(body)
 
     assert "OPENAI_API_KEY" not in body
     assert "openai-api-key" not in body
     assert "github.action_path" in body
     assert "sage github gate" in body
     assert "sage github finalize" in body
+    setup_uv = next(
+        step
+        for step in document["runs"]["steps"]
+        if step.get("uses", "").startswith("astral-sh/setup-uv@")
+    )
+    assert setup_uv["with"]["ignore-empty-workdir"] is True
 
 
 def test_solve_action_uses_exact_credential_free_target_checkout() -> None:

@@ -28,6 +28,7 @@ from sage.integrations.github.models import (
     validate_github_url,
 )
 from sage.repository.host_git import run_git
+from sage.repository.output import truncate_text
 
 _CONTROLLER_BASE_REF = "refs/sage/controller/default-branch"
 _PULL_REQUEST_MARKER_PREFIX = "<!-- sage-pull-request:issue-"
@@ -51,6 +52,8 @@ _MAX_UNCERTAINTY_ITEMS = 10
 _MAX_UNCERTAINTY_CHARS = 500
 _MAX_CHANGED_FILES = 500
 _MAX_PATH_CHARS = 1_000
+_MAX_GIT_DIAGNOSTIC_CHARS = 4_000
+_MAX_GIT_DIAGNOSTIC_LINES = 40
 
 
 class BaseMovement(StrEnum):
@@ -658,8 +661,60 @@ def _required_git(
         environment=environment,
     )
     if result.returncode != 0:
-        raise GitHubPublicationError(failure)
+        diagnostics = _git_failure_diagnostics(result)
+        message = failure
+        if diagnostics:
+            message = (
+                f"{failure}\n"
+                f"Git exited with code {result.returncode}. Diagnostics:\n"
+                f"{diagnostics}"
+            )
+        raise GitHubPublicationError(message)
     return result
+
+
+def _git_failure_diagnostics(result: CompletedProcess[str]) -> str:
+    """Return bounded, control-safe Git streams for trusted controller logs."""
+
+    sections: list[str] = []
+    for label, stream in (("stderr", result.stderr), ("stdout", result.stdout)):
+        lines = _safe_git_lines(stream)
+        if lines:
+            sections.append(f"Git {label}:\n" + "\n".join(lines))
+    if not sections:
+        return ""
+
+    bounded = truncate_text(
+        "\n".join(sections),
+        _MAX_GIT_DIAGNOSTIC_CHARS - (2 * _MAX_GIT_DIAGNOSTIC_LINES),
+    )
+    # Prefix every line so untrusted filenames cannot become GitHub Actions
+    # workflow commands such as ::warning:: when the CLI prints the error.
+    return "\n".join(f"  {line}" for line in bounded.splitlines())
+
+
+def _safe_git_lines(value: str) -> list[str]:
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    safe = "".join(
+        character
+        if character in "\n\t" or (ord(character) >= 32 and ord(character) != 127)
+        else "�"
+        for character in normalized
+    ).strip("\n")
+    if not safe:
+        return []
+
+    lines = safe.split("\n")
+    if len(lines) <= _MAX_GIT_DIAGNOSTIC_LINES:
+        return lines
+    head_count = _MAX_GIT_DIAGNOSTIC_LINES // 2
+    tail_count = _MAX_GIT_DIAGNOSTIC_LINES - head_count - 1
+    omitted = len(lines) - head_count - tail_count
+    return [
+        *lines[:head_count],
+        f"... [{omitted} diagnostic lines omitted] ...",
+        *lines[-tail_count:],
+    ]
 
 
 def _git(

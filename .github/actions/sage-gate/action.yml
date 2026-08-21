@@ -43,6 +43,7 @@ runs:
       with:
         version: "0.11.5"
         enable-cache: false
+        ignore-empty-workdir: true
 
     - name: Install locked Sage controller
       shell: bash

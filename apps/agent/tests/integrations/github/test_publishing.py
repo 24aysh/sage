@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from sage.integrations.github import publishing
 from sage.domain.results import SolveResult
 from sage.errors import (
     GitHubApiError,
@@ -318,6 +319,57 @@ def test_candidate_diff_or_local_config_mutation_is_rejected(tmp_path: Path) -> 
             runner_temp=tmp_path / "runner",
             remote_url_factory=lambda _: str(remote),
         )
+
+
+def test_candidate_whitespace_failure_includes_git_diagnostics(tmp_path: Path) -> None:
+    remote, _seed, candidate, base_sha = _repositories(tmp_path)
+    (candidate / "app.py").write_text("value = 2 \n", encoding="utf-8")
+    _git(candidate, "add", "--intent-to-add", "--all", "--", ".")
+
+    with pytest.raises(GitHubPublicationError) as raised:
+        publish_solve_result(
+            _invocation(base_sha),
+            _solve_result(candidate, base_sha),
+            FakeClient(),
+            github_token="token",
+            runner_temp=tmp_path / "runner",
+            remote_url_factory=lambda _: str(remote),
+        )
+
+    message = str(raised.value)
+    assert "candidate diff failed Git whitespace validation" in message
+    assert "Git exited with code" in message
+    assert "Git stdout:" in message
+    assert "app.py:1: trailing whitespace" in message
+
+
+def test_required_git_reports_both_streams_without_log_commands(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def failed_git(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=["git"],
+            returncode=2,
+            stdout="stdout detail\n::warning::untrusted filename",
+            stderr="stderr detail\x1b[31m",
+        )
+
+    monkeypatch.setattr(publishing, "_git", failed_git)
+
+    with pytest.raises(GitHubPublicationError) as raised:
+        publishing._required_git(
+            ["diff", "--check"],
+            repository=tmp_path,
+            timeout_seconds=30,
+            failure="Validation failed.",
+        )
+
+    message = str(raised.value)
+    assert "Git stderr:" in message and "stderr detail�[31m" in message
+    assert "Git stdout:" in message and "stdout detail" in message
+    assert "\n::warning::" not in message
+    assert "\n  ::warning::untrusted filename" in message
 
 
 def test_pull_request_rendering_is_bounded_and_sanitized(tmp_path: Path) -> None:
