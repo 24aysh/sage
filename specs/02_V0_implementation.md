@@ -511,7 +511,7 @@ uv run --project apps/agent sage --help
 
 The test suite completed with 68 passing tests. The default Docker image also
 built successfully, and a start/execute/stop smoke test completed successfully.
-No paid live OpenAI solve was run as part of deterministic verification. A
+No live OpenAI solve was run as part of deterministic verification. A
 separate live `gpt-5.4-mini` calculator solve later completed successfully
 through the Responses API and passed both documented addition assertions.
 

@@ -256,7 +256,7 @@ make check
 ```
 
 This runs the unit suite and Python bytecode compilation. The unit tests fake
-the Docker and model boundaries, so they do not make paid model calls.
+the Docker and model boundaries, so they do not make live model calls.
 
 Expected result:
 
@@ -495,7 +495,7 @@ files if you do not already have a fixture.
 
 ### 5.4 Prove that `REPO` resolves to the external repository
 
-Run these checks before a paid API call:
+Run these checks before a live API call:
 
 ```bash
 export TARGET_TOPLEVEL="$(git -C "$TARGET_REPO" rev-parse --show-toplevel)"

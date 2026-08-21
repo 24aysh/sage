@@ -19,7 +19,9 @@ verification and a controlled GitHub canary has produced a correct draft Pull
 Request from an Issue command. Earlier canaries also verified safe recovery for
 provider HTTP 429 responses and actionable Git whitespace diagnostics. See
 [`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact installation,
-user-side setup, provider recovery, and canary procedure.
+user-side setup, provider recovery, and canary procedure. The completed goals,
+as-built contracts, release audit, and merge handoff are recorded in
+[`specs/12_V1.0_as_built_and_release.md`](specs/12_V1.0_as_built_and_release.md).
 
 ## Architecture
 
