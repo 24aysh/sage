@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "c24f1cf6fede2e69013b8229fe6c369cddefcf94"
+SAGE_ACTION_SHA = "0a6a53a4aa85e75b7beb80158fe0d7c2800f8cae"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -110,6 +110,7 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
     assert "pull_request_target" not in body
     assert "cancel-in-progress: false" in body
 
