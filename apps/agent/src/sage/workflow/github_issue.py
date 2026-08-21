@@ -22,6 +22,8 @@ from sage.errors import (
     GitHubIntegrationError,
     GitHubOrphanBranchError,
     GitHubPublicationError,
+    ModelAPIError,
+    ModelAuthenticationError,
     ModelQuotaError,
     ModelRateLimitError,
     RepositoryError,
@@ -357,6 +359,10 @@ def finalize_github_issue(
 def classify_github_failure(error: Exception) -> str:
     """Map internal failures to concise non-secret Issue categories."""
 
+    if isinstance(error, ModelAuthenticationError):
+        return "openai_authentication"
+    if isinstance(error, ModelAPIError):
+        return "openai_api"
     if isinstance(error, ModelQuotaError):
         return "openai_quota"
     if isinstance(error, ModelRateLimitError):

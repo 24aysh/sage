@@ -81,6 +81,9 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         "issues": "write",
         "pull-requests": "write",
     }
+    assert jobs["solve"]["env"] == {
+        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.3-codex' }}"
+    }
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",
         "pull-requests": "read",
@@ -110,6 +113,7 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
     assert "pull_request_target" not in body
     assert "cancel-in-progress: false" in body

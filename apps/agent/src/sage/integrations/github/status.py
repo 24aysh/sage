@@ -246,6 +246,20 @@ def render_workflow_status(
 
 
 def _failure_recovery(category: str) -> str:
+    if category == "openai_authentication":
+        return (
+            "OpenAI rejected the configured credential or its authorization. "
+            "Replace the `OPENAI_API_KEY` Actions secret with an active key and "
+            "confirm its project, model access, and IP policy before creating "
+            "one new exact command comment."
+        )
+    if category == "openai_api":
+        return (
+            "OpenAI accepted the credential but rejected the model request. "
+            "Inspect the safe model and HTTP status in the Actions log, correct "
+            "model access or request configuration, and then create one new "
+            "exact command comment."
+        )
     if category == "openai_quota":
         return (
             "OpenAI rejected model access because API credits or an "

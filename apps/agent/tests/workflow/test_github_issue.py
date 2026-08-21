@@ -11,6 +11,8 @@ from sage.domain.results import SolveResult
 from sage.errors import (
     AgentRuntimeError,
     GitHubPublicationError,
+    ModelAPIError,
+    ModelAuthenticationError,
     ModelQuotaError,
     ModelRateLimitError,
 )
@@ -341,6 +343,8 @@ def test_finalizer_preserves_terminal_status_and_reconciles_pull_request(tmp_pat
 @pytest.mark.parametrize(
     ("error", "category"),
     [
+        (ModelAuthenticationError("failure"), "openai_authentication"),
+        (ModelAPIError("failure"), "openai_api"),
         (ModelQuotaError("failure"), "openai_quota"),
         (ModelRateLimitError("failure"), "openai_rate_limit"),
         (AgentRuntimeError("failure"), "agent_runtime"),

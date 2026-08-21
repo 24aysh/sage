@@ -8,13 +8,19 @@ import logging
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphRecursionError
-from openai import RateLimitError
+from openai import APIStatusError, AuthenticationError, RateLimitError
 from pydantic import ValidationError
 
 from sage.config import Settings
 from sage.domain.results import AgentFinalOutput
 from sage.domain.runtime import RuntimeContext
-from sage.errors import AgentRuntimeError, ModelQuotaError, ModelRateLimitError
+from sage.errors import (
+    AgentRuntimeError,
+    ModelAPIError,
+    ModelAuthenticationError,
+    ModelQuotaError,
+    ModelRateLimitError,
+)
 from sage.runtimes.langgraph.graph import GRAPH_NAME, build_graph
 from sage.runtimes.langgraph.prompt import build_initial_message
 from sage.runtimes.langgraph.tools import build_tools
@@ -65,6 +71,12 @@ class LangGraphRuntime:
                 "max_model_turns": self._settings.max_turns,
             },
         )
+        logger.info(
+            "OpenAI request configuration: model=%r api_key_status=configured "
+            "validation=pending",
+            self._settings.openai_model,
+            extra={"run_id": context.prepared_run.run_id},
+        )
         try:
             tools = build_tools(context)
             model_with_tools = self._model.bind_tools(
@@ -93,15 +105,37 @@ class LangGraphRuntime:
             final_output = AgentFinalOutput.model_validate(result.get("final_output"))
         except asyncio.CancelledError:
             raise
-        except RateLimitError as error:
-            quota_exhausted = is_openai_quota_error(error)
+        except AuthenticationError as error:
             logger.warning(
-                "agent graph failed",
+                "OpenAI request rejected: model=%r "
+                "api_key_status=invalid_or_unauthorized "
+                "category=openai_authentication",
+                self._settings.openai_model,
                 extra={
                     "run_id": context.prepared_run.run_id,
-                    "failure_category": (
-                        "openai_quota" if quota_exhausted else "openai_rate_limit"
-                    ),
+                    "failure_category": "openai_authentication",
+                },
+            )
+            raise ModelAuthenticationError(
+                "OpenAI rejected the configured API key or its authorization."
+            ) from error
+        except RateLimitError as error:
+            quota_exhausted = is_openai_quota_error(error)
+            category = "openai_quota" if quota_exhausted else "openai_rate_limit"
+            reset_headers = openai_rate_limit_reset_headers(error)
+            logger.warning(
+                "OpenAI request rejected: model=%r "
+                "api_key_status=accepted_by_api category=%s retry_after=%r "
+                "reset_requests=%r reset_tokens=%r reset_project_tokens=%r",
+                self._settings.openai_model,
+                category,
+                reset_headers["retry_after"],
+                reset_headers["requests"],
+                reset_headers["tokens"],
+                reset_headers["project_tokens"],
+                extra={
+                    "run_id": context.prepared_run.run_id,
+                    "failure_category": category,
                 },
             )
             if quota_exhausted:
@@ -112,6 +146,21 @@ class LangGraphRuntime:
             raise ModelRateLimitError(
                 "OpenAI request or token rate limits remained active after "
                 "bounded retries."
+            ) from error
+        except APIStatusError as error:
+            logger.warning(
+                "OpenAI request rejected: model=%r "
+                "api_key_status=accepted_by_api category=openai_api "
+                "status_code=%s",
+                self._settings.openai_model,
+                error.status_code,
+                extra={
+                    "run_id": context.prepared_run.run_id,
+                    "failure_category": "openai_api",
+                },
+            )
+            raise ModelAPIError(
+                f"OpenAI API rejected the request (HTTP {error.status_code})."
             ) from error
         except AgentRuntimeError:
             logger.warning(
@@ -150,6 +199,12 @@ class LangGraphRuntime:
             ) from error
 
         logger.info(
+            "OpenAI request completed: model=%r "
+            "api_key_status=accepted_by_api",
+            self._settings.openai_model,
+            extra={"run_id": context.prepared_run.run_id},
+        )
+        logger.info(
             "agent graph completed",
             extra={
                 "run_id": context.prepared_run.run_id,
@@ -169,3 +224,25 @@ def is_openai_quota_error(error: RateLimitError) -> bool:
     """Distinguish non-retryable OpenAI quota failures from temporary 429s."""
 
     return error.code in _OPENAI_QUOTA_CODES or error.type == "insufficient_quota"
+
+
+def openai_rate_limit_reset_headers(error: RateLimitError) -> dict[str, str | None]:
+    """Return only bounded, non-secret provider reset headers for diagnostics."""
+
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", {})
+    return {
+        "retry_after": _bounded_header(headers.get("retry-after")),
+        "requests": _bounded_header(headers.get("x-ratelimit-reset-requests")),
+        "tokens": _bounded_header(headers.get("x-ratelimit-reset-tokens")),
+        "project_tokens": _bounded_header(
+            headers.get("x-ratelimit-reset-project-tokens")
+        ),
+    }
+
+
+def _bounded_header(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized[:100] or None

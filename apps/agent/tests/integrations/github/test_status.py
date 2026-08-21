@@ -114,6 +114,8 @@ def test_workflow_status_is_bounded_sanitized_and_terminal() -> None:
 @pytest.mark.parametrize(
     ("category", "expected_guidance"),
     [
+        ("openai_authentication", "Replace the `OPENAI_API_KEY` Actions secret"),
+        ("openai_api", "OpenAI accepted the credential"),
         ("openai_quota", "Restore billing or the applicable limit"),
         ("openai_rate_limit", "Wait for the limit window to reset"),
         ("agent_runtime", "Inspect the linked run"),
