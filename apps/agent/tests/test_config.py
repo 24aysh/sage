@@ -9,6 +9,7 @@ def test_settings_loads_all_supported_environment_values() -> None:
         {
             "OPENAI_API_KEY": "secret",
             "OPENAI_MODEL": "test-model",
+            "OPENAI_MAX_RETRIES": "4",
             "SAGE_MAX_TURNS": "12",
             "SAGE_RUNS_DIR": "/tmp/test-runs",
             "SAGE_SANDBOX_IMAGE": "custom:v0",
@@ -19,6 +20,7 @@ def test_settings_loads_all_supported_environment_values() -> None:
 
     assert settings.openai_api_key == "secret"
     assert settings.openai_model == "test-model"
+    assert settings.openai_max_retries == 4
     assert settings.max_turns == 12
     assert str(settings.runs_dir) == "/tmp/test-runs"
     assert settings.sandbox_image == "custom:v0"
@@ -37,5 +39,16 @@ def test_settings_rejects_invalid_bounds() -> None:
             {
                 "OPENAI_API_KEY": "secret",
                 "SAGE_MAX_TURNS": "0",
+            }
+        )
+
+
+@pytest.mark.parametrize("value", ["-1", "11", "invalid"])
+def test_settings_rejects_invalid_openai_retry_limit(value: str) -> None:
+    with pytest.raises(ConfigurationError, match="Invalid Sage configuration"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "secret",
+                "OPENAI_MAX_RETRIES": value,
             }
         )

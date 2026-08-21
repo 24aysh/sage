@@ -8,17 +8,28 @@ import logging
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphRecursionError
+from openai import RateLimitError
 from pydantic import ValidationError
 
 from sage.config import Settings
 from sage.domain.results import AgentFinalOutput
 from sage.domain.runtime import RuntimeContext
-from sage.errors import AgentRuntimeError
+from sage.errors import AgentRuntimeError, ModelQuotaError, ModelRateLimitError
 from sage.runtimes.langgraph.graph import GRAPH_NAME, build_graph
 from sage.runtimes.langgraph.prompt import build_initial_message
 from sage.runtimes.langgraph.tools import build_tools
 
 logger = logging.getLogger(__name__)
+
+_OPENAI_QUOTA_CODES = frozenset(
+    {
+        "credit_balance_exhausted",
+        "insufficient_quota",
+        "organization_spend_limit_exceeded",
+        "organization_usage_limit_exceeded",
+        "project_spend_limit_exceeded",
+    }
+)
 
 
 class LangGraphRuntime:
@@ -33,6 +44,7 @@ class LangGraphRuntime:
         self._model = model or ChatOpenAI(
             model=settings.openai_model,
             api_key=settings.openai_api_key,
+            max_retries=settings.openai_max_retries,
             use_responses_api=True,
         )
 
@@ -81,6 +93,26 @@ class LangGraphRuntime:
             final_output = AgentFinalOutput.model_validate(result.get("final_output"))
         except asyncio.CancelledError:
             raise
+        except RateLimitError as error:
+            quota_exhausted = is_openai_quota_error(error)
+            logger.warning(
+                "agent graph failed",
+                extra={
+                    "run_id": context.prepared_run.run_id,
+                    "failure_category": (
+                        "openai_quota" if quota_exhausted else "openai_rate_limit"
+                    ),
+                },
+            )
+            if quota_exhausted:
+                raise ModelQuotaError(
+                    "OpenAI API credits or configured spend/usage limits are "
+                    "exhausted."
+                ) from error
+            raise ModelRateLimitError(
+                "OpenAI request or token rate limits remained active after "
+                "bounded retries."
+            ) from error
         except AgentRuntimeError:
             logger.warning(
                 "agent graph failed",
@@ -131,3 +163,9 @@ def recursion_limit(max_turns: int) -> int:
     """Return a defensive graph-step limit distinct from model-turn semantics."""
 
     return (2 * max_turns) + 4
+
+
+def is_openai_quota_error(error: RateLimitError) -> bool:
+    """Distinguish non-retryable OpenAI quota failures from temporary 429s."""
+
+    return error.code in _OPENAI_QUOTA_CODES or error.type == "insufficient_quota"

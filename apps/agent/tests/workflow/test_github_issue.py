@@ -8,7 +8,12 @@ import pytest
 
 from sage.config import Settings
 from sage.domain.results import SolveResult
-from sage.errors import AgentRuntimeError, GitHubPublicationError
+from sage.errors import (
+    AgentRuntimeError,
+    GitHubPublicationError,
+    ModelQuotaError,
+    ModelRateLimitError,
+)
 from sage.integrations.github.api_models import (
     GitHubBranchSnapshot,
     GitHubCommentPage,
@@ -336,6 +341,8 @@ def test_finalizer_preserves_terminal_status_and_reconciles_pull_request(tmp_pat
 @pytest.mark.parametrize(
     ("error", "category"),
     [
+        (ModelQuotaError("failure"), "openai_quota"),
+        (ModelRateLimitError("failure"), "openai_rate_limit"),
         (AgentRuntimeError("failure"), "agent_runtime"),
         (GitHubPublicationError("failure"), "publication"),
         (RuntimeError("failure"), "controller_failure"),

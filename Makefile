@@ -114,6 +114,7 @@ first-run: ## Configure, install, build, verify, and solve with one command.
 		export OPENAI_API_KEY; \
 	fi; \
 	: "$${OPENAI_MODEL:=gpt-5.3-codex}"; export OPENAI_MODEL; \
+	: "$${OPENAI_MAX_RETRIES:=2}"; export OPENAI_MAX_RETRIES; \
 	: "$${SAGE_MAX_TURNS:=30}"; export SAGE_MAX_TURNS; \
 	: "$${SAGE_RUNS_DIR:=.sage/runs}"; export SAGE_RUNS_DIR; \
 	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \

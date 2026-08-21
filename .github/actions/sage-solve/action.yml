@@ -8,6 +8,10 @@ inputs:
   openai-api-key:
     description: Model credential scoped to the solve controller step.
     required: true
+  openai-max-retries:
+    description: Bounded OpenAI SDK retries for temporary rate limits.
+    required: false
+    default: "2"
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -76,6 +80,7 @@ runs:
       shell: bash
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..

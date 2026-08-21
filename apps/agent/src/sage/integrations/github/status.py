@@ -221,12 +221,13 @@ def render_workflow_status(
             f"{_uncertainty_section(remaining_uncertainty)}"
         )
     elif state is WorkflowStatusState.FAILED:
-        category = _safe_markdown(failure_category or "controller_failure", 100)
+        raw_category = failure_category or "controller_failure"
+        category = _safe_markdown(raw_category, 100)
         message = (
             "### Sage: solve failed safely\n\n"
             f"Category: `{category}`. Sage did not overwrite an existing branch "
-            "or push the default branch. Inspect the linked run, correct the "
-            "reported boundary, and then create one new exact command comment."
+            "or push the default branch. "
+            f"{_failure_recovery(raw_category)}"
         )
         if branch_url is not None:
             message += (
@@ -241,6 +242,27 @@ def render_workflow_status(
         f"{invocation_marker(invocation.comment.comment_id)}\n"
         f"{_STATE_MARKER_PREFIX}{state.value} -->\n"
         f"{message}\n\n[View the Actions run]({invocation.actions_run.html_url})."
+    )
+
+
+def _failure_recovery(category: str) -> str:
+    if category == "openai_quota":
+        return (
+            "OpenAI rejected model access because API credits or an "
+            "organization/project spend or usage limit is exhausted. Restore "
+            "billing or the applicable limit before creating one new exact "
+            "command comment; an immediate rerun will fail again."
+        )
+    if category == "openai_rate_limit":
+        return (
+            "OpenAI request or token limits remained active after bounded "
+            "retries. Wait for the limit window to reset or increase the "
+            "applicable model/project limit, then create one new exact command "
+            "comment."
+        )
+    return (
+        "Inspect the linked run, correct the reported boundary, and then create "
+        "one new exact command comment."
     )
 
 

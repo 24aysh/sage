@@ -44,12 +44,19 @@ def test_gate_action_is_model_secret_free_and_uses_pinned_source() -> None:
 
 def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     body = (ACTIONS / "sage-solve" / "action.yml").read_text(encoding="utf-8")
+    document = yaml.safe_load(body)
 
+    assert document["inputs"]["openai-max-retries"] == {
+        "description": "Bounded OpenAI SDK retries for temporary rate limits.",
+        "required": False,
+        "default": "2",
+    }
     assert "ref: ${{ inputs.base-sha }}" in body
     assert "persist-credentials: false" in body
     assert "fetch-depth: 0" in body
     assert "github.action_path" in body
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
+    assert "OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}" in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
     assert "docker build" in body
     assert "sage github solve" in body

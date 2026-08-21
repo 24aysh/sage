@@ -18,6 +18,7 @@ class Settings(BaseModel):
 
     openai_api_key: str = Field(repr=False)
     openai_model: str = "gpt-5.3-codex"
+    openai_max_retries: int = Field(default=2, ge=0, le=10)
     max_turns: int = Field(default=30, ge=1)
     runs_dir: Path = Path(".sage/runs")
     sandbox_image: str = "sage-sandbox:v0"
@@ -37,6 +38,7 @@ class Settings(BaseModel):
             return cls(
                 openai_api_key=api_key,
                 openai_model=values.get("OPENAI_MODEL", "gpt-5.3-codex"),
+                openai_max_retries=values.get("OPENAI_MAX_RETRIES", "2"),
                 max_turns=values.get("SAGE_MAX_TURNS", "30"),
                 runs_dir=values.get("SAGE_RUNS_DIR", ".sage/runs"),
                 sandbox_image=values.get(

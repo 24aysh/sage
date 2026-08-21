@@ -13,7 +13,7 @@ from sage.config import Settings
 from sage.domain.requests import PreparedRun
 from sage.domain.results import AgentFinalOutput
 from sage.domain.runtime import RuntimeContext
-from sage.errors import AgentRuntimeError
+from sage.errors import AgentRuntimeError, ModelQuotaError, ModelRateLimitError
 from sage.runtimes.langgraph.graph import GRAPH_NAME
 from sage.runtimes.langgraph.runtime import LangGraphRuntime, recursion_limit
 from sage.runtimes.langgraph.tools import build_tools
@@ -65,6 +65,7 @@ def test_default_model_uses_explicit_settings(monkeypatch, settings: Settings) -
     assert captured == {
         "model": settings.openai_model,
         "api_key": settings.openai_api_key,
+        "max_retries": settings.openai_max_retries,
         "use_responses_api": True,
     }
 
@@ -186,6 +187,68 @@ def test_runtime_wraps_graph_failures_with_chaining(
         asyncio.run(runtime.solve(issue_text="issue", context=_context(tmp_path, settings)))
 
     assert raised.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    ("code", "error_type", "expected_error", "message"),
+    [
+        (
+            "credit_balance_exhausted",
+            "insufficient_quota",
+            ModelQuotaError,
+            "credits or configured spend/usage limits",
+        ),
+        (
+            "rate_limit_exceeded",
+            "requests",
+            ModelRateLimitError,
+            "rate limits remained active",
+        ),
+        (
+            None,
+            "insufficient_quota",
+            ModelQuotaError,
+            "credits or configured spend/usage limits",
+        ),
+    ],
+)
+def test_runtime_classifies_openai_rate_limit_failures(
+    tmp_path: Path,
+    monkeypatch,
+    code: str | None,
+    error_type: str,
+    expected_error: type[AgentRuntimeError],
+    message: str,
+) -> None:
+    class FakeRateLimitError(Exception):
+        def __init__(self, message: str) -> None:
+            super().__init__(message)
+            self.code = code
+            self.type = error_type
+
+    error = FakeRateLimitError("provider payload must not be surfaced")
+    graph = FakeGraph(error=error)
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.RateLimitError",
+        FakeRateLimitError,
+    )
+    monkeypatch.setattr(
+        "sage.runtimes.langgraph.runtime.build_graph",
+        lambda **kwargs: graph,
+    )
+    settings = Settings(openai_api_key="test")
+    runtime = LangGraphRuntime(
+        settings,
+        model=BindingModel(object()),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(expected_error, match=message) as raised:
+        asyncio.run(
+            runtime.solve(issue_text="issue", context=_context(tmp_path, settings))
+        )
+
+    assert raised.value.__cause__ is error
+    assert "provider payload" not in str(raised.value)
 
 
 def test_runtime_preserves_existing_agent_runtime_errors(

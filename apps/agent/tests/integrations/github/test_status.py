@@ -111,6 +111,28 @@ def test_workflow_status_is_bounded_sanitized_and_terminal() -> None:
     assert len(body) < 5_000
 
 
+@pytest.mark.parametrize(
+    ("category", "expected_guidance"),
+    [
+        ("openai_quota", "Restore billing or the applicable limit"),
+        ("openai_rate_limit", "Wait for the limit window to reset"),
+        ("agent_runtime", "Inspect the linked run"),
+    ],
+)
+def test_failed_status_has_category_specific_recovery(
+    category: str,
+    expected_guidance: str,
+) -> None:
+    body = render_workflow_status(
+        _invocation(),
+        WorkflowStatusState.FAILED,
+        failure_category=category,
+    )
+
+    assert f"Category: `{category}`" in body
+    assert expected_guidance in body
+
+
 def test_invalid_or_multiple_state_markers_are_not_trusted() -> None:
     assert status_state("<!-- sage-state:unknown -->") is None
     body = (

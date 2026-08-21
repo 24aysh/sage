@@ -49,6 +49,14 @@ class AgentRuntimeError(SageError):
     """Raised when the configured agent runtime fails."""
 
 
+class ModelQuotaError(AgentRuntimeError):
+    """Raised when model credits or configured account limits are exhausted."""
+
+
+class ModelRateLimitError(AgentRuntimeError):
+    """Raised when a temporary model rate limit outlives bounded retries."""
+
+
 class ArtifactError(SageError):
     """Raised when run artifacts cannot be persisted."""
 
