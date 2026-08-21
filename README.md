@@ -15,9 +15,13 @@ job; and the sandbox receives neither GitHub nor model credentials.
 
 The local V0.1 command remains supported and does not modify the source checkout
 or interact with GitHub. The V1.0 implementation passes deterministic local
-verification; a controlled live canary is still required before production
-rollout. See [`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact
-installation, user-side setup, and canary procedure.
+verification. The first controlled live canary reached OpenAI but was rejected
+with HTTP 429 before a model response; Sage now distinguishes exhausted
+credits/account limits from temporary request/token throttling and reports the
+matching safe recovery action. The remaining canary is still required before
+production rollout. See
+[`specs/10_V1.0_testing.md`](specs/10_V1.0_testing.md) for the exact installation,
+user-side setup, provider recovery, and canary procedure.
 
 ## Architecture
 
@@ -142,7 +146,10 @@ export OPENAI_MODEL="gpt-5.3-codex"
 ```
 
 All supported values are documented in [.env.example](.env.example). The model
-can be changed with `OPENAI_MODEL` without changing application code.
+can be changed with `OPENAI_MODEL` without changing application code. Temporary
+OpenAI failures use bounded SDK backoff; `OPENAI_MAX_RETRIES` defaults to `2`
+and accepts values from `0` through `10`. Increasing retries does not repair
+exhausted credits or organization/project limits.
 
 ## Solve an issue
 
@@ -231,8 +238,9 @@ npm run build
   authorization/deduplication, bounded Issue context, solve orchestration,
   creation-only branch publication, draft PR reconciliation, terminal status
   repair, pinned composite actions, and the installable workflow are
-  implemented. Production enablement remains gated on the documented live
-  canary.
+  implemented. The first live run reached the provider boundary; production
+  enablement remains gated on resolving the provider's HTTP 429 rejection and
+  completing the documented canary.
 - **V2 — multi-agent workflow:** later work will extend project-owned
   orchestration with exploration, implementation, and review roles.
 
