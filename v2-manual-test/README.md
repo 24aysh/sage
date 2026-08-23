@@ -4,8 +4,8 @@ This directory is a checked-in, non-sensitive project for a live local V2
 smoke test. The project intentionally contains a one-character calculator bug
 and a failing standard-library test that describes the expected behavior.
 
-From the Sage repository root, configure the three provider keys and approve
-Google model context use in the untracked `.env`, then run:
+From the Sage repository root, configure the OpenAI and Gemini provider keys
+and approve Google model context use in the untracked `.env`, then run:
 
 ```bash
 make v2-first-run
@@ -23,6 +23,6 @@ For a different repository, provide both inputs:
 make v2-first-run REPO=/absolute/path/to/repo ISSUE=/absolute/path/to/issue.md
 ```
 
-This is a live test: it sends the Issue and bounded fixture context to Google,
-OpenAI, and Anthropic and may incur provider charges. The target fails unless
+This is a live test: it sends the Issue and bounded fixture context to Google
+and OpenAI and may incur provider charges. The target fails unless
 the workflow returns a completed, non-empty candidate.

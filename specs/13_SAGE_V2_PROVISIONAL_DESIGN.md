@@ -4,6 +4,11 @@
 >
 > **Research snapshot:** 23 August 2026
 >
+> **Provider-policy update:** The executable prototype no longer uses Anthropic.
+> Planner and Reviewer now default to `google/gemini-3.5-flash`, Solver defaults
+> to `openai/gpt-5.4-mini`, and all role model names are environment-configurable.
+> Claude/Anthropic discussion below is retained only as historical research.
+>
 > **Update:** Mandatory Autonomy Admission / Issue-readiness classification added after research on coding-agent task suitability, ambiguity, and clarification behavior.
 >
 > **Purpose:** Define a concrete, reviewable V2 architecture that evolves the working V1.0 single-agent Sage into a resource-aware multi-agent coding system while preserving V1's GitHub-native security and publication guarantees.

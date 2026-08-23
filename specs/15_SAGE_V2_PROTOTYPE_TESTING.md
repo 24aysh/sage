@@ -8,7 +8,7 @@ Git-derived diff, creation-only branch, and draft Pull Request boundaries. It
 replaces the solve runtime with one sequential route:
 
 ```text
-Gemini Planner -> GPT-5.4 mini Solver -> hard verification -> Claude Reviewer
+Gemini 3.5 Flash Planner -> GPT-5.4 mini Solver -> hard verification -> Gemini 3.5 Flash Reviewer
 ```
 
 The normal ready path uses three model calls. The graph can make one bounded
@@ -23,15 +23,16 @@ runtime.
 
 ## Cost, privacy, and suitability warning
 
-OpenAI and Anthropic API calls may be billed to their respective projects.
-Gemini account terms and data-use behavior depend on the account and service
-tier. Before V2 will run, a repository owner must explicitly set
+OpenAI API calls may be billed to the configured project. Gemini account terms
+and data-use behavior depend on the account and service tier. Before V2 will run,
+a repository owner must explicitly set
 `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true`. That setting acknowledges that Issue
 and bounded repository context may be sent to the configured Google model
-account; it does not detect or change the account's terms.
+account; it does not detect or change the account's terms. It is a Sage privacy
+gate, not a Google API permission or OAuth scope.
 
 Do not enable this profile for repositories whose source, Issue text, or
-discussion is not permitted to be sent to all three configured providers. Do
+discussion is not permitted to be sent to both configured providers. Do
 not paste credentials into Issues, comments, shell commands, logs, fixtures, or
 committed files.
 
@@ -40,10 +41,9 @@ committed files.
 Have the following before a live test:
 
 - Linux with Git, Docker, Python 3.14, and `uv`;
-- access to `google/gemini-3.7-flash` and its listed fallback;
+- access to `google/gemini-3.5-flash` and its listed Planner fallback;
 - access to `openai/gpt-5.4-mini`;
-- access to `anthropic/claude-haiku-4-5`;
-- one API key for Google, OpenAI, and Anthropic;
+- one API key for Google and OpenAI;
 - a small disposable Git repository for local live tests; and
 - repository admin access for a GitHub Actions canary.
 
@@ -63,11 +63,14 @@ screenshots:
 ```dotenv
 GEMINI_API_KEY=<google-api-key>
 OPENAI_API_KEY=<openai-api-key>
-ANTHROPIC_API_KEY=<anthropic-api-key>
 
 SAGE_RUNTIME=v2-prototype
 SAGE_MODEL_PROFILE=constrained-cross-provider
 SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true
+SAGE_V2_PLANNER_MODEL=gemini-3.5-flash
+SAGE_V2_PLANNER_FALLBACK_MODEL=gemini-3.5-flash-lite
+SAGE_V2_SOLVER_MODEL=gpt-5.4-mini
+SAGE_V2_REVIEWER_MODEL=gemini-3.5-flash
 
 SAGE_SANDBOX_IMAGE=sage-sandbox:v0
 SAGE_VERIFICATION_COMMANDS_JSON=[]
@@ -106,7 +109,7 @@ make v2-check
 This covers provider policy, attempt accounting, repository scope safety,
 context bounds, artifacts, hard verification, sequential runtime paths,
 clarification/status behavior, Actions secret policy, and Python compilation.
-It does not contact Google, OpenAI, Anthropic, or GitHub.
+It does not contact Google, OpenAI, or GitHub.
 
 Also keep the rollback baseline green:
 
@@ -129,7 +132,7 @@ parallel, or replanning nodes.
 ## Live test 1: ready three-call Issue
 
 The repository includes a ready-to-run version of this smoke test. Once the
-three keys and `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true` are present in `.env`,
+both keys and `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true` are present in `.env`,
 run from the repository root:
 
 ```bash
@@ -172,7 +175,7 @@ Planner: started stage=intake-planner call=1 attempt=primary provider=google ...
 Planner: finished stage=intake-planner call=1 ... outcome=success ...
 Solver: started stage=solver call=2 attempt=primary provider=openai ...
 Verifier: finished pass=1 status=pass ...
-Reviewer: started stage=review call=3 attempt=primary provider=anthropic ...
+Reviewer: started stage=review call=3 attempt=primary provider=google ...
 ```
 
 Retries, fallbacks, schema repairs, and rereviews appear as separate counted
@@ -207,7 +210,7 @@ make solve REPO=/absolute/path/to/disposable-repo ISSUE=/tmp/sage-v2-ready.md
 Expected result:
 
 - terminal outcome `completed`;
-- one Google Planner call, one OpenAI Solver call, and one Anthropic Reviewer
+- one Google Planner call, one OpenAI Solver call, and one Google Reviewer
   call;
 - `usage.json` contains exactly three successful attempts;
 - the candidate has only `app.py` changed; and
@@ -307,13 +310,13 @@ To confirm provider/model provenance, inspect `usage.json`. The normal rows are:
 
 | Role | Provider | Model |
 | --- | --- | --- |
-| Planner | `google` | `gemini-3.7-flash` |
+| Planner | `google` | `gemini-3.5-flash` |
 | Solver | `openai` | `gpt-5.4-mini` |
-| Reviewer | `anthropic` | `claude-haiku-4-5` |
+| Reviewer | `google` | `gemini-3.5-flash` |
 
-Planner fallback must say `google/gemini-3.5-flash-lite`; Reviewer fallback
-must say `google/gemini-3.5-flash`. There is no Solver fallback. The attempt
-kind must disclose `primary`, `retry`, `fallback`, or `schema_repair`.
+Planner fallback must say `google/gemini-3.5-flash-lite`. Solver and Reviewer
+have no fallback. The attempt kind must disclose `primary`, `retry`, `fallback`,
+or `schema_repair`. Configured overrides must appear truthfully in `usage.json`.
 
 ## CLI exit codes
 
@@ -333,27 +336,29 @@ successfully so maintainers can inspect the safe terminal artifacts.
 
 Use a non-sensitive disposable repository or branch policy first.
 
-1. Add repository secrets `GEMINI_API_KEY`, `OPENAI_API_KEY`, and
-   `ANTHROPIC_API_KEY`.
+1. Add repository secrets `GEMINI_API_KEY` and `OPENAI_API_KEY`.
 2. Set repository variable `SAGE_RUNTIME` to `v2-prototype`.
 3. Set `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED` to `true` only after the repository
    owner approves Google context use.
-4. Ensure the installed Sage action references the implementation's full
+4. Optionally set `SAGE_V2_PLANNER_MODEL`,
+   `SAGE_V2_PLANNER_FALLBACK_MODEL`, `SAGE_V2_SOLVER_MODEL`, and
+   `SAGE_V2_REVIEWER_MODEL`; otherwise the documented defaults are used.
+5. Ensure the installed Sage action references the implementation's full
    40-character pinned commit SHA.
-5. Open one small, explicit Issue and post exactly `/sage solve` from a user
+6. Open one small, explicit Issue and post exactly `/sage solve` from a user
    with write or admin permission.
-6. Confirm the gate accepts one exact base SHA and the solve checks out that
+7. Confirm the gate accepts one exact base SHA and the solve checks out that
    SHA with persisted credentials disabled.
-7. Confirm any created branch is `sage/issue-<number>` and the Pull Request is
+8. Confirm any created branch is `sage/issue-<number>` and the Pull Request is
    draft. Sage must never merge it or mark it ready automatically.
-8. Download the seven-day diagnostics artifact and confirm it contains only
+9. Download the seven-day diagnostics artifact and confirm it contains only
    the allowlisted summaries—not contexts, full logs, the workspace, or keys.
-9. Review `usage.json`, `terminal.json`, the verification summary, and the draft
+10. Review `usage.json`, `terminal.json`, the verification summary, and the draft
    diff before starting another canary.
 
 The gate and finalizer jobs receive no model key. The checkout, dependency
 install, Docker build, Docker container, and artifact-upload steps also receive
-no model key. All three keys are scoped only to the trusted controller solve
+no model key. Both model keys are scoped only to the trusted controller solve
 step; repository commands execute in the network-disabled container without
 those values.
 

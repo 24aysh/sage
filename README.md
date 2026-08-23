@@ -25,7 +25,7 @@ as-built contracts, release audit, and merge handoff are recorded in
 
 An opt-in V2 sequential prototype now adds explicit autonomy admission,
 deterministic repository scouting, a constrained Gemini Planner / GPT Solver /
-Claude Reviewer route, hard verification, bounded repairs, typed
+Gemini Reviewer route, hard verification, bounded repairs, typed
 clarifications, and per-attempt provenance. V1 remains the default. See
 [`specs/15_SAGE_V2_PROTOTYPE_TESTING.md`](specs/15_SAGE_V2_PROTOTYPE_TESTING.md)
 before enabling V2 or making a paid canary call.
@@ -88,6 +88,7 @@ examples/
 - Git
 - Node.js and npm
 - an OpenAI API key
+- a Gemini API key when using V2
 
 The original design targeted Python 3.13; this bootstrap uses Python 3.14 at the
 repository owner's request.
@@ -131,9 +132,9 @@ make v2-check
 make v2-graph
 ```
 
-After configuring all three provider keys and approving Google model context
-use, run the complete live V2 workflow against the checked-in disposable
-fixture:
+After configuring the OpenAI and Gemini provider keys and approving Google
+model context use, run the complete live V2 workflow against the checked-in
+disposable fixture:
 
 ```bash
 make v2-first-run
@@ -184,8 +185,11 @@ export OPENAI_API_KEY="your-key"
 export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
-All supported values are documented in [.env.example](.env.example). The model
-can be changed with `OPENAI_MODEL` without changing application code. Temporary
+All supported values are documented in [.env.example](.env.example). The V1
+model can be changed with `OPENAI_MODEL`. V2 Planner, Planner fallback, Solver,
+and Reviewer models can be changed with `SAGE_V2_PLANNER_MODEL`,
+`SAGE_V2_PLANNER_FALLBACK_MODEL`, `SAGE_V2_SOLVER_MODEL`, and
+`SAGE_V2_REVIEWER_MODEL` without editing application code. Temporary
 OpenAI failures use bounded SDK backoff; `OPENAI_MAX_RETRIES` defaults to `2`
 and accepts values from `0` through `10`. Increasing retries does not repair
 exhausted credits or organization/project limits.

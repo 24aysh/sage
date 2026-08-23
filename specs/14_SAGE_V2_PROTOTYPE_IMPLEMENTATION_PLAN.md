@@ -6,6 +6,12 @@ This is the implementation-ready companion to
 [`13_SAGE_V2_PROVISIONAL_DESIGN.md`](13_SAGE_V2_PROVISIONAL_DESIGN.md) for the
 first Sage V2 prototype.
 
+> **Provider-policy amendment:** The implemented profile supersedes the original
+> Claude policy below. Planner and Reviewer default to
+> `google/gemini-3.5-flash`; Solver defaults to `openai/gpt-5.4-mini`; only
+> Google and OpenAI credentials are required; and role models are configurable
+> through environment settings. Anthropic-specific plan text remains historical.
+
 The plan deliberately implements only the sequential V2 path. It is intended
 to produce an evaluable prototype without worker dispatch, parallel Solver
 calls, independent worker clones, merge orchestration, or replanning. Those
