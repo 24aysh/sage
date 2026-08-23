@@ -67,8 +67,16 @@ class ScriptedProvider:
         self.responses = responses
         self.calls: list[ModelRole] = []
 
-    async def invoke_structured(self, *, role, messages, schema, timeout_seconds):
-        del messages, schema, timeout_seconds
+    async def invoke_structured(
+        self,
+        *,
+        role,
+        messages,
+        schema,
+        timeout_seconds,
+        runnable_config=None,
+    ):
+        del messages, schema, timeout_seconds, runnable_config
         self.calls.append(role)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
@@ -187,10 +195,18 @@ def test_v2_runtime_completes_three_provider_patch_path(
     assert (prepared.run_dir / "review.json").is_file()
     assert (prepared.run_dir / "terminal.json").is_file()
     assert unused_planner_fallback.calls == []
-    assert "Planner: started stage=intake-planner" in caplog.text
-    assert "Solver: started stage=solver" in caplog.text
+    assert "Planner: activity" in caplog.text
+    assert "Task: Assess issue readiness and draft the execution plan" in caplog.text
+    assert "Planner: result" in caplog.text
+    assert "Decision: READY_AUTONOMOUS" in caplog.text
+    assert "Solver: activity" in caplog.text
+    assert "Task: Implement the approved execution plan" in caplog.text
+    assert "Solver: result" in caplog.text
+    assert "Decision: implemented" in caplog.text
     assert "Verifier: finished pass=1 status=pass" in caplog.text
-    assert "Reviewer: started stage=review" in caplog.text
+    assert "Reviewer: activity" in caplog.text
+    assert "Reviewer: result" in caplog.text
+    assert "Decision: pass" in caplog.text
     assert "V2 workflow: finished run=v2-test outcome=completed model_calls=3" in caplog.text
 
 

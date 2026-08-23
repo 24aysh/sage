@@ -12,6 +12,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from sage.config import Settings
 from sage.domain.requests import SolveRequest
 from sage.domain.results import SolveOutcome, SolveResult
@@ -54,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
             logger.exception("Unexpected Sage failure")
         print(f"ERROR: Unexpected failure: {error}", file=sys.stderr)
         return 1
+    finally:
+        _flush_langsmith_traces()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -264,6 +268,20 @@ def _configure_logging(*, debug: bool) -> None:
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+
+def _flush_langsmith_traces() -> None:
+    if os.environ.get("LANGSMITH_TRACING", "false").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return
+    try:
+        wait_for_all_tracers()
+    except Exception:
+        logger.warning("LangSmith trace flush failed; the Sage result is unaffected.")
 
 
 def _validate_prerequisites(

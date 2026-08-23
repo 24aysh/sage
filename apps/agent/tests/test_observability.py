@@ -1,0 +1,38 @@
+from sage.domain.usage import AttemptKind, ModelRole
+from sage.observability import agent_trace_config, workflow_trace_config
+
+
+def test_workflow_trace_has_stable_name_and_safe_correlation_metadata() -> None:
+    config = workflow_trace_config(
+        run_id="run-123",
+        graph_name="sage_v2_prototype",
+        model_profile="constrained-cross-provider",
+    )
+
+    assert config["run_name"] == "Sage V2 Workflow"
+    assert config["tags"] == [
+        "sage-v2",
+        "profile:constrained-cross-provider",
+    ]
+    assert config["metadata"] == {
+        "sage_run_id": "run-123",
+        "sage_graph": "sage_v2_prototype",
+        "sage_runtime": "v2-prototype",
+        "sage_model_profile": "constrained-cross-provider",
+    }
+    assert config["recursion_limit"] == 80
+
+
+def test_agent_trace_omits_missing_local_run_id() -> None:
+    config = agent_trace_config(
+        run_id=None,
+        role=ModelRole.REVIEWER,
+        stage="review",
+        attempt=AttemptKind.PRIMARY,
+        provider="google",
+        model="gemini-3.5-flash",
+        call_number=3,
+    )
+
+    assert config["run_name"] == "Reviewer"
+    assert "sage_run_id" not in config["metadata"]

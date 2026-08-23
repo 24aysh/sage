@@ -14,6 +14,7 @@ from sage.context.compiler import ContextBudgetError, ContextCompiler
 from sage.domain.results import AgentFinalOutput, SolveOutcome
 from sage.domain.runtime import RuntimeContext
 from sage.errors import AgentRuntimeError
+from sage.observability import workflow_trace_config
 from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 from sage.providers.factory import ProviderSet, build_constrained_provider_set
 from sage.providers.manager import ModelCallBudgetError, ModelCallManager
@@ -49,6 +50,7 @@ class V2GraphRuntime:
             settings=self._settings,
             providers=self._providers,
             usage_writer=artifacts.write_usage,
+            run_id=context.prepared_run.run_id,
         )
         services = V2Services(
             settings=self._settings,
@@ -84,7 +86,11 @@ class V2GraphRuntime:
         try:
             result = await graph.ainvoke(
                 {"issue_text": issue_text},
-                config={"recursion_limit": 80},
+                config=workflow_trace_config(
+                    run_id=context.prepared_run.run_id,
+                    graph_name=GRAPH_NAME,
+                    model_profile=self._settings.model_profile,
+                ),
             )
             final = AgentFinalOutput.model_validate(result.get("final_output"))
         except asyncio.CancelledError:

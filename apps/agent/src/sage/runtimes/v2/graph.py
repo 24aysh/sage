@@ -29,6 +29,7 @@ from sage.domain.review import ReviewFailureType, ReviewResult, ReviewVerdict
 from sage.domain.usage import ModelRole
 from sage.domain.verification import VerificationResult, VerificationStatus
 from sage.errors import AgentRuntimeError, RepositoryError
+from sage.observability import log_agent_result
 from sage.providers.manager import ModelCallManager
 from sage.repository import RepositoryTools
 from sage.repository.scout import RepositoryMap, RepositoryScout
@@ -891,7 +892,35 @@ async def _invoke(
         messages=[SystemMessage(content=instructions), HumanMessage(content=content)],
         schema=schema,
     )
-    return schema.model_validate(response.parsed)
+    result = schema.model_validate(response.parsed)
+    _log_structured_result(role, result)
+    return result
+
+
+def _log_structured_result(role: ModelRole, result: object) -> None:
+    if isinstance(result, IntakeResult):
+        details = (
+            ("Decision", result.disposition.value),
+            ("Plan tasks", len(result.plan.tasks) if result.plan is not None else 0),
+            ("Questions", len(result.blocking_questions)),
+            ("Context requests", len(result.retrieval_requests)),
+        )
+    elif isinstance(result, SolverResult):
+        details = (
+            ("Decision", result.status.value),
+            ("Claimed files", len(result.changed_files_claimed)),
+            ("Context requests", len(result.retrieval_requests)),
+        )
+    elif isinstance(result, ReviewResult):
+        details = (
+            ("Decision", result.verdict.value),
+            ("Criteria checked", len(result.criterion_results)),
+            ("Blocking findings", len(result.blocking_findings)),
+            ("Confidence", f"{result.confidence:.2f}"),
+        )
+    else:
+        details = (("Schema", type(result).__name__),)
+    log_agent_result(logger, role=role, details=details)
 
 
 def _persist_context(services: V2Services, packet: ContextPacket) -> str:

@@ -43,15 +43,15 @@ class Provider:
 
 
 def test_model_call_logs_visible_role_activity_without_message_content(caplog) -> None:
+    planner = Provider(
+        "google",
+        "gemini-3.5-flash",
+        [Result(value="ready")],
+    )
     manager = ModelCallManager(
         settings=_settings(),
-        providers=_providers(
-            planner=Provider(
-                "google",
-                "gemini-3.5-flash",
-                [Result(value="ready")],
-            )
-        ),
+        run_id="sage-run-123",
+        providers=_providers(planner=planner),
     )
     caplog.set_level(logging.INFO, logger="sage.providers.manager")
 
@@ -64,15 +64,30 @@ def test_model_call_logs_visible_role_activity_without_message_content(caplog) -
         )
     )
 
-    assert (
-        "Planner: started stage=intake-planner call=1 attempt=primary "
-        "provider=google model=gemini-3.5-flash"
-    ) in caplog.text
-    assert (
-        "Planner: finished stage=intake-planner call=1 attempt=primary "
-        "provider=google model=gemini-3.5-flash outcome=success"
-    ) in caplog.text
+    assert "Planner: activity" in caplog.text
+    assert "Task: Assess issue readiness and draft the execution plan" in caplog.text
+    assert "Stage: intake-planner" in caplog.text
+    assert "Model: google/gemini-3.5-flash" in caplog.text
+    assert "Planner: finished" in caplog.text
+    assert "Status: completed" in caplog.text
     assert "private repository context" not in caplog.text
+    trace_config = planner.calls[0]["runnable_config"]
+    assert trace_config["run_name"] == "Planner"
+    assert trace_config["tags"] == [
+        "sage-agent",
+        "role:planner",
+        "stage:intake-planner",
+        "provider:google",
+    ]
+    assert trace_config["metadata"] == {
+        "sage_role": "planner",
+        "sage_stage": "intake-planner",
+        "sage_attempt": "primary",
+        "sage_provider": "google",
+        "sage_model": "gemini-3.5-flash",
+        "sage_call_number": 1,
+        "sage_run_id": "sage-run-123",
+    }
 
 
 def test_reviewer_has_no_fallback() -> None:

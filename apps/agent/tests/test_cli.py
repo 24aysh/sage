@@ -51,6 +51,19 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
     assert arguments.debug is True
 
 
+def test_langsmith_traces_are_flushed_only_when_enabled(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "wait_for_all_tracers", lambda: calls.append("flush"))
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+
+    cli._flush_langsmith_traces()
+    assert calls == []
+
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    cli._flush_langsmith_traces()
+    assert calls == ["flush"]
+
+
 def test_v2_non_publishable_partial_diff_returns_exit_two(
     monkeypatch,
     tmp_path: Path,

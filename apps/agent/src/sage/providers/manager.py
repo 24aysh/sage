@@ -14,6 +14,11 @@ from pydantic import BaseModel
 from sage.config import Settings
 from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole, RunProvenance
 from sage.errors import AgentRuntimeError
+from sage.observability import (
+    agent_trace_config,
+    log_agent_activity,
+    log_agent_finished,
+)
 from sage.providers.base import ModelProvider, ProviderResult
 from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 from sage.providers.factory import ProviderSet
@@ -42,6 +47,7 @@ class ModelCallManager:
         providers: ProviderSet,
         usage_writer: UsageWriter | None = None,
         clock: Callable[[], float] = monotonic,
+        run_id: str | None = None,
     ) -> None:
         self._settings = settings
         self._policies = {
@@ -53,6 +59,7 @@ class ModelCallManager:
         }
         self._usage_writer = usage_writer
         self._clock = clock
+        self._run_id = run_id
         self._deadline = clock() + settings.run_deadline_seconds
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
@@ -209,15 +216,24 @@ class ModelCallManager:
     ) -> ProviderResult:
         self._reserve(provider)
         call_number = len(self._records) + 1
-        role_label = role.value.capitalize()
-        logger.info(
-            "%s: started stage=%s call=%d attempt=%s provider=%s model=%s",
-            role_label,
-            stage,
-            call_number,
-            kind.value,
-            provider.provider_name,
-            provider.model_name,
+        log_agent_activity(
+            logger,
+            role=role,
+            stage=stage,
+            attempt=kind,
+            provider=provider.provider_name,
+            model=provider.model_name,
+            call_number=call_number,
+            max_calls=self._settings.max_model_calls,
+        )
+        runnable_config = agent_trace_config(
+            run_id=self._run_id,
+            role=role,
+            stage=stage,
+            attempt=kind,
+            provider=provider.provider_name,
+            model=provider.model_name,
+            call_number=call_number,
         )
         started = perf_counter()
         try:
@@ -226,6 +242,7 @@ class ModelCallManager:
                 messages=messages,
                 schema=schema,
                 timeout_seconds=self._settings.model_request_timeout_seconds,
+                runnable_config=runnable_config,
             )
         except ProviderInvocationError as error:
             self._consecutive_failures[provider.provider_name] = (
@@ -299,21 +316,7 @@ class ModelCallManager:
 
     def _append_record(self, record: ModelCallRecord) -> None:
         self._records.append(record)
-        logger.info(
-            "%s: finished stage=%s call=%d attempt=%s provider=%s model=%s "
-            "outcome=%s latency_ms=%s error_category=%s status_code=%s request_id=%s",
-            record.role.value.capitalize(),
-            record.stage,
-            record.call_number,
-            record.attempt_kind.value,
-            record.provider,
-            record.model,
-            record.outcome,
-            record.latency_ms,
-            record.error_category or "none",
-            record.status_code or "none",
-            record.request_id or "none",
-        )
+        log_agent_finished(logger, record)
         if self._usage_writer is not None:
             self._usage_writer(self.provenance())
 

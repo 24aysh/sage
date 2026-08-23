@@ -50,6 +50,10 @@ class Settings(BaseModel):
 
     openai_api_key: str = Field(repr=False)
     gemini_api_key: str | None = Field(default=None, repr=False)
+    langsmith_api_key: str | None = Field(default=None, repr=False)
+    langsmith_tracing: bool = False
+    langsmith_project: str = Field(default="sage-v2", min_length=1, max_length=200)
+    langsmith_workspace_id: str | None = Field(default=None, max_length=200)
     openai_model: str = DEFAULT_OPENAI_MODEL
     openai_max_retries: int = Field(default=2, ge=0, le=10)
     runtime: str = Field(default="v1", pattern=r"^(v1|v2-prototype)$")
@@ -108,6 +112,19 @@ class Settings(BaseModel):
         max_length=3,
     )
 
+    @model_validator(mode="after")
+    def validate_langsmith(self) -> Settings:
+        if any(
+            character in self.langsmith_project
+            for character in ("\x00", "\r", "\n")
+        ):
+            raise ValueError("LANGSMITH_PROJECT must be a single non-empty line.")
+        if self.langsmith_tracing and self.langsmith_api_key is None:
+            raise ValueError(
+                "LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true."
+            )
+        return self
+
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
         """Load settings from a single explicit environment boundary."""
@@ -118,6 +135,11 @@ class Settings(BaseModel):
         if not api_key:
             raise ConfigurationError("OPENAI_API_KEY is required.")
         gemini_api_key = values.get("GEMINI_API_KEY", "").strip() or None
+        langsmith_api_key = values.get("LANGSMITH_API_KEY", "").strip() or None
+        langsmith_tracing = _parse_bool(
+            values.get("LANGSMITH_TRACING", "false"),
+            name="LANGSMITH_TRACING",
+        )
         google_context_approved = _parse_bool(
             values.get("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "false"),
             name="SAGE_GOOGLE_MODEL_CONTEXT_APPROVED",
@@ -142,6 +164,14 @@ class Settings(BaseModel):
             return cls(
                 openai_api_key=api_key,
                 gemini_api_key=gemini_api_key,
+                langsmith_api_key=langsmith_api_key,
+                langsmith_tracing=langsmith_tracing,
+                langsmith_project=(
+                    values.get("LANGSMITH_PROJECT", "sage-v2").strip() or "sage-v2"
+                ),
+                langsmith_workspace_id=(
+                    values.get("LANGSMITH_WORKSPACE_ID", "").strip() or None
+                ),
                 openai_model=values.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
                 openai_max_retries=values.get("OPENAI_MAX_RETRIES", "2"),
                 runtime=runtime,

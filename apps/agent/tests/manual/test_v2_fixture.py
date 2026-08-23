@@ -63,6 +63,15 @@ def test_manual_project_ignores_python_runtime_artifacts() -> None:
     assert "*.py[cod]" in ignore_rules
 
 
+def test_v2_first_run_preserves_opt_in_langsmith_tracing() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("v2-first-run:", 1)[1].split("\ndoctor:", 1)[0]
+
+    assert "export LANGSMITH_TRACING=false" not in target
+    assert 'LANGSMITH_TRACING:=false' in target
+    assert 'LANGSMITH_PROJECT:=sage-v2' in target
+
+
 def test_v2_first_run_accepts_custom_repo_and_issue_before_credentials(
     tmp_path: Path,
 ) -> None:

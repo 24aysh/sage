@@ -62,6 +62,8 @@ help: ## Show the available commands and variables.
 		'  BASE_REF=HEAD                  Commit, branch, or tag to clone.' \
 		'  SANDBOX_IMAGE=custom:v0        Override the configured sandbox image.' \
 		'  ENV_FILE=.env                  Shell-format configuration file to load.' \
+		'  LANGSMITH_TRACING=true         Enable named hosted traces (requires API key).' \
+		'  LANGSMITH_PROJECT=sage-v2       Select the LangSmith project.' \
 		'' \
 		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.' \
 		'See specs/10_V1.0_testing.md for current GitHub migration checks.' \
@@ -167,6 +169,10 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	inherited_openai_api_key="$${OPENAI_API_KEY:-}"; \
 	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
 	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
+	inherited_langsmith_api_key="$${LANGSMITH_API_KEY:-}"; \
+	inherited_langsmith_tracing="$${LANGSMITH_TRACING:-}"; \
+	inherited_langsmith_project="$${LANGSMITH_PROJECT:-}"; \
+	inherited_langsmith_workspace_id="$${LANGSMITH_WORKSPACE_ID:-}"; \
 	if [[ -f "$(ENV_PATH)" ]]; then \
 		echo "Loading configuration from $(ENV_PATH)"; \
 		set -a; source "$(ENV_PATH)"; set +a; \
@@ -174,6 +180,10 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	if [[ -n "$$inherited_openai_api_key" ]]; then export OPENAI_API_KEY="$$inherited_openai_api_key"; fi; \
 	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
 	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
+	if [[ -n "$$inherited_langsmith_api_key" ]]; then export LANGSMITH_API_KEY="$$inherited_langsmith_api_key"; fi; \
+	if [[ -n "$$inherited_langsmith_tracing" ]]; then export LANGSMITH_TRACING="$$inherited_langsmith_tracing"; fi; \
+	if [[ -n "$$inherited_langsmith_project" ]]; then export LANGSMITH_PROJECT="$$inherited_langsmith_project"; fi; \
+	if [[ -n "$$inherited_langsmith_workspace_id" ]]; then export LANGSMITH_WORKSPACE_ID="$$inherited_langsmith_workspace_id"; fi; \
 	for key_name in OPENAI_API_KEY GEMINI_API_KEY; do \
 		if [[ -z "$${!key_name:-}" ]]; then \
 			if [[ ! -t 0 ]]; then \
@@ -207,10 +217,11 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	esac; \
 	export SAGE_RUNTIME=v2-prototype; \
 	export SAGE_MODEL_PROFILE=constrained-cross-provider; \
+	: "$${LANGSMITH_TRACING:=false}"; export LANGSMITH_TRACING; \
+	: "$${LANGSMITH_PROJECT:=sage-v2}"; export LANGSMITH_PROJECT; \
 	if [[ "$$use_sample" -eq 1 ]]; then \
 		export SAGE_VERIFICATION_COMMANDS_JSON='[{"id":"sample-unittest","command":"python3 calculator_checks.py","required":true,"timeout_seconds":60}]'; \
 	fi; \
-	export LANGSMITH_TRACING=false; \
 	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
 	echo "Step 1/8: syncing the Python environment"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
@@ -295,6 +306,18 @@ doctor: ## Check all prerequisites needed for a live solve.
 		echo "ERROR: OPENAI_API_KEY is empty. Add it to $(ENV_FILE)." >&2; \
 		status=1; \
 	fi; \
+	langsmith_tracing="$${LANGSMITH_TRACING:-false}"; \
+	case "$${langsmith_tracing,,}" in \
+		1|true|yes|on) \
+			if [[ -n "$${LANGSMITH_API_KEY:-}" ]]; then \
+				echo "OK: LangSmith tracing is enabled (project configured; API key hidden)."; \
+			else \
+				echo "ERROR: LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true." >&2; \
+				status=1; \
+			fi ;; \
+		0|false|no|off|'') echo "OK: LangSmith tracing is disabled." ;; \
+		*) echo "ERROR: LANGSMITH_TRACING must be true or false." >&2; status=1 ;; \
+	esac; \
 	if [[ "$${SAGE_RUNTIME:-v1}" == "v2-prototype" ]]; then \
 		for key_name in GEMINI_API_KEY; do \
 			if [[ -n "$${!key_name:-}" ]]; then \

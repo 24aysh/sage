@@ -22,6 +22,10 @@ def test_settings_loads_all_supported_environment_values() -> None:
             "SAGE_SANDBOX_IMAGE": "custom:v0",
             "SAGE_COMMAND_TIMEOUT_SECONDS": "20",
             "SAGE_MAX_TOOL_OUTPUT_CHARS": "2000",
+            "LANGSMITH_TRACING": "true",
+            "LANGSMITH_API_KEY": "langsmith-secret",
+            "LANGSMITH_PROJECT": "sage-test",
+            "LANGSMITH_WORKSPACE_ID": "workspace-123",
         }
     )
 
@@ -33,6 +37,10 @@ def test_settings_loads_all_supported_environment_values() -> None:
     assert settings.sandbox_image == "custom:v0"
     assert settings.command_timeout_seconds == 20
     assert settings.max_tool_output_chars == 2_000
+    assert settings.langsmith_tracing is True
+    assert settings.langsmith_project == "sage-test"
+    assert settings.langsmith_workspace_id == "workspace-123"
+    assert "langsmith-secret" not in repr(settings)
 
 
 def test_settings_uses_the_project_default_openai_model() -> None:
@@ -117,6 +125,24 @@ def test_v1_does_not_require_v2_credentials() -> None:
 
     assert settings.runtime == "v1"
     assert settings.gemini_api_key is None
+
+
+def test_langsmith_tracing_requires_api_key() -> None:
+    with pytest.raises(ConfigurationError, match="LANGSMITH_API_KEY"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                "LANGSMITH_TRACING": "true",
+            }
+        )
+
+
+def test_langsmith_defaults_to_disabled_named_project() -> None:
+    settings = Settings.from_env({"OPENAI_API_KEY": "openai-secret"})
+
+    assert settings.langsmith_tracing is False
+    assert settings.langsmith_api_key is None
+    assert settings.langsmith_project == "sage-v2"
 
 
 @pytest.mark.parametrize(

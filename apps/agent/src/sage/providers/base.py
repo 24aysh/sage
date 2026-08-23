@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, ValidationError
 
 from sage.domain.usage import ModelRole
@@ -42,6 +43,7 @@ class ModelProvider(Protocol):
         messages: list[BaseMessage],
         schema: type[BaseModel],
         timeout_seconds: int,
+        runnable_config: RunnableConfig | None = None,
     ) -> ProviderResult: ...
 
 
@@ -63,13 +65,14 @@ class LangChainStructuredProvider:
         messages: list[BaseMessage],
         schema: type[BaseModel],
         timeout_seconds: int,
+        runnable_config: RunnableConfig | None = None,
     ) -> ProviderResult:
         del role
         started = perf_counter()
         try:
             runnable = self._structured_runnable(schema)
             raw_result = await asyncio.wait_for(
-                runnable.ainvoke(messages),
+                runnable.ainvoke(messages, config=runnable_config),
                 timeout=timeout_seconds,
             )
             parsed, raw_message, parsing_error = _unpack_structured(raw_result)
