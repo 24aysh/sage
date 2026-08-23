@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sage.config import Settings
 from sage.domain.requests import SolveRequest
-from sage.domain.results import SolveResult
+from sage.domain.results import SolveOutcome, SolveResult
 from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
@@ -24,7 +24,7 @@ from sage.integrations.github.events import (
 )
 from sage.integrations.github.gate import evaluate_gate
 from sage.integrations.github.outputs import write_gate_outputs
-from sage.runtimes.langgraph import LangGraphRuntime
+from sage.runtimes.factory import build_runtime
 from sage.workflow import solve_issue
 from sage.workflow.github_issue import finalize_github_issue, run_github_issue
 
@@ -145,10 +145,17 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
-    runtime = LangGraphRuntime(settings)
+    runtime = build_runtime(settings)
     result = asyncio.run(solve_issue(request, runtime, settings))
-    _render_result(result, model=settings.openai_model)
-    return 0 if result.diff.strip() else 2
+    _render_result(
+        result,
+        model=(settings.model_profile if settings.runtime == "v2-prototype" else settings.openai_model),
+    )
+    return (
+        0
+        if result.outcome is SolveOutcome.COMPLETED and result.diff.strip()
+        else 2
+    )
 
 
 def _run_github_gate(arguments: argparse.Namespace) -> int:

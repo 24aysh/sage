@@ -2,7 +2,8 @@ from pathlib import Path
 
 import sage.cli as cli
 from sage.cli import _build_parser, _render_result
-from sage.domain.results import SolveResult
+from sage.config import Settings
+from sage.domain.results import SolveOutcome, SolveResult
 from sage.integrations.github.gate_models import GateOutcome, GateResult
 from sage.workflow.github_issue import GitHubWorkflowOutcome, GitHubWorkflowResult
 
@@ -48,6 +49,49 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
     assert arguments.base_ref == "main"
     assert arguments.sandbox_image == "custom:v0"
     assert arguments.debug is True
+
+
+def test_v2_non_publishable_partial_diff_returns_exit_two(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        runtime="v2-prototype",
+        openai_api_key="openai-test",
+        gemini_api_key="gemini-test",
+        anthropic_api_key="anthropic-test",
+        google_model_context_approved=True,
+    )
+    result = SolveResult(
+        run_id="run-id",
+        base_sha="a" * 40,
+        summary="Verification failed.",
+        remaining_uncertainty=[],
+        changed_files=["app.py"],
+        diff="diff --git a/app.py b/app.py\n",
+        run_dir=tmp_path,
+        workspace_dir=tmp_path / "repo",
+        outcome=SolveOutcome.VERIFICATION_FAILED,
+    )
+    monkeypatch.setattr(cli.Settings, "from_env", lambda: settings)
+    monkeypatch.setattr(cli, "_validate_prerequisites", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "build_runtime", lambda value: object())
+
+    async def fake_solve(request, runtime, effective_settings):
+        return result
+
+    monkeypatch.setattr(cli, "solve_issue", fake_solve)
+    arguments = _build_parser().parse_args(
+        [
+            "solve",
+            "--repo",
+            str(tmp_path / "repo"),
+            "--issue-file",
+            str(tmp_path / "issue.md"),
+        ]
+    )
+
+    assert cli._run_local_solve(arguments) == 2
 
 
 def test_github_gate_does_not_require_model_configuration(

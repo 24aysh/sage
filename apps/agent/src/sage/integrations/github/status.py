@@ -6,6 +6,7 @@ from html import escape
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from sage.domain.admission import ClarificationPacket
 from sage.errors import GitHubStatusError
 from sage.integrations.github.api_models import GitHubIssueCommentSnapshot
 from sage.integrations.github.gate_models import GateOutcome
@@ -33,6 +34,20 @@ class WorkflowStatusState(StrEnum):
     WORKING = "working"
     PULL_REQUEST_CREATED = "pull_request_created"
     NO_CHANGES = "no_changes"
+    NEEDS_HUMAN_INFORMATION = "needs_human_information"
+    NEEDS_HUMAN_DESIGN_DECISION = "needs_human_design_decision"
+    NEEDS_MAINTAINER_REWRITE = "needs_maintainer_rewrite"
+    HUMAN_REQUIRED = "human_required"
+    HUMAN_REQUIRED_AFTER_START = "human_required_after_start"
+    ENVIRONMENT_BLOCKED = "environment_blocked"
+    UNSUPPORTED = "unsupported"
+    UNRESOLVED = "unresolved"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    RATE_LIMITED = "rate_limited"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    INVALID_MODEL_OUTPUT = "invalid_model_output"
+    VERIFICATION_FAILED = "verification_failed"
+    REVIEW_FAILED = "review_failed"
     FAILED = "failed"
 
 
@@ -40,6 +55,20 @@ TERMINAL_STATUS_STATES = frozenset(
     {
         WorkflowStatusState.PULL_REQUEST_CREATED,
         WorkflowStatusState.NO_CHANGES,
+        WorkflowStatusState.NEEDS_HUMAN_INFORMATION,
+        WorkflowStatusState.NEEDS_HUMAN_DESIGN_DECISION,
+        WorkflowStatusState.NEEDS_MAINTAINER_REWRITE,
+        WorkflowStatusState.HUMAN_REQUIRED,
+        WorkflowStatusState.HUMAN_REQUIRED_AFTER_START,
+        WorkflowStatusState.ENVIRONMENT_BLOCKED,
+        WorkflowStatusState.UNSUPPORTED,
+        WorkflowStatusState.UNRESOLVED,
+        WorkflowStatusState.PROVIDER_UNAVAILABLE,
+        WorkflowStatusState.RATE_LIMITED,
+        WorkflowStatusState.BUDGET_EXHAUSTED,
+        WorkflowStatusState.INVALID_MODEL_OUTPUT,
+        WorkflowStatusState.VERIFICATION_FAILED,
+        WorkflowStatusState.REVIEW_FAILED,
         WorkflowStatusState.FAILED,
     }
 )
@@ -70,6 +99,12 @@ def has_sage_status_marker(body: str) -> bool:
     """Return whether a body contains a project-owned status marker."""
 
     return _INVOCATION_MARKER_PREFIX in body
+
+
+def has_sage_clarification_marker(body: str) -> bool:
+    """Return whether a status contains a controller-owned clarification."""
+
+    return "<!-- sage-clarification:v1 " in body
 
 
 def status_state(body: str) -> WorkflowStatusState | None:
@@ -187,6 +222,7 @@ def render_workflow_status(
     pull_request_url: str | None = None,
     failure_category: str | None = None,
     branch_url: str | None = None,
+    clarification: ClarificationPacket | None = None,
 ) -> str:
     """Render a bounded working or terminal status body."""
 
@@ -220,6 +256,42 @@ def render_workflow_status(
             f"{_summary_section(summary)}"
             f"{_uncertainty_section(remaining_uncertainty)}"
         )
+    elif state in {
+        WorkflowStatusState.NEEDS_HUMAN_INFORMATION,
+        WorkflowStatusState.NEEDS_HUMAN_DESIGN_DECISION,
+    }:
+        if clarification is None:
+            raise ValueError("Clarification status requires a packet.")
+        expected = (
+            WorkflowStatusState.NEEDS_HUMAN_INFORMATION
+            if clarification.disposition.value == "NEEDS_HUMAN_INFORMATION"
+            else WorkflowStatusState.NEEDS_HUMAN_DESIGN_DECISION
+        )
+        if state is not expected:
+            raise ValueError("Clarification disposition does not match status.")
+        message = _clarification_message(clarification)
+    elif state in {
+        WorkflowStatusState.NEEDS_MAINTAINER_REWRITE,
+        WorkflowStatusState.HUMAN_REQUIRED,
+        WorkflowStatusState.HUMAN_REQUIRED_AFTER_START,
+        WorkflowStatusState.ENVIRONMENT_BLOCKED,
+        WorkflowStatusState.UNSUPPORTED,
+        WorkflowStatusState.UNRESOLVED,
+        WorkflowStatusState.PROVIDER_UNAVAILABLE,
+        WorkflowStatusState.RATE_LIMITED,
+        WorkflowStatusState.BUDGET_EXHAUSTED,
+        WorkflowStatusState.INVALID_MODEL_OUTPUT,
+        WorkflowStatusState.VERIFICATION_FAILED,
+        WorkflowStatusState.REVIEW_FAILED,
+    }:
+        title = state.value.replace("_", " ")
+        message = (
+            f"### Sage: {title}\n\n"
+            "Sage ended the isolated run without publishing a branch or Pull "
+            "Request."
+            f"{_summary_section(summary)}"
+            f"{_uncertainty_section(remaining_uncertainty)}"
+        )
     elif state is WorkflowStatusState.FAILED:
         raw_category = failure_category or "controller_failure"
         category = _safe_markdown(raw_category, 100)
@@ -243,6 +315,44 @@ def render_workflow_status(
         f"{_STATE_MARKER_PREFIX}{state.value} -->\n"
         f"{message}\n\n[View the Actions run]({invocation.actions_run.html_url})."
     )
+
+
+def _clarification_message(packet: ClarificationPacket) -> str:
+    disposition = packet.disposition.value.lower().replace("_", " ")
+    sections = [
+        "### Sage: more information is required",
+        "",
+        (
+            f"Autonomy admission ended as **{_safe_markdown(disposition, 100)}** "
+            f"before implementation. Clarification round {packet.round}."
+        ),
+        "",
+        _safe_markdown(packet.summary, _MAX_SUMMARY_CHARS),
+    ]
+    for index, question in enumerate(packet.questions, start=1):
+        sections.extend(
+            [
+                "",
+                f"{index}. {_safe_markdown(question.question, 1_000)}",
+                "",
+                f"   Why this blocks Sage: {_safe_markdown(question.why_blocking, 1_000)}",
+            ]
+        )
+        if question.options:
+            sections.extend(
+                f"   - {_safe_markdown(option, 500)}" for option in question.options
+            )
+        if question.proposed_default:
+            sections.append(
+                "   - Proposed default: "
+                + _safe_markdown(question.proposed_default, 500)
+            )
+    sections.extend(["", _safe_markdown(packet.rerun_instruction, 500)])
+    marker = (
+        f"<!-- sage-clarification:v1 round={packet.round} "
+        f"disposition={packet.disposition.value.lower()} -->"
+    )
+    return f"{marker}\n" + "\n".join(sections)
 
 
 def _failure_recovery(category: str) -> str:
@@ -292,6 +402,7 @@ def transition_invocation_status(
     pull_request_url: str | None = None,
     failure_category: str | None = None,
     branch_url: str | None = None,
+    clarification: ClarificationPacket | None = None,
 ) -> GitHubIssueCommentSnapshot:
     """Validate ownership and transition the invocation's single status."""
 
@@ -328,6 +439,7 @@ def transition_invocation_status(
         pull_request_url=pull_request_url,
         failure_category=failure_category,
         branch_url=branch_url,
+        clarification=clarification,
     )
     return client.update_issue_comment(
         invocation.repository,

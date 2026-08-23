@@ -15,6 +15,10 @@ _DIAGNOSTIC_FILES = (
     "agent-final.json",
     "changed-files.json",
     "diff.patch",
+    "usage.json",
+    "terminal.json",
+    "verification-summary.json",
+    "review.json",
 )
 
 

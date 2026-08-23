@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from sage.config import Settings
 from sage.domain.requests import SolveRequest
-from sage.domain.results import SolveResult
+from sage.domain.results import SolveOutcome, SolveResult
 from sage.domain.runtime import AgentRuntime
 from sage.errors import (
     AgentRuntimeError,
@@ -56,7 +56,7 @@ from sage.integrations.github.status import (
     transition_invocation_status,
 )
 from sage.repository.host_git import run_git
-from sage.runtimes.langgraph import LangGraphRuntime
+from sage.runtimes.factory import build_runtime
 from sage.workflow.solve import solve_issue
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,20 @@ class GitHubWorkflowOutcome(StrEnum):
     EXISTING_PULL_REQUEST = "existing_pull_request"
     UNAUTHORIZED = "unauthorized"
     BLOCKED_EXISTING_BRANCH = "blocked_existing_branch"
+    NEEDS_HUMAN_INFORMATION = "needs_human_information"
+    NEEDS_HUMAN_DESIGN_DECISION = "needs_human_design_decision"
+    NEEDS_MAINTAINER_REWRITE = "needs_maintainer_rewrite"
+    HUMAN_REQUIRED = "human_required"
+    HUMAN_REQUIRED_AFTER_START = "human_required_after_start"
+    ENVIRONMENT_BLOCKED = "environment_blocked"
+    UNSUPPORTED = "unsupported"
+    UNRESOLVED = "unresolved"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    RATE_LIMITED = "rate_limited"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    INVALID_MODEL_OUTPUT = "invalid_model_output"
+    VERIFICATION_FAILED = "verification_failed"
+    REVIEW_FAILED = "review_failed"
 
 
 class GitHubWorkflowResult(BaseModel):
@@ -117,7 +131,7 @@ async def run_github_issue(
     runner_temp: Path,
     status_comment_id: int,
     settings_factory: SettingsFactory = Settings.from_env,
-    runtime_factory: RuntimeFactory = LangGraphRuntime,
+    runtime_factory: RuntimeFactory = build_runtime,
     solve_runner: SolveRunner = solve_issue,
     publisher: Publisher = publish_solve_result,
 ) -> GitHubWorkflowResult:
@@ -191,7 +205,36 @@ async def run_github_issue(
             raise GitHubPublicationError(
                 "The solve result base does not match the validated event base."
             )
-        if not solve_result.diff.strip():
+        terminal_mapping = _v2_terminal_mapping(solve_result.outcome)
+        if terminal_mapping is not None:
+            workflow_outcome, terminal_state = terminal_mapping
+            provenance = build_github_provenance(
+                invocation,
+                branch=branch_name,
+                outcome=workflow_outcome.value,
+                current_base_sha=invocation.base_sha,
+                local_run_id=solve_result.run_id,
+            )
+            persist_github_diagnostics(
+                provenance,
+                diagnostics_dir=diagnostics_dir,
+                run_dir=solve_result.run_dir,
+            )
+            transition_invocation_status(
+                invocation,
+                client,
+                status_comment_id=status_comment_id,
+                max_comment_pages=github_settings.max_comment_pages,
+                state=terminal_state,
+                summary=solve_result.summary,
+                remaining_uncertainty=solve_result.remaining_uncertainty,
+                clarification=solve_result.clarification,
+            )
+            return GitHubWorkflowResult(
+                outcome=workflow_outcome,
+                solve_result=solve_result,
+            )
+        if solve_result.outcome is SolveOutcome.NO_CHANGE or not solve_result.diff.strip():
             if solve_result.changed_files:
                 raise GitHubPublicationError(
                     "The no-change solve result contains authoritative changed paths."
@@ -220,6 +263,10 @@ async def run_github_issue(
             return GitHubWorkflowResult(
                 outcome=GitHubWorkflowOutcome.NO_CHANGES,
                 solve_result=solve_result,
+            )
+        if solve_result.outcome is not SolveOutcome.COMPLETED:
+            raise GitHubPublicationError(
+                "Only a completed solve outcome may reach publication."
             )
         if not solve_result.changed_files:
             raise GitHubPublicationError(
@@ -386,6 +433,70 @@ def classify_github_failure(error: Exception) -> str:
     if isinstance(error, GitHubIntegrationError):
         return "github_api_or_status"
     return "controller_failure"
+
+
+def _v2_terminal_mapping(
+    outcome: SolveOutcome,
+) -> tuple[GitHubWorkflowOutcome, WorkflowStatusState] | None:
+    mapping = {
+        SolveOutcome.NEEDS_HUMAN_INFORMATION: (
+            GitHubWorkflowOutcome.NEEDS_HUMAN_INFORMATION,
+            WorkflowStatusState.NEEDS_HUMAN_INFORMATION,
+        ),
+        SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION: (
+            GitHubWorkflowOutcome.NEEDS_HUMAN_DESIGN_DECISION,
+            WorkflowStatusState.NEEDS_HUMAN_DESIGN_DECISION,
+        ),
+        SolveOutcome.NEEDS_MAINTAINER_REWRITE: (
+            GitHubWorkflowOutcome.NEEDS_MAINTAINER_REWRITE,
+            WorkflowStatusState.NEEDS_MAINTAINER_REWRITE,
+        ),
+        SolveOutcome.HUMAN_REQUIRED: (
+            GitHubWorkflowOutcome.HUMAN_REQUIRED,
+            WorkflowStatusState.HUMAN_REQUIRED,
+        ),
+        SolveOutcome.HUMAN_REQUIRED_AFTER_START: (
+            GitHubWorkflowOutcome.HUMAN_REQUIRED_AFTER_START,
+            WorkflowStatusState.HUMAN_REQUIRED_AFTER_START,
+        ),
+        SolveOutcome.ENVIRONMENT_BLOCKED: (
+            GitHubWorkflowOutcome.ENVIRONMENT_BLOCKED,
+            WorkflowStatusState.ENVIRONMENT_BLOCKED,
+        ),
+        SolveOutcome.UNSUPPORTED: (
+            GitHubWorkflowOutcome.UNSUPPORTED,
+            WorkflowStatusState.UNSUPPORTED,
+        ),
+        SolveOutcome.UNRESOLVED: (
+            GitHubWorkflowOutcome.UNRESOLVED,
+            WorkflowStatusState.UNRESOLVED,
+        ),
+        SolveOutcome.BUDGET_EXHAUSTED: (
+            GitHubWorkflowOutcome.BUDGET_EXHAUSTED,
+            WorkflowStatusState.BUDGET_EXHAUSTED,
+        ),
+        SolveOutcome.INVALID_MODEL_OUTPUT: (
+            GitHubWorkflowOutcome.INVALID_MODEL_OUTPUT,
+            WorkflowStatusState.INVALID_MODEL_OUTPUT,
+        ),
+        SolveOutcome.PROVIDER_UNAVAILABLE: (
+            GitHubWorkflowOutcome.PROVIDER_UNAVAILABLE,
+            WorkflowStatusState.PROVIDER_UNAVAILABLE,
+        ),
+        SolveOutcome.RATE_LIMITED: (
+            GitHubWorkflowOutcome.RATE_LIMITED,
+            WorkflowStatusState.RATE_LIMITED,
+        ),
+        SolveOutcome.VERIFICATION_FAILED: (
+            GitHubWorkflowOutcome.VERIFICATION_FAILED,
+            WorkflowStatusState.VERIFICATION_FAILED,
+        ),
+        SolveOutcome.REVIEW_FAILED: (
+            GitHubWorkflowOutcome.REVIEW_FAILED,
+            WorkflowStatusState.REVIEW_FAILED,
+        ),
+    }
+    return mapping.get(outcome)
 
 
 def _repeat_solve_gate(

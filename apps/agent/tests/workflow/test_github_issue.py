@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from sage.config import Settings
-from sage.domain.results import SolveResult
+from sage.domain.admission import BlockingQuestion, ClarificationPacket, ReadinessDisposition
+from sage.domain.results import SolveOutcome, SolveResult
 from sage.errors import (
     AgentRuntimeError,
     GitHubPublicationError,
@@ -213,6 +214,52 @@ def test_non_empty_result_hands_authoritative_candidate_to_publisher(tmp_path: P
     )
     assert provenance["pull_request_number"] == 21
     assert provenance["local_run_id"] == "run-id"
+
+
+def test_clarification_is_terminal_and_never_calls_publisher(tmp_path: Path) -> None:
+    checkout, base_sha = _checkout(tmp_path)
+    invocation = _invocation(base_sha)
+    client = FakeClient(invocation)
+    clarification = ClarificationPacket(
+        round=1,
+        disposition=ReadinessDisposition.NEEDS_HUMAN_INFORMATION,
+        summary="Expected behavior is missing. @all <!-- sage-state:failed -->",
+        questions=(
+            BlockingQuestion(
+                question="What should the new value be? @team",
+                why_blocking="The repository does not define it.",
+            ),
+        ),
+        rerun_instruction="Reply, then post a new exact /sage solve command.",
+    )
+    terminal = _solve_result(
+        tmp_path,
+        base_sha,
+        diff="",
+        changed_files=[],
+    ).model_copy(
+        update={
+            "outcome": SolveOutcome.NEEDS_HUMAN_INFORMATION,
+            "clarification": clarification,
+        }
+    )
+
+    async def solve_runner(request, runtime, settings):
+        return terminal
+
+    result = _run(
+        invocation,
+        client,
+        tmp_path,
+        checkout,
+        solve_runner=solve_runner,
+        publisher=lambda *args, **kwargs: pytest.fail("publisher called"),
+    )
+
+    assert result.outcome is GitHubWorkflowOutcome.NEEDS_HUMAN_INFORMATION
+    assert status_state(client.status_body) is WorkflowStatusState.NEEDS_HUMAN_INFORMATION
+    assert "sage-clarification:v1 round=1" in client.status_body
+    assert "@all" not in client.status_body and "@team" not in client.status_body
 
 
 @pytest.mark.parametrize(
