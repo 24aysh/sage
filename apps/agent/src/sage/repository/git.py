@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import shlex
+
 from sage.errors import CommandExecutionError, CommandTimeoutError
 from sage.repository.output import truncate_text
+from sage.repository.selection import IGNORED_NAMES
 from sage.sandbox.base import CommandResult, Sandbox
 
 
@@ -69,9 +72,13 @@ def _ensure_untracked_files_are_diffable(
 ) -> None:
     # Intent-to-add records no file content; it only lets `git diff HEAD` include
     # new files in the authoritative patch without staging the candidate change.
+    ignored_untracked = " ".join(
+        shlex.quote(f":(exclude,glob)**/{name}/**")
+        for name in sorted(IGNORED_NAMES)
+    )
     _required_command(
         sandbox,
-        "git add --intent-to-add --all -- .",
+        f"git add --intent-to-add --all -- . {ignored_untracked}",
         timeout_seconds,
     )
 

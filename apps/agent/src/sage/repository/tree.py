@@ -6,20 +6,9 @@ from pathlib import Path
 
 from sage.errors import RepositoryError
 from sage.repository.paths import resolve_workspace_path
+from sage.repository.selection import IGNORED_NAMES
 
-DEFAULT_SKIPPED_NAMES = frozenset(
-    {
-        ".git",
-        ".next",
-        ".venv",
-        "__pycache__",
-        "build",
-        "dist",
-        "node_modules",
-        "target",
-        "vendor",
-    }
-)
+DEFAULT_SKIPPED_NAMES = IGNORED_NAMES
 MAX_TREE_DEPTH = 4
 MAX_TREE_ENTRIES = 500
 

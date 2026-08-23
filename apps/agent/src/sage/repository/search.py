@@ -8,22 +8,10 @@ from pathlib import Path
 from sage.errors import CommandTimeoutError, RepositoryError
 from sage.repository.output import truncate_text
 from sage.repository.paths import workspace_relative_path
+from sage.repository.selection import IGNORED_GLOBS
 from sage.sandbox.base import Sandbox
 
 MAX_SEARCH_RESULTS = 100
-_IGNORED_GLOBS = (
-    ".git/**",
-    "node_modules/**",
-    ".next/**",
-    "dist/**",
-    "build/**",
-    "target/**",
-    "vendor/**",
-    "__pycache__/**",
-    ".venv/**",
-)
-
-
 def search_text(
     workspace_root: Path,
     sandbox: Sandbox,
@@ -45,7 +33,7 @@ def search_text(
 
     relative_path = workspace_relative_path(workspace_root, path)
     glob_arguments = " ".join(
-        f"--glob {shlex.quote(f'!{pattern}')}" for pattern in _IGNORED_GLOBS
+        f"--glob {shlex.quote(f'!{pattern}')}" for pattern in IGNORED_GLOBS
     )
     command = (
         "rg --line-number --column --color never --hidden --fixed-strings "
