@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Authorize and deduplicate
         id: gate
-        uses: 24aysh/sage/.github/actions/sage-gate@75bb894ec17ac8eff9809a60a91286e0e73c5518 # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-gate@b21b2ac2a4de1811502188ad7499d45ddcc80a57 # V2 prototype
         with:
           github-token: ${{ github.token }}
 
@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Solve the accepted Issue
         id: solve
-        uses: 24aysh/sage/.github/actions/sage-solve@75bb894ec17ac8eff9809a60a91286e0e73c5518 # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-solve@b21b2ac2a4de1811502188ad7499d45ddcc80a57 # V2 prototype
         with:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -115,7 +115,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Preserve or repair terminal status
-        uses: 24aysh/sage/.github/actions/sage-gate@75bb894ec17ac8eff9809a60a91286e0e73c5518 # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-gate@b21b2ac2a4de1811502188ad7499d45ddcc80a57 # V2 prototype
         with:
           github-token: ${{ github.token }}
           operation: finalize
