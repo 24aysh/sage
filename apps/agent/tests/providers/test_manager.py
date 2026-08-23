@@ -24,8 +24,10 @@ class Provider:
         self.provider_name = name
         self.model_name = model
         self.responses = responses
+        self.calls: list[dict] = []
 
     async def invoke_structured(self, **kwargs):
+        self.calls.append(kwargs)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -78,6 +80,8 @@ def test_reviewer_has_no_fallback() -> None:
         ProviderErrorCategory.PERMISSION_OR_MODEL_ACCESS,
         provider="google",
         model="gemini-3.5-flash",
+        status_code=403,
+        request_id="google-request-123",
     )
     providers = _providers(
         reviewer=Provider("google", "gemini-3.5-flash", [error]),
@@ -95,6 +99,8 @@ def test_reviewer_has_no_fallback() -> None:
         )
 
     assert len(manager.records) == 1
+    assert manager.records[0].status_code == 403
+    assert manager.records[0].request_id == "google-request-123"
 
 
 def test_solver_has_no_fallback() -> None:
@@ -120,6 +126,9 @@ def test_schema_repair_and_retry_attempts_are_counted() -> None:
         ProviderErrorCategory.SCHEMA_ERROR,
         provider="google",
         model="gemini-3.5-flash",
+        validation_issues=(
+            "plan.acceptance_contract.2.criterion_id: string_too_long",
+        ),
     )
     planner = Provider(
         "google",
@@ -140,6 +149,10 @@ def test_schema_repair_and_retry_attempts_are_counted() -> None:
         AttemptKind.PRIMARY,
         AttemptKind.SCHEMA_REPAIR,
     ]
+    repair_instruction = planner.calls[1]["messages"][-1].content
+    assert "plan.acceptance_contract.2.criterion_id: string_too_long" in str(
+        repair_instruction
+    )
 
 
 def test_retryable_rate_limit_uses_one_counted_retry() -> None:

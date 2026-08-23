@@ -34,6 +34,8 @@ class ModelCallRecord(BaseModel):
     outcome: str = Field(min_length=1, max_length=80)
     retry_count: int = Field(default=0, ge=0, le=1)
     error_category: str | None = Field(default=None, max_length=80)
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    request_id: str | None = Field(default=None, max_length=200)
 
 
 class RunProvenance(BaseModel):

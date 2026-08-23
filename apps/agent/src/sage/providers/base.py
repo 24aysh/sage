@@ -86,6 +86,7 @@ class LangChainStructuredProvider:
                     ProviderErrorCategory.SCHEMA_ERROR,
                     provider=self.provider_name,
                     model=self.model_name,
+                    validation_issues=_validation_issues(error),
                 ) from error
             input_tokens, output_tokens, cached_tokens = _usage(raw_message)
             return ProviderResult(
@@ -205,3 +206,16 @@ def _retry_after(error: Exception) -> float | None:
 def _exception_request_id(error: Exception) -> str | None:
     value = getattr(error, "request_id", None)
     return str(value)[:200] if value else None
+
+
+def _validation_issues(error: ValidationError) -> tuple[str, ...]:
+    issues: list[str] = []
+    for issue in error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    )[:8]:
+        location = ".".join(str(part) for part in issue.get("loc", ())) or "result"
+        error_type = str(issue.get("type", "validation_error"))
+        issues.append(f"{location[:200]}: {error_type[:80]}")
+    return tuple(issues)

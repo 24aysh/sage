@@ -32,6 +32,7 @@ class ProviderInvocationError(Exception):
         request_id: str | None = None,
         retryable: bool = False,
         outcome_ambiguous: bool = False,
+        validation_issues: tuple[str, ...] = (),
     ) -> None:
         super().__init__(f"{provider}/{model} request failed: {category.value}")
         self.category = category
@@ -42,3 +43,6 @@ class ProviderInvocationError(Exception):
         self.request_id = request_id[:200] if request_id else None
         self.retryable = retryable
         self.outcome_ambiguous = outcome_ambiguous
+        self.validation_issues = tuple(
+            issue[:300] for issue in validation_issues[:8] if issue
+        )

@@ -349,11 +349,13 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 		bash -lc 'git --version && python3 --version && rg --version'
 
 test: ## Run deterministic unit tests (no API call required).
-	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" pytest
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml"
 
 github-test: ## Run deterministic GitHub integration tests (no live API/model call).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest "$(AGENT_PROJECT)/tests/integrations/github" \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
+		"$(AGENT_PROJECT)/tests/integrations/github" \
 		"$(AGENT_PROJECT)/tests/workflow/test_github_issue.py" \
 		"$(AGENT_PROJECT)/tests/test_cli.py"
 
@@ -368,7 +370,8 @@ github-event-check: ## Parse and classify a local event fixture without API/mode
 
 actions-check: ## Validate composite action/workflow syntax and security invariants.
 	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" \
-		pytest "$(AGENT_PROJECT)/tests/actions"
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
+		"$(AGENT_PROJECT)/tests/actions"
 
 v1-check: ## Run complete deterministic backend, GitHub, and Actions checks.
 	@$(MAKE) --no-print-directory check
@@ -377,7 +380,8 @@ v1-check: ## Run complete deterministic backend, GitHub, and Actions checks.
 
 v2-test: ## Run focused deterministic V2 tests without live provider calls.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest "$(AGENT_PROJECT)/tests/providers" \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
+		"$(AGENT_PROJECT)/tests/providers" \
 		"$(AGENT_PROJECT)/tests/repository" \
 		"$(AGENT_PROJECT)/tests/context" \
 		"$(AGENT_PROJECT)/tests/verification" \
@@ -408,12 +412,12 @@ check: ## Run all deterministic backend checks.
 
 graph: ## Print Mermaid generated from the compiled V0.1 LangGraph.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest -q -s \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/test_langgraph_graph.py::test_compiled_graph_renders_expected_mermaid"
 
 v2-graph: ## Print and validate the compiled sequential V2 LangGraph.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest -q -s \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py::test_v2_graph_is_sequential_and_renders_mermaid"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.

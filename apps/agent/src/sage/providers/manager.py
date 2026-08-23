@@ -111,6 +111,7 @@ class ModelCallManager:
                         provider=policy.primary,
                         messages=messages,
                         schema=schema,
+                        error=primary_error,
                     )
                 if policy.fallback is None or not _fallback_allowed(role, primary_error):
                     raise
@@ -168,12 +169,21 @@ class ModelCallManager:
         provider: ModelProvider,
         messages: list[BaseMessage],
         schema: type[BaseModel],
+        error: ProviderInvocationError,
     ) -> ProviderResult:
+        validation_hint = ""
+        if error.validation_issues:
+            validation_hint = (
+                " Correct these validation failures: "
+                + "; ".join(error.validation_issues)
+                + "."
+            )
         repair_instruction = HumanMessage(
             content=(
                 "Your prior response did not satisfy the required structured schema. "
                 "Return only a result that conforms exactly to that schema; do not "
                 "change the task or add prose outside the structured result."
+                f"{validation_hint}"
             )
         )
         return await self._single_attempt(
@@ -233,6 +243,8 @@ class ModelCallManager:
                     outcome="error",
                     retry_count=retry_count,
                     error_category=error.category.value,
+                    status_code=error.status_code,
+                    request_id=error.request_id,
                 )
             )
             raise
@@ -251,6 +263,7 @@ class ModelCallManager:
                 latency_ms=result.latency_ms,
                 outcome="success",
                 retry_count=retry_count,
+                request_id=result.request_id,
             )
         )
         return result
@@ -288,7 +301,7 @@ class ModelCallManager:
         self._records.append(record)
         logger.info(
             "%s: finished stage=%s call=%d attempt=%s provider=%s model=%s "
-            "outcome=%s latency_ms=%s error_category=%s",
+            "outcome=%s latency_ms=%s error_category=%s status_code=%s request_id=%s",
             record.role.value.capitalize(),
             record.stage,
             record.call_number,
@@ -298,6 +311,8 @@ class ModelCallManager:
             record.outcome,
             record.latency_ms,
             record.error_category or "none",
+            record.status_code or "none",
+            record.request_id or "none",
         )
         if self._usage_writer is not None:
             self._usage_writer(self.provenance())
