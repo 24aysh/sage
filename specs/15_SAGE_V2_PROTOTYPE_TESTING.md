@@ -88,7 +88,10 @@ SAGE_VERIFICATION_COMMANDS_JSON=[{"id":"focused","command":"pytest -q tests/test
 ```
 
 Only repository owners should configure these commands. Planner and Solver
-command suggestions still pass through a conservative allowlist.
+command suggestions still pass through a conservative allowlist. Failed
+optional checks remain visible in the verification summary and terminal
+uncertainty, but only required check failures or timeouts trigger repair or
+block completion.
 
 ## Run all offline checks first
 
@@ -377,6 +380,30 @@ those values.
 | `review_failed` | Inspect criterion results and blocking findings. A second review repair is not permitted. |
 | Clarification repeats | Answer all blocking questions explicitly; after round two, rewrite the Issue with a complete design. |
 | No Pull Request | Check `terminal.json`; every non-`completed` outcome is deliberately non-publishable. |
+
+### Gemini HTTP 400 during Planner or Reviewer calls
+
+`gemini-3.5-flash` and `gemini-3.5-flash-lite` support structured output, but
+Google accepts only a subset of JSON Schema and may reject deeply nested or
+constraint-heavy schemas with HTTP 400 `INVALID_ARGUMENT`. Sage sends Google a
+compact structural schema and then applies the complete Pydantic contract
+locally. If local validation fails, the one bounded schema-repair call receives
+only field paths and validation types; repository content and invalid values
+are not copied into the repair diagnostic.
+
+Check `usage.json` for `status_code`, `request_id`, `error_category`, and the
+attempt sequence. A schema repair appears as a separate counted
+`schema_repair` attempt. Repeated HTTP 400 responses indicate a provider SDK or
+schema compatibility regression, not a missing model, when the configured key
+can list the model.
+
+### Python 3.14 Google SDK warning
+
+The Google GenAI SDK currently imports Python's deprecated private
+`_UnionGenericAlias` compatibility type. This does not affect execution on
+Python 3.14. Sage suppresses only that exact third-party deprecation warning in
+pytest; other warnings remain visible. Revisit the narrow filter when upgrading
+the Google SDK or before moving to Python 3.17.
 
 ## Immediate rollback
 
