@@ -120,7 +120,6 @@ def test_solve_issue_rejects_pre_mutation_terminal_with_diff(
         update={
             "runtime": "v2-prototype",
             "gemini_api_key": "gemini-test",
-            "anthropic_api_key": "anthropic-test",
             "google_model_context_approved": True,
         }
     )

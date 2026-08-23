@@ -166,7 +166,6 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	fi; \
 	inherited_openai_api_key="$${OPENAI_API_KEY:-}"; \
 	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
-	inherited_anthropic_api_key="$${ANTHROPIC_API_KEY:-}"; \
 	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
 	if [[ -f "$(ENV_PATH)" ]]; then \
 		echo "Loading configuration from $(ENV_PATH)"; \
@@ -174,9 +173,8 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	fi; \
 	if [[ -n "$$inherited_openai_api_key" ]]; then export OPENAI_API_KEY="$$inherited_openai_api_key"; fi; \
 	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
-	if [[ -n "$$inherited_anthropic_api_key" ]]; then export ANTHROPIC_API_KEY="$$inherited_anthropic_api_key"; fi; \
 	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
-	for key_name in OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY; do \
+	for key_name in OPENAI_API_KEY GEMINI_API_KEY; do \
 		if [[ -z "$${!key_name:-}" ]]; then \
 			if [[ ! -t 0 ]]; then \
 				echo "ERROR: $$key_name is not configured and no interactive terminal is available." >&2; \
@@ -298,7 +296,7 @@ doctor: ## Check all prerequisites needed for a live solve.
 		status=1; \
 	fi; \
 	if [[ "$${SAGE_RUNTIME:-v1}" == "v2-prototype" ]]; then \
-		for key_name in GEMINI_API_KEY ANTHROPIC_API_KEY; do \
+		for key_name in GEMINI_API_KEY; do \
 			if [[ -n "$${!key_name:-}" ]]; then \
 				echo "OK: $$key_name is configured (value hidden)."; \
 			else \

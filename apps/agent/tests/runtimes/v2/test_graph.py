@@ -14,7 +14,6 @@ def test_v2_graph_is_sequential_and_renders_mermaid(tmp_path) -> None:
                 runtime="v2-prototype",
                 openai_api_key="openai-test",
                 gemini_api_key="gemini-test",
-                anthropic_api_key="anthropic-test",
                 google_model_context_approved=True,
             ),
             repository=dependency,

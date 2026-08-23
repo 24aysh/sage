@@ -1,6 +1,13 @@
 import pytest
 
-from sage.config import DEFAULT_OPENAI_MODEL, Settings
+from sage.config import (
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_V2_PLANNER_FALLBACK_MODEL,
+    DEFAULT_V2_PLANNER_MODEL,
+    DEFAULT_V2_REVIEWER_MODEL,
+    DEFAULT_V2_SOLVER_MODEL,
+    Settings,
+)
 from sage.errors import ConfigurationError
 
 
@@ -42,7 +49,10 @@ def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() ->
             "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
             "GEMINI_API_KEY": "gemini-secret",
             "OPENAI_API_KEY": "openai-secret",
-            "ANTHROPIC_API_KEY": "anthropic-secret",
+            "SAGE_V2_PLANNER_MODEL": "custom-planner",
+            "SAGE_V2_PLANNER_FALLBACK_MODEL": "custom-planner-fallback",
+            "SAGE_V2_SOLVER_MODEL": "custom-solver",
+            "SAGE_V2_REVIEWER_MODEL": "custom-reviewer",
             "SAGE_VERIFICATION_COMMANDS_JSON": (
                 '[{"id":"focused","command":"pytest -q tests/test_app.py",'
                 '"required":true,"timeout_seconds":20}]'
@@ -51,15 +61,38 @@ def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() ->
     )
 
     assert settings.runtime == "v2-prototype"
+    assert settings.v2_planner_model == "custom-planner"
+    assert settings.v2_planner_fallback_model == "custom-planner-fallback"
+    assert settings.v2_solver_model == "custom-solver"
+    assert settings.v2_reviewer_model == "custom-reviewer"
     assert settings.verification_commands[0].check_id == "focused"
     assert "secret" not in repr(settings)
+
+
+def test_v2_settings_use_documented_default_models() -> None:
+    settings = Settings.from_env(
+        {
+            "SAGE_RUNTIME": "v2-prototype",
+            "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
+            "GEMINI_API_KEY": "gemini-secret",
+            "OPENAI_API_KEY": "openai-secret",
+        }
+    )
+
+    assert settings.v2_planner_model == DEFAULT_V2_PLANNER_MODEL == "gemini-3.5-flash"
+    assert (
+        settings.v2_planner_fallback_model
+        == DEFAULT_V2_PLANNER_FALLBACK_MODEL
+        == "gemini-3.5-flash-lite"
+    )
+    assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
+    assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
 
 
 @pytest.mark.parametrize(
     ("missing", "message"),
     [
         ("GEMINI_API_KEY", "GEMINI_API_KEY"),
-        ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
         ("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "CONTEXT_APPROVED"),
     ],
 )
@@ -72,7 +105,6 @@ def test_v2_settings_reject_missing_profile_requirements(
         "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
         "GEMINI_API_KEY": "gemini-secret",
         "OPENAI_API_KEY": "openai-secret",
-        "ANTHROPIC_API_KEY": "anthropic-secret",
     }
     values.pop(missing)
 
@@ -85,7 +117,25 @@ def test_v1_does_not_require_v2_credentials() -> None:
 
     assert settings.runtime == "v1"
     assert settings.gemini_api_key is None
-    assert settings.anthropic_api_key is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "SAGE_V2_PLANNER_MODEL",
+        "SAGE_V2_PLANNER_FALLBACK_MODEL",
+        "SAGE_V2_SOLVER_MODEL",
+        "SAGE_V2_REVIEWER_MODEL",
+    ],
+)
+def test_settings_rejects_empty_v2_model_names(name: str) -> None:
+    with pytest.raises(ConfigurationError, match="Invalid Sage configuration"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                name: " ",
+            }
+        )
 
 
 def test_settings_rejects_missing_api_key() -> None:

@@ -65,7 +65,6 @@ def test_v2_first_run_accepts_custom_repo_and_issue_before_credentials(
     for name in (
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
-        "ANTHROPIC_API_KEY",
         "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED",
     ):
         environment.pop(name, None)

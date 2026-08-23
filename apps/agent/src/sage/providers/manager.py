@@ -49,9 +49,7 @@ class ModelCallManager:
                 providers.planner, providers.planner_fallback
             ),
             ModelRole.SOLVER: _RolePolicy(providers.solver, None),
-            ModelRole.REVIEWER: _RolePolicy(
-                providers.reviewer, providers.reviewer_fallback
-            ),
+            ModelRole.REVIEWER: _RolePolicy(providers.reviewer, None),
         }
         self._usage_writer = usage_writer
         self._clock = clock
@@ -311,15 +309,6 @@ def _fallback_allowed(role: ModelRole, error: ProviderInvocationError) -> bool:
     if role is ModelRole.PLANNER:
         return error.category in {
             ProviderErrorCategory.PERMISSION_OR_MODEL_ACCESS,
-            ProviderErrorCategory.RATE_LIMITED,
-            ProviderErrorCategory.PROVIDER_5XX,
-            ProviderErrorCategory.TIMEOUT,
-        }
-    if role is ModelRole.REVIEWER:
-        return error.category in {
-            ProviderErrorCategory.AUTHENTICATION,
-            ProviderErrorCategory.PERMISSION_OR_MODEL_ACCESS,
-            ProviderErrorCategory.QUOTA_EXHAUSTED,
             ProviderErrorCategory.RATE_LIMITED,
             ProviderErrorCategory.PROVIDER_5XX,
             ProviderErrorCategory.TIMEOUT,

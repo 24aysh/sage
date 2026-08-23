@@ -13,11 +13,10 @@ from sage.errors import ConfigurationError
 
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_PROFILE = "constrained-cross-provider"
-V2_PLANNER_MODEL = "gemini-3.7-flash"
-V2_PLANNER_FALLBACK_MODEL = "gemini-3.5-flash-lite"
-V2_SOLVER_MODEL = "gpt-5.4-mini"
-V2_REVIEWER_MODEL = "claude-haiku-4-5"
-V2_REVIEWER_FALLBACK_MODEL = "gemini-3.5-flash"
+DEFAULT_V2_PLANNER_MODEL = "gemini-3.5-flash"
+DEFAULT_V2_PLANNER_FALLBACK_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_V2_SOLVER_MODEL = "gpt-5.4-mini"
+DEFAULT_V2_REVIEWER_MODEL = "gemini-3.5-flash"
 
 
 class ConfiguredVerificationCommand(BaseModel):
@@ -51,12 +50,35 @@ class Settings(BaseModel):
 
     openai_api_key: str = Field(repr=False)
     gemini_api_key: str | None = Field(default=None, repr=False)
-    anthropic_api_key: str | None = Field(default=None, repr=False)
     openai_model: str = DEFAULT_OPENAI_MODEL
     openai_max_retries: int = Field(default=2, ge=0, le=10)
     runtime: str = Field(default="v1", pattern=r"^(v1|v2-prototype)$")
     model_profile: str = DEFAULT_V2_PROFILE
     google_model_context_approved: bool = False
+    v2_planner_model: str = Field(
+        default=DEFAULT_V2_PLANNER_MODEL,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    )
+    v2_planner_fallback_model: str = Field(
+        default=DEFAULT_V2_PLANNER_FALLBACK_MODEL,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    )
+    v2_solver_model: str = Field(
+        default=DEFAULT_V2_SOLVER_MODEL,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    )
+    v2_reviewer_model: str = Field(
+        default=DEFAULT_V2_REVIEWER_MODEL,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    )
     max_turns: int = Field(default=30, ge=1)
     runs_dir: Path = Path(".sage/runs")
     sandbox_image: str = "sage-sandbox:v0"
@@ -96,7 +118,6 @@ class Settings(BaseModel):
         if not api_key:
             raise ConfigurationError("OPENAI_API_KEY is required.")
         gemini_api_key = values.get("GEMINI_API_KEY", "").strip() or None
-        anthropic_api_key = values.get("ANTHROPIC_API_KEY", "").strip() or None
         google_context_approved = _parse_bool(
             values.get("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "false"),
             name="SAGE_GOOGLE_MODEL_CONTEXT_APPROVED",
@@ -112,8 +133,6 @@ class Settings(BaseModel):
                 )
             if gemini_api_key is None:
                 raise ConfigurationError("GEMINI_API_KEY is required for V2.")
-            if anthropic_api_key is None:
-                raise ConfigurationError("ANTHROPIC_API_KEY is required for V2.")
             if not google_context_approved:
                 raise ConfigurationError(
                     "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2."
@@ -123,12 +142,24 @@ class Settings(BaseModel):
             return cls(
                 openai_api_key=api_key,
                 gemini_api_key=gemini_api_key,
-                anthropic_api_key=anthropic_api_key,
                 openai_model=values.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
                 openai_max_retries=values.get("OPENAI_MAX_RETRIES", "2"),
                 runtime=runtime,
                 model_profile=model_profile,
                 google_model_context_approved=google_context_approved,
+                v2_planner_model=values.get(
+                    "SAGE_V2_PLANNER_MODEL", DEFAULT_V2_PLANNER_MODEL
+                ).strip(),
+                v2_planner_fallback_model=values.get(
+                    "SAGE_V2_PLANNER_FALLBACK_MODEL",
+                    DEFAULT_V2_PLANNER_FALLBACK_MODEL,
+                ).strip(),
+                v2_solver_model=values.get(
+                    "SAGE_V2_SOLVER_MODEL", DEFAULT_V2_SOLVER_MODEL
+                ).strip(),
+                v2_reviewer_model=values.get(
+                    "SAGE_V2_REVIEWER_MODEL", DEFAULT_V2_REVIEWER_MODEL
+                ).strip(),
                 max_turns=values.get("SAGE_MAX_TURNS", "30"),
                 runs_dir=values.get("SAGE_RUNS_DIR", ".sage/runs"),
                 sandbox_image=values.get(

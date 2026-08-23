@@ -94,12 +94,11 @@ def test_v2_runtime_completes_three_provider_patch_path(
         runtime="v2-prototype",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
-        anthropic_api_key="anthropic-test",
         google_model_context_approved=True,
         runs_dir=tmp_path,
         command_timeout_seconds=10,
     )
-    planner = ScriptedProvider("google", "gemini-3.7-flash", [_ready_intake()])
+    planner = ScriptedProvider("google", "gemini-3.5-flash", [_ready_intake()])
     solver = ScriptedProvider(
         "openai",
         "gpt-5.4-mini",
@@ -120,8 +119,8 @@ def test_v2_runtime_completes_three_provider_patch_path(
         ],
     )
     reviewer = ScriptedProvider(
-        "anthropic",
-        "claude-haiku-4-5",
+        "google",
+        "gemini-3.5-flash",
         [
             ReviewResult(
                 verdict=ReviewVerdict.PASS,
@@ -137,7 +136,6 @@ def test_v2_runtime_completes_three_provider_patch_path(
         ],
     )
     unused_planner_fallback = ScriptedProvider("google", "fallback", [])
-    unused_reviewer_fallback = ScriptedProvider("google", "fallback-review", [])
     runtime = V2GraphRuntime(
         settings,
         providers=ProviderSet(
@@ -145,7 +143,6 @@ def test_v2_runtime_completes_three_provider_patch_path(
             planner_fallback=unused_planner_fallback,
             solver=solver,
             reviewer=reviewer,
-            reviewer_fallback=unused_reviewer_fallback,
         ),
     )
     prepared = PreparedRun(
@@ -180,7 +177,7 @@ def test_v2_runtime_completes_three_provider_patch_path(
     assert [call.provider for call in result.provenance.calls] == [
         "google",
         "openai",
-        "anthropic",
+        "google",
     ]
     assert (workspace / "app.py").read_text(encoding="utf-8") == "value = 2\n"
     assert repository.get_changed_files() == ["app.py"]
@@ -190,7 +187,6 @@ def test_v2_runtime_completes_three_provider_patch_path(
     assert (prepared.run_dir / "review.json").is_file()
     assert (prepared.run_dir / "terminal.json").is_file()
     assert unused_planner_fallback.calls == []
-    assert unused_reviewer_fallback.calls == []
     assert "Planner: started stage=intake-planner" in caplog.text
     assert "Solver: started stage=solver" in caplog.text
     assert "Verifier: finished pass=1 status=pass" in caplog.text
@@ -204,7 +200,6 @@ def test_v2_runtime_stops_after_planner_for_clarification(tmp_path: Path) -> Non
         runtime="v2-prototype",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
-        anthropic_api_key="anthropic-test",
         google_model_context_approved=True,
         runs_dir=tmp_path,
         command_timeout_seconds=10,
@@ -222,9 +217,9 @@ def test_v2_runtime_stops_after_planner_for_clarification(tmp_path: Path) -> Non
             ),
         ),
     )
-    planner = ScriptedProvider("google", "gemini-3.7-flash", [intake])
+    planner = ScriptedProvider("google", "gemini-3.5-flash", [intake])
     solver = ScriptedProvider("openai", "gpt-5.4-mini", [])
-    reviewer = ScriptedProvider("anthropic", "claude-haiku-4-5", [])
+    reviewer = ScriptedProvider("google", "gemini-3.5-flash", [])
     runtime = V2GraphRuntime(
         settings,
         providers=ProviderSet(
@@ -232,7 +227,6 @@ def test_v2_runtime_stops_after_planner_for_clarification(tmp_path: Path) -> Non
             planner_fallback=ScriptedProvider("google", "fallback", []),
             solver=solver,
             reviewer=reviewer,
-            reviewer_fallback=ScriptedProvider("google", "fallback-review", []),
         ),
     )
     run_dir = tmp_path / "run"
@@ -276,14 +270,13 @@ def test_v2_runtime_repairs_one_hard_verification_failure(tmp_path: Path) -> Non
         runtime="v2-prototype",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
-        anthropic_api_key="anthropic-test",
         google_model_context_approved=True,
         runs_dir=tmp_path,
         command_timeout_seconds=10,
     )
     planner = ScriptedProvider(
         "google",
-        "gemini-3.7-flash",
+        "gemini-3.5-flash",
         [_ready_intake(with_value_check=True)],
     )
     solver = ScriptedProvider(
@@ -311,8 +304,8 @@ def test_v2_runtime_repairs_one_hard_verification_failure(tmp_path: Path) -> Non
         ],
     )
     reviewer = ScriptedProvider(
-        "anthropic",
-        "claude-haiku-4-5",
+        "google",
+        "gemini-3.5-flash",
         [
             ReviewResult(
                 verdict=ReviewVerdict.PASS,
@@ -334,7 +327,6 @@ def test_v2_runtime_repairs_one_hard_verification_failure(tmp_path: Path) -> Non
             planner_fallback=ScriptedProvider("google", "fallback", []),
             solver=solver,
             reviewer=reviewer,
-            reviewer_fallback=ScriptedProvider("google", "fallback-review", []),
         ),
     )
     run_dir = tmp_path / "run"

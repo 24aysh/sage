@@ -59,7 +59,6 @@ def test_v2_non_publishable_partial_diff_returns_exit_two(
         runtime="v2-prototype",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
-        anthropic_api_key="anthropic-test",
         google_model_context_approved=True,
     )
     result = SolveResult(
