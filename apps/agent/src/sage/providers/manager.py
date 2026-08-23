@@ -201,6 +201,16 @@ class ModelCallManager:
     ) -> ProviderResult:
         self._reserve(provider)
         call_number = len(self._records) + 1
+        role_label = role.value.capitalize()
+        logger.info(
+            "%s: started stage=%s call=%d attempt=%s provider=%s model=%s",
+            role_label,
+            stage,
+            call_number,
+            kind.value,
+            provider.provider_name,
+            provider.model_name,
+        )
         started = perf_counter()
         try:
             result = await provider.invoke_structured(
@@ -279,17 +289,17 @@ class ModelCallManager:
     def _append_record(self, record: ModelCallRecord) -> None:
         self._records.append(record)
         logger.info(
-            "V2 model attempt completed",
-            extra={
-                "call_number": record.call_number,
-                "stage": record.stage,
-                "role": record.role.value,
-                "provider": record.provider,
-                "model": record.model,
-                "outcome": record.outcome,
-                "error_category": record.error_category,
-                "latency_ms": record.latency_ms,
-            },
+            "%s: finished stage=%s call=%d attempt=%s provider=%s model=%s "
+            "outcome=%s latency_ms=%s error_category=%s",
+            record.role.value.capitalize(),
+            record.stage,
+            record.call_number,
+            record.attempt_kind.value,
+            record.provider,
+            record.model,
+            record.outcome,
+            record.latency_ms,
+            record.error_category or "none",
         )
         if self._usage_writer is not None:
             self._usage_writer(self.provenance())

@@ -131,6 +131,31 @@ make v2-check
 make v2-graph
 ```
 
+After configuring all three provider keys and approving Google model context
+use, run the complete live V2 workflow against the checked-in disposable
+fixture:
+
+```bash
+make v2-first-run
+```
+
+The target creates a temporary Git repository from `v2-manual-test/project`,
+uses `v2-manual-test/issue.md`, requires a completed non-empty candidate, and
+validates the retained artifacts and diff under `.sage/runs/`.
+
+To run the same strict workflow against another committed repository and Issue:
+
+```bash
+make v2-first-run \
+  REPO=/absolute/path/to/repository \
+  ISSUE=/absolute/path/to/issue.md
+```
+
+During a run, INFO logs show safe role activity such as `Planner: started`,
+`Solver: finished`, verification progress, and `Reviewer: started`. They include
+stage, provider, model, attempt kind, outcome, and latency, but never prompt or
+patch content.
+
 Use `make github-doctor` to check the local workflow installation and Docker
 availability before a live canary.
 

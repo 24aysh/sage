@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +50,7 @@ from sage.runtimes.v2.validation import (
 from sage.verification import Verifier, discover_verification_commands
 
 GRAPH_NAME = "sage_v2_prototype"
+logger = logging.getLogger(__name__)
 
 
 class V2GraphInput(TypedDict):
@@ -260,7 +262,19 @@ def build_graph(
             timeout_seconds=settings.command_timeout_seconds,
             configured=settings.verification_commands,
         )
+        logger.info(
+            "Verifier: started pass=%d checks=%d",
+            pass_number,
+            len(commands),
+        )
         verification = services.verifier.verify(commands, pass_number=pass_number)
+        logger.info(
+            "Verifier: finished pass=%d status=%s passing_checks=%d total_checks=%d",
+            pass_number,
+            verification.status.value,
+            verification.passing_check_count,
+            len(verification.checks),
+        )
         fingerprint = _first_failure_fingerprint(verification)
         stuck = bool(
             state.get("previous_failure_fingerprint")

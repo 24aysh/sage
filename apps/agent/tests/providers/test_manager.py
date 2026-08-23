@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from sage.config import Settings
@@ -36,6 +38,39 @@ class Provider:
             cached_tokens=0,
             latency_ms=1,
         )
+
+
+def test_model_call_logs_visible_role_activity_without_message_content(caplog) -> None:
+    manager = ModelCallManager(
+        settings=_settings(),
+        providers=_providers(
+            planner=Provider(
+                "google",
+                "gemini-3.7-flash",
+                [Result(value="ready")],
+            )
+        ),
+    )
+    caplog.set_level(logging.INFO, logger="sage.providers.manager")
+
+    asyncio.run(
+        manager.invoke(
+            stage="intake-planner",
+            role=ModelRole.PLANNER,
+            messages=[HumanMessage(content="private repository context")],
+            schema=Result,
+        )
+    )
+
+    assert (
+        "Planner: started stage=intake-planner call=1 attempt=primary "
+        "provider=google model=gemini-3.7-flash"
+    ) in caplog.text
+    assert (
+        "Planner: finished stage=intake-planner call=1 attempt=primary "
+        "provider=google model=gemini-3.7-flash outcome=success"
+    ) in caplog.text
+    assert "private repository context" not in caplog.text
 
 
 def test_reviewer_uses_recorded_google_fallback() -> None:

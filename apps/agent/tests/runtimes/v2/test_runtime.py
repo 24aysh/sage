@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 from pathlib import Path
 
@@ -83,7 +84,11 @@ class ScriptedProvider:
         )
 
 
-def test_v2_runtime_completes_three_provider_patch_path(tmp_path: Path) -> None:
+def test_v2_runtime_completes_three_provider_patch_path(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO)
     workspace, base_sha = _repository(tmp_path)
     settings = Settings(
         runtime="v2-prototype",
@@ -186,6 +191,11 @@ def test_v2_runtime_completes_three_provider_patch_path(tmp_path: Path) -> None:
     assert (prepared.run_dir / "terminal.json").is_file()
     assert unused_planner_fallback.calls == []
     assert unused_reviewer_fallback.calls == []
+    assert "Planner: started stage=intake-planner" in caplog.text
+    assert "Solver: started stage=solver" in caplog.text
+    assert "Verifier: finished pass=1 status=pass" in caplog.text
+    assert "Reviewer: started stage=review" in caplog.text
+    assert "V2 workflow: finished run=v2-test outcome=completed model_calls=3" in caplog.text
 
 
 def test_v2_runtime_stops_after_planner_for_clarification(tmp_path: Path) -> None:

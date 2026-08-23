@@ -14,9 +14,11 @@ ISSUE ?=
 BASE_REF ?= HEAD
 RUN_DIR ?=
 TEST_COMMAND ?= python3 -m unittest discover -v
+REQUIRE_COMPLETED ?= false
+V2_SAMPLE_DIR ?= $(ROOT_DIR)/v2-manual-test
 DEBUG_FLAG :=
 
-.PHONY: help env setup bootstrap first-run doctor github-doctor sandbox-build \
+.PHONY: help env setup bootstrap first-run v2-first-run doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check v1-check \
 	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
 	run-status run-test
@@ -28,6 +30,8 @@ help: ## Show the available commands and variables.
 		'Getting started:' \
 		'  make first-run REPO=... ISSUE=...' \
 		'                        Configure, set up, verify, and solve in one command.' \
+		'  make v2-first-run REPO=... ISSUE=...' \
+		'                        Run strict live V2; omit both inputs to use the sample.' \
 		'  make env              Create .env from .env.example (never overwrites).' \
 		'  make bootstrap        Install Python deps, build/smoke-test the sandbox, run doctor.' \
 		'  make doctor           Check tools, Docker, the sandbox image, and API-key setup.' \
@@ -139,6 +143,118 @@ first-run: ## Configure, install, build, verify, and solve with one command.
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null solve \
 		REPO="$(REPO)" ISSUE="$(ISSUE)" BASE_REF="$(BASE_REF)" \
 		SANDBOX_IMAGE="$(SANDBOX_IMAGE)"
+
+v2-first-run: ## Configure, verify, and run a strict live V2 solve.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	requested_repo="$(REPO)"; \
+	requested_issue="$(ISSUE)"; \
+	if [[ -z "$$requested_repo" && -z "$$requested_issue" ]]; then \
+		use_sample=1; \
+		sample_project="$(V2_SAMPLE_DIR)/project"; \
+		sample_issue="$(V2_SAMPLE_DIR)/issue.md"; \
+		[[ -d "$$sample_project" ]] || { echo "ERROR: sample project is missing: $$sample_project" >&2; exit 1; }; \
+		[[ -f "$$sample_issue" ]] || { echo "ERROR: sample issue is missing: $$sample_issue" >&2; exit 1; }; \
+	elif [[ -z "$$requested_repo" || -z "$$requested_issue" ]]; then \
+		echo "ERROR: REPO and ISSUE must be provided together." >&2; \
+		echo "Use: make v2-first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
+		exit 1; \
+	else \
+		use_sample=0; \
+		[[ -d "$$requested_repo" ]] || { echo "ERROR: repository path does not exist: $$requested_repo" >&2; exit 1; }; \
+		[[ -f "$$requested_issue" ]] || { echo "ERROR: issue file does not exist: $$requested_issue" >&2; exit 1; }; \
+	fi; \
+	inherited_openai_api_key="$${OPENAI_API_KEY:-}"; \
+	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
+	inherited_anthropic_api_key="$${ANTHROPIC_API_KEY:-}"; \
+	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
+	if [[ -f "$(ENV_PATH)" ]]; then \
+		echo "Loading configuration from $(ENV_PATH)"; \
+		set -a; source "$(ENV_PATH)"; set +a; \
+	fi; \
+	if [[ -n "$$inherited_openai_api_key" ]]; then export OPENAI_API_KEY="$$inherited_openai_api_key"; fi; \
+	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
+	if [[ -n "$$inherited_anthropic_api_key" ]]; then export ANTHROPIC_API_KEY="$$inherited_anthropic_api_key"; fi; \
+	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
+	for key_name in OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY; do \
+		if [[ -z "$${!key_name:-}" ]]; then \
+			if [[ ! -t 0 ]]; then \
+				echo "ERROR: $$key_name is not configured and no interactive terminal is available." >&2; \
+				echo "Set it in $(ENV_FILE) or export it before running make." >&2; \
+				exit 1; \
+			fi; \
+			read -r -s -p "$$key_name (input hidden; used only for this run): " key_value; \
+			echo; \
+			if [[ -z "$$key_value" ]]; then \
+				echo "ERROR: $$key_name cannot be empty." >&2; \
+				exit 1; \
+			fi; \
+			printf -v "$$key_name" '%s' "$$key_value"; \
+			export "$$key_name"; \
+		fi; \
+	done; \
+	context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-false}"; \
+	case "$${context_approval,,}" in \
+		1|true|yes|on) export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true ;; \
+		*) \
+			if [[ ! -t 0 ]]; then \
+				echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; \
+				exit 1; \
+			fi; \
+			read -r -p "Allow the selected Issue and repository context to be sent to the configured Google model? [y/N] " context_approval; \
+			case "$${context_approval,,}" in \
+				y|yes) export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true ;; \
+				*) echo "ERROR: Google model context use was not approved." >&2; exit 1 ;; \
+			esac ;; \
+	esac; \
+	export SAGE_RUNTIME=v2-prototype; \
+	export SAGE_MODEL_PROFILE=constrained-cross-provider; \
+	if [[ "$$use_sample" -eq 1 ]]; then \
+		export SAGE_VERIFICATION_COMMANDS_JSON='[{"id":"sample-unittest","command":"python3 calculator_checks.py","required":true,"timeout_seconds":60}]'; \
+	fi; \
+	export LANGSMITH_TRACING=false; \
+	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
+	echo "Step 1/8: syncing the Python environment"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
+	echo "Step 2/8: building the Docker sandbox"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-build; \
+	echo "Step 3/8: smoke-testing the Docker sandbox"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-smoke; \
+	echo "Step 4/8: checking V2 prerequisites"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null doctor; \
+	echo "Step 5/8: running deterministic V2 checks"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null v2-check; \
+	if [[ "$$use_sample" -eq 1 ]]; then \
+		echo "Step 6/8: creating a disposable Git repository from $(V2_SAMPLE_DIR)"; \
+		fixture_root="$$(mktemp -d "$${TMPDIR:-/tmp}/sage-v2-first-run.XXXXXX")"; \
+		trap 'rm -rf -- "$$fixture_root"' EXIT; \
+		target_repo="$$fixture_root/repo"; \
+		target_issue="$$sample_issue"; \
+		mkdir -p "$$target_repo"; \
+		cp -R "$$sample_project/." "$$target_repo/"; \
+		git init -q --initial-branch=main "$$target_repo"; \
+		git -C "$$target_repo" config user.name "Sage V2 Local Test"; \
+		git -C "$$target_repo" config user.email "sage-v2-local@example.invalid"; \
+		git -C "$$target_repo" add --all; \
+		git -C "$$target_repo" commit -q -m "test: initialize V2 manual fixture"; \
+	else \
+		echo "Step 6/8: using the requested repository and Issue"; \
+		target_repo="$$requested_repo"; \
+		target_issue="$$requested_issue"; \
+	fi; \
+	mkdir -p "$(ROOT_DIR)/.sage/runs"; \
+	manual_run_root="$$(mktemp -d "$(ROOT_DIR)/.sage/runs/v2-manual.XXXXXX")"; \
+	export SAGE_RUNS_DIR="$$manual_run_root"; \
+	echo "Step 7/8: solving the Issue with the constrained V2 profile"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null REQUIRE_COMPLETED=true solve \
+		REPO="$$target_repo" ISSUE="$$target_issue" BASE_REF="$(BASE_REF)"; \
+	run_dir="$$(find "$$manual_run_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
+	[[ -n "$$run_dir" ]] || { echo "ERROR: V2 solve did not create a run directory." >&2; exit 1; }; \
+	echo "Step 8/8: validating the completed run artifacts and candidate diff"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null run-status RUN_DIR="$$run_dir"; \
+	echo; \
+	echo "V2 local workflow succeeded."; \
+	echo "Inspect the candidate and artifacts at: $$run_dir"
 
 doctor: ## Check all prerequisites needed for a live solve.
 	@set -euo pipefail; \
@@ -268,6 +384,7 @@ v2-test: ## Run focused deterministic V2 tests without live provider calls.
 		"$(AGENT_PROJECT)/tests/context" \
 		"$(AGENT_PROJECT)/tests/verification" \
 		"$(AGENT_PROJECT)/tests/artifacts/test_v2_artifacts.py" \
+		"$(AGENT_PROJECT)/tests/manual" \
 		"$(AGENT_PROJECT)/tests/runtimes/v2" \
 		"$(AGENT_PROJECT)/tests/test_config.py" \
 		"$(AGENT_PROJECT)/tests/integrations/github/test_context.py" \
@@ -346,6 +463,10 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	status=$$?; \
 	set -e; \
 	if [[ "$$status" -eq 2 ]]; then \
+		if [[ "$(REQUIRE_COMPLETED)" == "true" ]]; then \
+			echo "ERROR: this solve requires a completed, non-empty candidate (CLI exit code 2)." >&2; \
+			exit 2; \
+		fi; \
 		echo; \
 		echo "WARNING: the agent completed successfully but produced no repository change (CLI exit code 2)."; \
 		exit 0; \

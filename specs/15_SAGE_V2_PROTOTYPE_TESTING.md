@@ -128,6 +128,60 @@ parallel, or replanning nodes.
 
 ## Live test 1: ready three-call Issue
 
+The repository includes a ready-to-run version of this smoke test. Once the
+three keys and `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true` are present in `.env`,
+run from the repository root:
+
+```bash
+make v2-first-run
+```
+
+The target performs setup, rebuilds and smoke-tests the network-disabled
+sandbox, runs the deterministic V2 checks, copies `v2-manual-test/project` into
+a temporary Git repository, and solves `v2-manual-test/issue.md`. It forces the
+constrained cross-provider profile and a required
+`python3 calculator_checks.py` verification command for this fixture. It
+then validates the retained candidate and artifacts under `.sage/runs/`.
+
+Unlike the general `make solve` wrapper, this smoke target is strict: a safe
+clarification, blocked, no-change, or other non-publishable terminal outcome
+causes the command to fail. Success therefore means the local V2 workflow
+produced a non-empty, Git-authoritative candidate and passed artifact checks.
+
+The checked-in fixture is never modified. Its initial failing tests are
+intentional and reproduce the one-character bug described by the Issue.
+
+The same strict command accepts a custom committed repository and Issue, like
+the V1 `first-run` target:
+
+```bash
+make v2-first-run \
+  REPO=/absolute/path/to/committed/repository \
+  ISSUE=/absolute/path/to/issue.md \
+  BASE_REF=HEAD
+```
+
+Provide `REPO` and `ISSUE` together. If both are omitted, the checked-in sample
+is used. Custom runs retain `SAGE_VERIFICATION_COMMANDS_JSON` from trusted local
+configuration; only the sample run forces its fixture-specific check.
+
+Live CLI output includes progress lines for every model attempt:
+
+```text
+Planner: started stage=intake-planner call=1 attempt=primary provider=google ...
+Planner: finished stage=intake-planner call=1 ... outcome=success ...
+Solver: started stage=solver call=2 attempt=primary provider=openai ...
+Verifier: finished pass=1 status=pass ...
+Reviewer: started stage=review call=3 attempt=primary provider=anthropic ...
+```
+
+Retries, fallbacks, schema repairs, and rereviews appear as separate counted
+attempts. Logs contain operational metadata only; Issue text, repository
+context, model responses, patches, verification output, and credentials remain
+in their bounded artifact locations and are not printed as activity messages.
+
+### Equivalent custom disposable repository
+
 Use a disposable repository with a committed `app.py` containing
 `value = 1`. Save this Issue text outside that repository as
 `/tmp/sage-v2-ready.md`:

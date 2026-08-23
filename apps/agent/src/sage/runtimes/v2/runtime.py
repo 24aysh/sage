@@ -74,13 +74,11 @@ class V2GraphRuntime:
             workspace=context.prepared_run.workspace_dir,
         )
         logger.info(
-            "V2 graph started",
-            extra={
-                "run_id": context.prepared_run.run_id,
-                "graph_name": GRAPH_NAME,
-                "profile": self._settings.model_profile,
-                "max_model_calls": self._settings.max_model_calls,
-            },
+            "V2 workflow: started run=%s graph=%s profile=%s max_model_calls=%d",
+            context.prepared_run.run_id,
+            GRAPH_NAME,
+            self._settings.model_profile,
+            self._settings.max_model_calls,
         )
         graph = build_graph(services)
         try:
@@ -128,12 +126,10 @@ class V2GraphRuntime:
             # controller errors instead of being disguised as provider failures.
             raise
         logger.info(
-            "V2 graph completed",
-            extra={
-                "run_id": context.prepared_run.run_id,
-                "terminal_outcome": final.outcome.value,
-                "model_calls": len(calls.records),
-            },
+            "V2 workflow: finished run=%s outcome=%s model_calls=%d",
+            context.prepared_run.run_id,
+            final.outcome.value,
+            len(calls.records),
         )
         return final
 
