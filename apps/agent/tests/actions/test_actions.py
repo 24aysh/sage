@@ -38,6 +38,8 @@ def test_gate_action_is_model_secret_free_and_uses_pinned_source() -> None:
 
     assert "OPENAI_API_KEY" not in body
     assert "openai-api-key" not in body
+    assert "GEMINI_API_KEY" not in body
+    assert "ANTHROPIC_API_KEY" not in body
     assert "github.action_path" in body
     assert "sage github gate" in body
     assert "sage github finalize" in body
@@ -63,11 +65,32 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "fetch-depth: 0" in body
     assert "github.action_path" in body
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
+    assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
+    assert "ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}" in body
+    assert "SAGE_RUNTIME: ${{ inputs.runtime }}" in body
+    assert (
+        "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "
+        "${{ inputs.google-model-context-approved }}"
+    ) in body
     assert "OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}" in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
     assert "docker build" in body
     assert "sage github solve" in body
     assert "upload-artifact" not in body
+
+    solve_step = next(
+        step
+        for step in document["runs"]["steps"]
+        if "sage github solve" in step.get("run", "")
+    )
+    for step in document["runs"]["steps"]:
+        if step is solve_step:
+            continue
+        rendered = yaml.safe_dump(step)
+        assert "OPENAI_API_KEY" not in rendered
+        assert "GEMINI_API_KEY" not in rendered
+        assert "ANTHROPIC_API_KEY" not in rendered
+    assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
 def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> None:
@@ -89,7 +112,8 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         "pull-requests": "write",
     }
     assert jobs["solve"]["env"] == {
-        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}"
+        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}",
+        "SAGE_RUNTIME": "${{ vars.SAGE_RUNTIME || 'v1' }}",
     }
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",
@@ -97,6 +121,7 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
     }
     assert jobs["gate"]["timeout-minutes"] == 10
     assert jobs["solve"]["timeout-minutes"] == 90
+    assert jobs["solve"]["timeout-minutes"] * 60 > 4_800 + 300
     assert jobs["finalize"]["timeout-minutes"] == 5
     gate_filter = jobs["gate"]["if"]
     assert "pull_request == null" in gate_filter
@@ -119,9 +144,16 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     jobs = document["jobs"]
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "ANTHROPIC_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "ANTHROPIC_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.ANTHROPIC_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
     assert "pull_request_target" not in body
     assert "cancel-in-progress: false" in body
 
@@ -134,6 +166,10 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "agent-final.json",
         "changed-files.json",
         "diff.patch",
+        "usage.json",
+        "terminal.json",
+        "verification-summary.json",
+        "review.json",
     }
     uploaded = set(
         re.findall(r"diagnostics-path }}/([^\s]+)", body)

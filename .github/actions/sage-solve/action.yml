@@ -8,10 +8,28 @@ inputs:
   openai-api-key:
     description: Model credential scoped to the solve controller step.
     required: true
+  gemini-api-key:
+    description: V2 Planner credential scoped to the solve controller step.
+    required: false
+  anthropic-api-key:
+    description: V2 Reviewer credential scoped to the solve controller step.
+    required: false
   openai-max-retries:
     description: Bounded OpenAI SDK retries for temporary rate limits.
     required: false
     default: "2"
+  runtime:
+    description: Trusted runtime selector (v1 or v2-prototype).
+    required: false
+    default: v1
+  model-profile:
+    description: Locked V2 provider profile.
+    required: false
+    default: constrained-cross-provider
+  google-model-context-approved:
+    description: Explicit owner acknowledgement for sending context to Gemini.
+    required: false
+    default: "false"
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -80,7 +98,12 @@ runs:
       shell: bash
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
+        SAGE_RUNTIME: ${{ inputs.runtime }}
+        SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}
+        SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..

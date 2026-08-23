@@ -18,7 +18,8 @@ DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check v1-check \
-	compile check graph new-issue solve solve-debug run-status run-test
+	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
+	run-status run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -40,8 +41,11 @@ help: ## Show the available commands and variables.
 		'  make github-event-check EVENT=...  Classify an event fixture offline.' \
 		'  make actions-check     Validate V1.0 action/workflow syntax and policy.' \
 		'  make v1-check          Run all deterministic V1.0 checks.' \
+		'  make v2-test           Run focused offline V2 prototype tests.' \
+		'  make v2-check          Run V2, Actions, and compile checks.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
+		'  make v2-graph         Print/check the sequential V2 graph.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
@@ -56,7 +60,8 @@ help: ## Show the available commands and variables.
 		'  ENV_FILE=.env                  Shell-format configuration file to load.' \
 		'' \
 		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.' \
-		'See specs/10_V1.0_testing.md for current GitHub migration checks.'
+		'See specs/10_V1.0_testing.md for current GitHub migration checks.' \
+		'See specs/15_SAGE_V2_PROTOTYPE_TESTING.md for V2 prototype checks.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -176,6 +181,20 @@ doctor: ## Check all prerequisites needed for a live solve.
 		echo "ERROR: OPENAI_API_KEY is empty. Add it to $(ENV_FILE)." >&2; \
 		status=1; \
 	fi; \
+	if [[ "$${SAGE_RUNTIME:-v1}" == "v2-prototype" ]]; then \
+		for key_name in GEMINI_API_KEY ANTHROPIC_API_KEY; do \
+			if [[ -n "$${!key_name:-}" ]]; then \
+				echo "OK: $$key_name is configured (value hidden)."; \
+			else \
+				echo "ERROR: $$key_name is required for V2." >&2; status=1; \
+			fi; \
+		done; \
+		if [[ "$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-false}" == "true" ]]; then \
+			echo "OK: Google model context use is explicitly acknowledged."; \
+		else \
+			echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; status=1; \
+		fi; \
+	fi; \
 	if [[ -x "$(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python" ]]; then \
 		python_version="$$($(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python --version 2>&1)"; \
 		echo "OK: backend environment exists ($$python_version)."; \
@@ -242,6 +261,25 @@ v1-check: ## Run complete deterministic backend, GitHub, and Actions checks.
 	@$(MAKE) --no-print-directory github-test
 	@$(MAKE) --no-print-directory actions-check
 
+v2-test: ## Run focused deterministic V2 tests without live provider calls.
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest "$(AGENT_PROJECT)/tests/providers" \
+		"$(AGENT_PROJECT)/tests/repository" \
+		"$(AGENT_PROJECT)/tests/context" \
+		"$(AGENT_PROJECT)/tests/verification" \
+		"$(AGENT_PROJECT)/tests/artifacts/test_v2_artifacts.py" \
+		"$(AGENT_PROJECT)/tests/runtimes/v2" \
+		"$(AGENT_PROJECT)/tests/test_config.py" \
+		"$(AGENT_PROJECT)/tests/integrations/github/test_context.py" \
+		"$(AGENT_PROJECT)/tests/integrations/github/test_status.py" \
+		"$(AGENT_PROJECT)/tests/workflow/test_solve.py" \
+		"$(AGENT_PROJECT)/tests/workflow/test_github_issue.py"
+
+v2-check: ## Run all offline V2 prototype, Actions, and compile checks.
+	@$(MAKE) --no-print-directory v2-test
+	@$(MAKE) --no-print-directory actions-check
+	@$(MAKE) --no-print-directory compile
+
 github-doctor: ## Diagnose the installed GitHub workflow without printing secrets.
 	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" \
 		python -m sage.integrations.github.doctor
@@ -257,6 +295,11 @@ graph: ## Print Mermaid generated from the compiled V0.1 LangGraph.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/test_langgraph_graph.py::test_compiled_graph_renders_expected_mermaid"
+
+v2-graph: ## Print and validate the compiled sequential V2 LangGraph.
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest -q -s \
+		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py::test_v2_graph_is_sequential_and_renders_mermaid"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \
