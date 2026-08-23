@@ -39,7 +39,6 @@ def test_gate_action_is_model_secret_free_and_uses_pinned_source() -> None:
     assert "OPENAI_API_KEY" not in body
     assert "openai-api-key" not in body
     assert "GEMINI_API_KEY" not in body
-    assert "ANTHROPIC_API_KEY" not in body
     assert "github.action_path" in body
     assert "sage github gate" in body
     assert "sage github finalize" in body
@@ -55,18 +54,33 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     body = (ACTIONS / "sage-solve" / "action.yml").read_text(encoding="utf-8")
     document = yaml.safe_load(body)
 
+    assert "anthropic-api-key" not in document["inputs"]
     assert document["inputs"]["openai-max-retries"] == {
         "description": "Bounded OpenAI SDK retries for temporary rate limits.",
         "required": False,
         "default": "2",
     }
+    assert document["inputs"]["v2-planner-model"]["default"] == "gemini-3.5-flash"
+    assert (
+        document["inputs"]["v2-planner-fallback-model"]["default"]
+        == "gemini-3.5-flash-lite"
+    )
+    assert document["inputs"]["v2-solver-model"]["default"] == "gpt-5.4-mini"
+    assert document["inputs"]["v2-reviewer-model"]["default"] == "gemini-3.5-flash"
     assert "ref: ${{ inputs.base-sha }}" in body
     assert "persist-credentials: false" in body
     assert "fetch-depth: 0" in body
     assert "github.action_path" in body
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
     assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
-    assert "ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}" in body
+    assert "ANTHROPIC_API_KEY" not in body
+    assert "SAGE_V2_PLANNER_MODEL: ${{ inputs.v2-planner-model }}" in body
+    assert (
+        "SAGE_V2_PLANNER_FALLBACK_MODEL: "
+        "${{ inputs.v2-planner-fallback-model }}"
+    ) in body
+    assert "SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}" in body
+    assert "SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}" in body
     assert "SAGE_RUNTIME: ${{ inputs.runtime }}" in body
     assert (
         "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "
@@ -89,7 +103,6 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         rendered = yaml.safe_dump(step)
         assert "OPENAI_API_KEY" not in rendered
         assert "GEMINI_API_KEY" not in rendered
-        assert "ANTHROPIC_API_KEY" not in rendered
     assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
@@ -146,14 +159,17 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
-    assert "ANTHROPIC_API_KEY" not in yaml.safe_dump(jobs["gate"])
-    assert "ANTHROPIC_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
-    assert "secrets.ANTHROPIC_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_PLANNER_MODEL" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_PLANNER_FALLBACK_MODEL" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
+    assert "ANTHROPIC_API_KEY" not in body
+    assert "anthropic-api-key" not in body
     assert "pull_request_target" not in body
     assert "cancel-in-progress: false" in body
 

@@ -65,10 +65,13 @@ jobs:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
           runtime: ${{ vars.SAGE_RUNTIME || 'v1' }}
           model-profile: constrained-cross-provider
+          v2-planner-model: ${{ vars.SAGE_V2_PLANNER_MODEL || 'gemini-3.5-flash' }}
+          v2-planner-fallback-model: ${{ vars.SAGE_V2_PLANNER_FALLBACK_MODEL || 'gemini-3.5-flash-lite' }}
+          v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
+          v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
           google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'false' }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
           status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
