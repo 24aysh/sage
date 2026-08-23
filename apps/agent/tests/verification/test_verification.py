@@ -13,8 +13,9 @@ from sage.verification.runner import Verifier
 
 
 class FakeRepository:
-    def __init__(self) -> None:
+    def __init__(self, results: list[CommandResult] | None = None) -> None:
         self.calls: list[str] = []
+        self.results = results or []
 
     def run_command(
         self,
@@ -24,6 +25,8 @@ class FakeRepository:
     ) -> CommandResult:
         del timeout_seconds
         self.calls.append(command)
+        if self.results:
+            return self.results.pop(0)
         return CommandResult(
             command=command,
             exit_code=0,
@@ -114,3 +117,47 @@ def test_verifier_runs_sequentially_and_redacts_secret_like_logs(tmp_path: Path)
     assert "top-secret" not in log
     assert "authorization=[redacted]" in log
     assert (tmp_path / "verification-summary.json").is_file()
+
+
+def test_optional_failure_is_visible_without_blocking_required_success(
+    tmp_path: Path,
+) -> None:
+    commands = discover_verification_commands(
+        repository_map=_repository_map(),
+        plan=_plan(),
+        timeout_seconds=30,
+        configured=(
+            ConfiguredVerificationCommand(
+                id="required-test",
+                command="pytest -q tests/test_app.py",
+                required=True,
+            ),
+            ConfiguredVerificationCommand(
+                id="optional-test",
+                command="python3 -m unittest discover -v",
+                required=False,
+            ),
+        ),
+    )
+    repository = FakeRepository(
+        results=[
+            CommandResult(
+                command=command.command,
+                exit_code=exit_code,
+                stdout="",
+                stderr="",
+            )
+            for command, exit_code in zip(commands, (0, 0, 5), strict=True)
+        ]
+    )
+
+    result = Verifier(
+        repository=repository,  # type: ignore[arg-type]
+        artifacts=V2ArtifactStore(tmp_path),
+        max_log_chars=4_000,
+    ).verify(commands, pass_number=1)
+
+    assert result.status is VerificationStatus.PASS
+    assert result.passing_check_count == 2
+    assert result.uncertainty == ("Optional verification fail: optional-test",)
+    assert result.checks[2].status is VerificationStatus.FAIL

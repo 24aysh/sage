@@ -77,22 +77,24 @@ class Verifier:
         required_failures = [
             check
             for check in checks
-            if check.status in {VerificationStatus.FAIL, VerificationStatus.TIMEOUT}
+            if check.status is VerificationStatus.FAIL
             and check.check.required
         ]
-        other_failures = [
-            check for check in checks if check.status is VerificationStatus.FAIL
+        required_timeouts = [
+            check
+            for check in checks
+            if check.status is VerificationStatus.TIMEOUT and check.check.required
         ]
-        if required_failures or other_failures:
+        if required_failures:
             overall = VerificationStatus.FAIL
-        elif any(check.status is VerificationStatus.TIMEOUT for check in checks):
+        elif required_timeouts:
             overall = VerificationStatus.TIMEOUT
         else:
             overall = VerificationStatus.PASS
         uncertainty = tuple(
-            f"Verification command unavailable: {check.check.command}"
+            f"Optional verification {check.status.value}: {check.check.check_id}"
             for check in checks
-            if check.status is VerificationStatus.UNAVAILABLE
+            if not check.check.required and check.status is not VerificationStatus.PASS
         )
         verification = VerificationResult(
             status=overall,
