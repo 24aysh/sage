@@ -89,6 +89,7 @@ examples/
 - Node.js and npm
 - an OpenAI API key
 - a Gemini API key when using V2
+- optionally, a LangSmith API key for hosted V2 traces
 
 The original design targeted Python 3.13; this bootstrap uses Python 3.14 at the
 repository owner's request.
@@ -152,10 +153,13 @@ make v2-first-run \
   ISSUE=/absolute/path/to/issue.md
 ```
 
-During a run, INFO logs show safe role activity such as `Planner: started`,
-`Solver: finished`, verification progress, and `Reviewer: started`. They include
-stage, provider, model, attempt kind, outcome, and latency, but never prompt or
-patch content.
+During a run, INFO logs render readable `Planner: activity`, `Solver: result`,
+verification progress, and `Reviewer: finished` panels. They include the task,
+stage, provider, model, attempt, structured decision, counts, and latency, but
+never prompt, repository, patch, or review-evidence content. Optional LangSmith
+tracing records a `Sage V2 Workflow` trace with named `Planner`, `Solver`, and
+`Reviewer` spans; configuration and data-boundary guidance is in the V2 testing
+guide.
 
 Use `make github-doctor` to check the local workflow installation and Docker
 availability before a live canary.

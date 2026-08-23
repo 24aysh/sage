@@ -44,6 +44,7 @@ Have the following before a live test:
 - access to `google/gemini-3.5-flash` and its listed Planner fallback;
 - access to `openai/gpt-5.4-mini`;
 - one API key for Google and OpenAI;
+- optionally, a LangSmith account and API key for hosted trace observability;
 - a small disposable Git repository for local live tests; and
 - repository admin access for a GitHub Actions canary.
 
@@ -92,6 +93,71 @@ command suggestions still pass through a conservative allowlist. Failed
 optional checks remain visible in the verification summary and terminal
 uncertainty, but only required check failures or timeouts trigger repair or
 block completion.
+
+## Observe V2 agents in LangSmith
+
+LangSmith tracing is optional and disabled by default. Enabling it sends the
+Issue, selected repository context, model inputs, and structured model outputs
+to the configured LangSmith workspace. Enable it only for repositories whose
+owners have approved that additional data transfer.
+
+Add the following to the untracked `.env` file:
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=<langsmith-api-key>
+LANGSMITH_PROJECT=sage-v2
+# Set this only when the API key can access multiple workspaces.
+LANGSMITH_WORKSPACE_ID=<workspace-id>
+```
+
+Run the normal workflow:
+
+```bash
+make v2-first-run
+```
+
+Open the `sage-v2` project in LangSmith and locate the trace named
+`Sage V2 Workflow`. Its graph spans contain named model spans for the roles
+that actually ran:
+
+```text
+Sage V2 Workflow
+├── Planner
+├── Solver
+└── Reviewer
+```
+
+Repair and retry calls retain the same role name and are distinguishable by
+the `sage_stage`, `sage_attempt`, `sage_call_number`, provider, model, and local
+`sage_run_id` metadata. Use `sage_run_id` to correlate the hosted trace with
+`.sage/runs/<run-id>/usage.json`.
+
+The terminal simultaneously prints privacy-safe activity panels such as:
+
+```text
+Planner: activity
+  ├─ Task: Assess issue readiness and draft the execution plan
+  ├─ Stage: intake-planner
+  ├─ Attempt: primary
+  ├─ Model: google/gemini-3.5-flash
+  └─ Call: 1/6
+```
+
+Result panels show structured decisions and counts, but never prompt text,
+repository content, generated patches, review evidence, or credentials. To keep
+payloads out of hosted traces while retaining names, timing, tags, and metadata,
+set one or both of these standard LangSmith controls:
+
+```dotenv
+LANGSMITH_HIDE_INPUTS=true
+LANGSMITH_HIDE_OUTPUTS=true
+```
+
+With either payload hidden, use the terminal activity panels and local run
+artifacts for content-level diagnosis. Sage flushes pending LangSmith traces
+before the CLI exits; a trace-upload failure is logged but cannot change the
+repository result.
 
 ## Run all offline checks first
 
@@ -346,24 +412,31 @@ Use a non-sensitive disposable repository or branch policy first.
 4. Optionally set `SAGE_V2_PLANNER_MODEL`,
    `SAGE_V2_PLANNER_FALLBACK_MODEL`, `SAGE_V2_SOLVER_MODEL`, and
    `SAGE_V2_REVIEWER_MODEL`; otherwise the documented defaults are used.
-5. Ensure the installed Sage action references the implementation's full
+5. To enable hosted observability, add repository secret `LANGSMITH_API_KEY`,
+   set `LANGSMITH_TRACING=true`, and optionally set `LANGSMITH_PROJECT` and
+   `LANGSMITH_WORKSPACE_ID`. Leave tracing false when repository context must
+   not be sent to LangSmith. `LANGSMITH_HIDE_INPUTS` and
+   `LANGSMITH_HIDE_OUTPUTS` are also supported as repository variables.
+6. Ensure the installed Sage action references the implementation's full
    40-character pinned commit SHA.
-6. Open one small, explicit Issue and post exactly `/sage solve` from a user
+7. Open one small, explicit Issue and post exactly `/sage solve` from a user
    with write or admin permission.
-7. Confirm the gate accepts one exact base SHA and the solve checks out that
+8. Confirm the gate accepts one exact base SHA and the solve checks out that
    SHA with persisted credentials disabled.
-8. Confirm any created branch is `sage/issue-<number>` and the Pull Request is
+9. Confirm any created branch is `sage/issue-<number>` and the Pull Request is
    draft. Sage must never merge it or mark it ready automatically.
-9. Download the seven-day diagnostics artifact and confirm it contains only
+10. Download the seven-day diagnostics artifact and confirm it contains only
    the allowlisted summaries—not contexts, full logs, the workspace, or keys.
-10. Review `usage.json`, `terminal.json`, the verification summary, and the draft
+11. Review `usage.json`, `terminal.json`, the verification summary, and the draft
    diff before starting another canary.
 
 The gate and finalizer jobs receive no model key. The checkout, dependency
 install, Docker build, Docker container, and artifact-upload steps also receive
 no model key. Both model keys are scoped only to the trusted controller solve
 step; repository commands execute in the network-disabled container without
-those values.
+those values. The optional LangSmith key is likewise scoped only to the solve
+step. LangSmith traces are a separate hosted observability channel and are not
+part of the seven-day Actions diagnostics artifact.
 
 ## Failure guide
 
@@ -371,6 +444,8 @@ those values.
 | --- | --- |
 | Configuration rejects a missing key | Add the missing repository secret or switch to V1. Never post it in the Issue. |
 | Google acknowledgement missing | Review account/data-use suitability, then explicitly approve or do not use V2. |
+| LangSmith trace is missing | Confirm `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` is set, the project/workspace values select the intended workspace, and the run reached a traced graph or model call. |
+| LangSmith shows the workflow but no role name | Search the trace spans for `Planner`, `Solver`, or `Reviewer`; only roles reached by deterministic routing are invoked. |
 | Authentication/model access | Replace or authorize only the affected provider credential/model, then create one fresh invocation. |
 | Quota exhausted | Restore billing/usage capacity; an immediate retry is unlikely to help. |
 | Rate limited | Check safe `retry_after`/attempt metadata, wait for the window, and avoid repeated commands. |
