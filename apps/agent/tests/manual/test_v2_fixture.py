@@ -54,6 +54,15 @@ def test_manual_issue_names_the_strict_scope_and_verification() -> None:
     assert "python3 calculator_checks.py" in issue
 
 
+def test_manual_project_ignores_python_runtime_artifacts() -> None:
+    ignore_rules = (FIXTURE_ROOT / "project" / ".gitignore").read_text(
+        encoding="utf-8"
+    )
+
+    assert "__pycache__/" in ignore_rules
+    assert "*.py[cod]" in ignore_rules
+
+
 def test_v2_first_run_accepts_custom_repo_and_issue_before_credentials(
     tmp_path: Path,
 ) -> None:

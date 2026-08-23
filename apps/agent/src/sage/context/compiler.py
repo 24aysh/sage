@@ -119,8 +119,10 @@ class ContextCompiler:
             _Section(
                 "solver_protocol",
                 "Return a structured SolverResult. For implemented status, provide "
-                "one unified Git diff against the current workspace. Do not use "
-                "Markdown prose outside the schema and do not exceed frozen scope.",
+                "one unified Git diff against the current workspace. The patch "
+                "must begin with 'diff --git a/' or '--- a/' and must not use "
+                "apply-patch markers such as '*** Begin Patch'. Do not use Markdown "
+                "prose outside the schema and do not exceed frozen scope.",
             ),
         ]
         if repair_reason:

@@ -170,8 +170,16 @@ def normalize_patch(value: str) -> str:
         patch = patch[len("```patch\n") : -3].rstrip()
     if "GIT binary patch" in patch or "Binary files " in patch:
         raise RepositoryError("Binary patches are unsupported in the V2 prototype.")
+    if patch.startswith(("*** Begin Patch", "*** Update File")):
+        raise RepositoryError(
+            "Solver returned apply-patch markers; return a unified Git diff "
+            "beginning with 'diff --git a/' or '--- a/'."
+        )
     if not patch.startswith(("diff --git ", "--- ")):
-        raise RepositoryError("Solver patch is not a unified Git diff.")
+        raise RepositoryError(
+            "Solver patch is not a unified Git diff beginning with "
+            "'diff --git a/' or '--- a/'."
+        )
     return f"{patch}\n"
 
 
