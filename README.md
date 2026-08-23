@@ -23,6 +23,13 @@ user-side setup, provider recovery, and canary procedure. The completed goals,
 as-built contracts, release audit, and merge handoff are recorded in
 [`specs/12_V1.0_as_built_and_release.md`](specs/12_V1.0_as_built_and_release.md).
 
+An opt-in V2 sequential prototype now adds explicit autonomy admission,
+deterministic repository scouting, a constrained Gemini Planner / GPT Solver /
+Claude Reviewer route, hard verification, bounded repairs, typed
+clarifications, and per-attempt provenance. V1 remains the default. See
+[`specs/15_SAGE_V2_PROTOTYPE_TESTING.md`](specs/15_SAGE_V2_PROTOTYPE_TESTING.md)
+before enabling V2 or making a paid canary call.
+
 ## Architecture
 
 ```text
@@ -115,6 +122,13 @@ and workflow policies without a GitHub token, network call, or model call:
 
 ```bash
 make v1-check
+```
+
+Run the complete offline V2 prototype checks and print its sequential graph:
+
+```bash
+make v2-check
+make v2-graph
 ```
 
 Use `make github-doctor` to check the local workflow installation and Docker
@@ -252,10 +266,12 @@ npm run build
   implemented. A controlled live run completed the provider, sandbox,
   publication, and draft Pull Request path successfully.
 - **V2 — multi-agent workflow:** later work will extend project-owned
-  orchestration with exploration, implementation, and review roles.
+  orchestration with exploration, implementation, and review roles. The first
+  opt-in sequential Planner/Solver/Reviewer prototype is implemented; parallel
+  workers, merge agents, replanning, and automatic merge remain deferred.
 
 Sage still contains no long-running GitHub App service, database, queue,
-checkpoint persistence, auto-merge, or multi-agent flow. V1.0 uses the
+checkpoint persistence, auto-merge, or parallel worker flow. V1.0 uses the
 job-scoped GitHub Actions token through its project-owned REST client at the
 trusted controller boundary.
 

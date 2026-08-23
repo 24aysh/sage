@@ -1,8 +1,8 @@
 # Sage backend
 
-The Python package contains the trusted V0 controller, isolated workspace
+The Python package contains the trusted controller, isolated workspace
 preparation, Docker sandbox, provider-neutral repository tools, artifact store,
-and the V0.1 project-owned LangGraph runtime.
+the V1 runtime, and the opt-in sequential V2 Planner/Solver/Reviewer runtime.
 
 Run from the repository root:
 
@@ -16,6 +16,9 @@ Print the topology of the compiled runtime without an API call:
 
 ```bash
 make graph
+make v2-graph
 ```
 
-See the root `README.md` for sandbox setup, configuration, and end-to-end usage.
+See the root `README.md` for setup and
+`specs/15_SAGE_V2_PROTOTYPE_TESTING.md` for V2 configuration and end-to-end
+testing.
