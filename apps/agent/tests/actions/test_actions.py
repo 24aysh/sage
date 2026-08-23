@@ -67,12 +67,17 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     )
     assert document["inputs"]["v2-solver-model"]["default"] == "gpt-5.4-mini"
     assert document["inputs"]["v2-reviewer-model"]["default"] == "gemini-3.5-flash"
+    assert document["inputs"]["langsmith-api-key"] == {
+        "description": "Optional LangSmith API key scoped to the solve controller step.",
+        "required": False,
+    }
     assert "ref: ${{ inputs.base-sha }}" in body
     assert "persist-credentials: false" in body
     assert "fetch-depth: 0" in body
     assert "github.action_path" in body
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
     assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
+    assert "LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}" in body
     assert "ANTHROPIC_API_KEY" not in body
     assert "SAGE_V2_PLANNER_MODEL: ${{ inputs.v2-planner-model }}" in body
     assert (
@@ -103,6 +108,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         rendered = yaml.safe_dump(step)
         assert "OPENAI_API_KEY" not in rendered
         assert "GEMINI_API_KEY" not in rendered
+        assert "LANGSMITH_API_KEY" not in rendered
     assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
@@ -127,6 +133,11 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
     assert jobs["solve"]["env"] == {
         "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}",
         "SAGE_RUNTIME": "${{ vars.SAGE_RUNTIME || 'v1' }}",
+        "LANGSMITH_TRACING": "${{ vars.LANGSMITH_TRACING || 'false' }}",
+        "LANGSMITH_PROJECT": "${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}",
+        "LANGSMITH_WORKSPACE_ID": "${{ vars.LANGSMITH_WORKSPACE_ID }}",
+        "LANGSMITH_HIDE_INPUTS": "${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}",
+        "LANGSMITH_HIDE_OUTPUTS": "${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}",
     }
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",
@@ -159,8 +170,11 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_PLANNER_MODEL" in yaml.safe_dump(jobs["solve"])
@@ -168,6 +182,8 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
+    assert "vars.LANGSMITH_TRACING" in yaml.safe_dump(jobs["solve"])
+    assert "vars.LANGSMITH_PROJECT" in yaml.safe_dump(jobs["solve"])
     assert "ANTHROPIC_API_KEY" not in body
     assert "anthropic-api-key" not in body
     assert "pull_request_target" not in body

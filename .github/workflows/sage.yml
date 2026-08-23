@@ -53,6 +53,11 @@ jobs:
     env:
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
       SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v1' }}
+      LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
+      LANGSMITH_PROJECT: ${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}
+      LANGSMITH_WORKSPACE_ID: ${{ vars.LANGSMITH_WORKSPACE_ID }}
+      LANGSMITH_HIDE_INPUTS: ${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}
+      LANGSMITH_HIDE_OUTPUTS: ${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}
     permissions:
       contents: write
       issues: write
@@ -65,6 +70,7 @@ jobs:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
           runtime: ${{ vars.SAGE_RUNTIME || 'v1' }}
           model-profile: constrained-cross-provider

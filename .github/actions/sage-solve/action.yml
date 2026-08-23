@@ -43,6 +43,9 @@ inputs:
     description: Explicit owner acknowledgement for sending context to Gemini.
     required: false
     default: "false"
+  langsmith-api-key:
+    description: Optional LangSmith API key scoped to the solve controller step.
+    required: false
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -112,6 +115,7 @@ runs:
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
         SAGE_RUNTIME: ${{ inputs.runtime }}
         SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}
