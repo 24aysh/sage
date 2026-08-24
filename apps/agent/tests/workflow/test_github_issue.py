@@ -228,6 +228,7 @@ def test_clarification_is_terminal_and_never_calls_publisher(tmp_path: Path) -> 
             BlockingQuestion(
                 question="What should the new value be? @team",
                 why_blocking="The repository does not define it.",
+                repository_evidence=("app.py:1 has only the current value.",),
             ),
         ),
         rerun_instruction="Reply, then post a new exact /sage solve command.",
@@ -259,6 +260,8 @@ def test_clarification_is_terminal_and_never_calls_publisher(tmp_path: Path) -> 
     assert result.outcome is GitHubWorkflowOutcome.NEEDS_HUMAN_INFORMATION
     assert status_state(client.status_body) is WorkflowStatusState.NEEDS_HUMAN_INFORMATION
     assert "sage-clarification:v1 round=1" in client.status_body
+    assert "Repository evidence:" in client.status_body
+    assert "app.py:1 has only the current value." in client.status_body
     assert "@all" not in client.status_body and "@team" not in client.status_body
 
 

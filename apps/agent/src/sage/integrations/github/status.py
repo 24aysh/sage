@@ -338,7 +338,14 @@ def _clarification_message(packet: ClarificationPacket) -> str:
                 f"   Why this blocks Sage: {_safe_markdown(question.why_blocking, 1_000)}",
             ]
         )
+        if question.repository_evidence:
+            sections.append("   Repository evidence:")
+            sections.extend(
+                "   - " + _safe_markdown(evidence, 500)
+                for evidence in question.repository_evidence
+            )
         if question.options:
+            sections.append("   Options:")
             sections.extend(
                 f"   - {_safe_markdown(option, 500)}" for option in question.options
             )

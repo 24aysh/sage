@@ -38,6 +38,17 @@ inputs:
   langsmith-api-key:
     description: Optional LangSmith API key scoped to the solve controller step.
     required: false
+  web-search-api-key:
+    description: Optional Tavily search key scoped to controller-side research.
+    required: false
+  web-search-provider:
+    description: Optional controller-side search provider (currently tavily).
+    required: false
+    default: ""
+  admission-enabled:
+    description: Run read-only V2 Admission before Solver.
+    required: false
+    default: "true"
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -108,6 +119,9 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
+        SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}
+        SAGE_WEB_SEARCH_PROVIDER: ${{ inputs.web-search-provider }}
+        SAGE_V2_ADMISSION_ENABLED: ${{ inputs.admission-enabled }}
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
         SAGE_RUNTIME: ${{ inputs.runtime }}
         SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}
