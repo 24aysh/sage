@@ -2,10 +2,10 @@
 
 ## Document status
 
-> **Status:** Proposed migration design. This document defines the target
-> architecture but does not implement it.
+> **Status:** Implemented locally on 25 August 2026. Deterministic and offline
+> integration checks pass; a controlled GitHub canary remains the rollout gate.
 >
-> **Date:** 24 August 2026
+> **Date:** 25 August 2026
 >
 > **Supersedes:** The Planner-first, patch-first execution architecture in
 > [`13_SAGE_V2_PROVISIONAL_DESIGN.md`](13_SAGE_V2_PROVISIONAL_DESIGN.md) and
