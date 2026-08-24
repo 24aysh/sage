@@ -15,6 +15,7 @@ from sage.domain.admission import (
 from sage.domain.planning import ExecutionPlan, RetrievalRequest
 from sage.domain.review import ReviewFailureType, ReviewResult, ReviewVerdict
 from sage.errors import AgentRuntimeError, RepositoryError
+from sage.repository.patch import normalize_null_file_headers
 from sage.repository.scope import validate_write_scopes
 
 _READY_REQUIRED = (
@@ -163,11 +164,12 @@ def validate_review(review: ReviewResult, *, plan: ExecutionPlan) -> None:
 def normalize_patch(value: str) -> str:
     """Apply one safe syntax normalization without an open-ended repair loop."""
 
-    patch = value.strip()
+    patch = value.strip().replace("\r\n", "\n").replace("\r", "\n")
     if patch.startswith("```diff\n") and patch.endswith("```"):
         patch = patch[len("```diff\n") : -3].rstrip()
     elif patch.startswith("```patch\n") and patch.endswith("```"):
         patch = patch[len("```patch\n") : -3].rstrip()
+    patch = normalize_null_file_headers(patch)
     if "GIT binary patch" in patch or "Binary files " in patch:
         raise RepositoryError("Binary patches are unsupported in the V2 prototype.")
     if patch.startswith(("*** Begin Patch", "*** Update File")):

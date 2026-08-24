@@ -121,8 +121,10 @@ class ContextCompiler:
                 "Return a structured SolverResult. For implemented status, provide "
                 "one unified Git diff against the current workspace. The patch "
                 "must begin with 'diff --git a/' or '--- a/' and must not use "
-                "apply-patch markers such as '*** Begin Patch'. Do not use Markdown "
-                "prose outside the schema and do not exceed frozen scope.",
+                "apply-patch markers such as '*** Begin Patch'. New or deleted "
+                "files must use the exact '/dev/null' header, including its leading "
+                "slash. Do not use Markdown prose outside the schema and do not "
+                "exceed frozen scope.",
             ),
         ]
         if repair_reason:
