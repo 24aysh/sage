@@ -164,6 +164,24 @@ guide.
 Use `make github-doctor` to check the local workflow installation and Docker
 availability before a live canary.
 
+When a saved candidate already exists, test the complete Git branch, commit,
+creation-only push, and draft-PR request without spending model calls or
+contacting GitHub:
+
+```bash
+make v2-github-smoke
+
+make v2-github-smoke \
+  REPO=/absolute/path/to/repository \
+  PATCH=/absolute/path/to/diff.patch \
+  BASE_REF=<artifact-base-sha> \
+  ISSUE_NUMBER=5
+```
+
+The second form replays a downloaded run patch against an isolated local clone.
+See the offline publication section in the V2 testing guide for inspection and
+limitations.
+
 ## Backend setup
 
 Install the locked Python environment from the repository root:

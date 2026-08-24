@@ -471,6 +471,57 @@ those values. The optional LangSmith key is likewise scoped only to the solve
 step. LangSmith traces are a separate hosted observability channel and are not
 part of the seven-day Actions diagnostics artifact.
 
+## Offline GitHub publication smoke test
+
+Use this before another `/sage solve` canary when solving and verification are
+already known to work. It exercises the production publication function with a
+real local candidate checkout and a local bare Git remote. A small in-memory
+GitHub client records the draft Pull Request request. It makes zero model calls,
+zero GitHub API calls, and zero network calls.
+
+Run the built-in fixture:
+
+```bash
+make v2-github-smoke
+```
+
+A successful run reports the unchanged `main` SHA, the new
+`sage/issue-17` SHA, the deterministic commit subject, and
+`Draft PR requested: true`. The retained checkout and bare remote are placed
+under `.sage/publication-smoke/<run-id>/`; no existing directory is overwritten.
+
+To replay a saved `diff.patch` against a local clone of the target repository:
+
+```bash
+make v2-github-smoke \
+  REPO=/absolute/path/to/testing-sage \
+  PATCH=/absolute/path/to/artifact/diff.patch \
+  BASE_REF=<artifact-base-sha> \
+  ISSUE_NUMBER=5
+```
+
+Read `base_sha` from the downloaded artifact's `metadata.json`. The command
+clones that exact commit into its own retained output, applies the patch using
+the same deterministic normalization as V2, and invokes the production
+creation-only publisher. It does not modify the supplied repository. To select
+an explicit retained location, add `OUTPUT_DIR=/absolute/new/path`; that path
+must not already exist.
+
+Inspect the simulated remote directly when needed:
+
+```bash
+git --git-dir .sage/publication-smoke/<run-id>/remote.git \
+  log --oneline --decorate --all
+git --git-dir .sage/publication-smoke/<run-id>/remote.git \
+  diff main sage/issue-17
+```
+
+This test proves local Git validation, authoritative staging, commit creation,
+creation-only branch push, unchanged default branch, and the draft-PR request.
+It intentionally does not test GitHub permissions, branch protection, REST API
+availability, or Actions token configuration; those still require one
+controlled canary after the offline test passes.
+
 ## Failure guide
 
 | Symptom | Meaning and recovery |
@@ -484,7 +535,7 @@ part of the seven-day Actions diagnostics artifact.
 | Rate limited | Check safe `retry_after`/attempt metadata, wait for the window, and avoid repeated commands. |
 | `invalid_model_output` | The role failed its structured schema and one bounded schema repair did not recover. Inspect `usage.json`; do not edit the schema artifact. |
 | `budget_exhausted` | Six calls or the finalization time reserve was reached. Narrow the Issue rather than raising limits casually. |
-| `verification_failed` | Inspect `verification-summary.json` and the corresponding local log. Required checks never reach publication. |
+| `verification_failed` | Read the `Verifier: failure` line, then inspect `verification-summary.json` and its referenced log. Required checks never reach publication. `new blank line at EOF` is normalized automatically by revisions containing the whitespace fix. |
 | `review_failed` | Inspect criterion results and blocking findings. A second review repair is not permitted. |
 | Clarification repeats | Answer all blocking questions explicitly; after round two, rewrite the Issue with a complete design. |
 | Candidate diff changed after solve | Confirm the workflow pins a Sage revision containing the authoritative publication fix. Older publishers re-added generated dependency/build output after solve; the corrected publisher stages only the validated patch. |
@@ -497,7 +548,8 @@ part of the seven-day Actions diagnostics artifact.
 For every Solver candidate, logs now show privacy-safe application metadata:
 
 ```text
-Patch: applying files=2 lines=18 digest=4b2f... recount=true
+Patch: applying files=2 lines=18 digest=4b2f... recount=true whitespace=fix
+Patch: whitespace normalized digest=4b2f... detail=... new blank line at EOF ...
 Patch: finished status=applied digest=4b2f...
 ```
 
@@ -508,10 +560,12 @@ digests, which makes it clear whether the Solver returned a genuinely revised
 patch.
 
 Sage safely normalizes CRLF line endings and a bare `dev/null` file header. It
-also invokes `git apply --recount`, which corrects inaccurate numbers in `@@`
-hunk headers. Git still rejects missing context, wrong source content, unsafe
-paths, Git-internal paths, malformed file headers, and patches that do not
-apply to the exact workspace.
+also invokes `git apply --recount --whitespace=fix`, which corrects inaccurate
+numbers in `@@` hunk headers and Git-recognized whitespace errors such as a new
+blank line at EOF. The adjustment is logged without printing patch content.
+Git still rejects missing context, wrong source content, unsafe paths,
+Git-internal paths, malformed file headers, and patches that do not apply to
+the exact workspace.
 
 Run the deterministic regression without provider keys:
 
@@ -523,10 +577,11 @@ uv run --frozen --project apps/agent pytest -q \
 ```
 
 The tests apply real patches to temporary Git repositories, including a
-new-file patch with `--- dev/null` and a patch with deliberately inaccurate
-hunk counts. They also verify that `make v2-first-run` disables Git's pager for
-its final diff summary, so local testing cannot open an interactive `less`
-screen. If a pager is already open, press `q`; it did not alter the candidate.
+new-file patch with `--- dev/null`, a trailing blank line, and deliberately
+inaccurate hunk counts. They also verify that `make v2-first-run` disables Git's
+pager for its final diff summary, so local testing cannot open an interactive
+`less` screen. If a pager is already open, press `q`; it did not alter the
+candidate.
 
 ### Gemini HTTP 400 during Planner or Reviewer calls
 
