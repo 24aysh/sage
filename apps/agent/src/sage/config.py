@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -15,6 +17,10 @@ DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_PROFILE = "constrained-cross-provider"
 DEFAULT_V2_SOLVER_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_REVIEWER_MODEL = "gemini-3.5-flash"
+_PUBLIC_DOMAIN = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
 
 
 class ConfiguredVerificationCommand(BaseModel):
@@ -69,6 +75,24 @@ class Settings(BaseModel):
         max_length=120,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
     )
+    v2_admission_enabled: bool = True
+    v2_admission_max_turns: int = Field(default=12, ge=1, le=30)
+    v2_admission_context_chars: int = Field(
+        default=48_000,
+        ge=8_000,
+        le=96_000,
+    )
+    max_clarification_rounds: int = Field(default=2, ge=1, le=2)
+    research_enabled: bool = True
+    web_search_provider: str = Field(default="", pattern=r"^(|tavily)$")
+    web_search_api_key: str | None = Field(default=None, repr=False)
+    research_timeout_seconds: int = Field(default=15, ge=1, le=60)
+    research_max_result_chars: int = Field(default=12_000, ge=2_000, le=12_000)
+    research_allowed_domains: tuple[str, ...] = Field(default=(), max_length=50)
+    official_documentation_domains: tuple[str, ...] = Field(
+        default=(),
+        max_length=50,
+    )
     max_turns: int = Field(default=30, ge=1)
     runs_dir: Path = Path(".sage/runs")
     sandbox_image: str = "sage-sandbox:v0"
@@ -100,6 +124,23 @@ class Settings(BaseModel):
             raise ValueError(
                 "LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true."
             )
+        if (
+            self.research_enabled
+            and self.web_search_provider
+            and self.web_search_api_key is None
+        ):
+            raise ValueError(
+                "SAGE_WEB_SEARCH_API_KEY is required when a web search provider "
+                "is selected."
+            )
+        for domain in (
+            *self.research_allowed_domains,
+            *self.official_documentation_domains,
+        ):
+            if not _is_public_domain(domain):
+                raise ValueError(
+                    "Research domain configuration must use public hostnames."
+                )
         return self
 
     @classmethod
@@ -113,6 +154,9 @@ class Settings(BaseModel):
             raise ConfigurationError("OPENAI_API_KEY is required.")
         gemini_api_key = values.get("GEMINI_API_KEY", "").strip() or None
         langsmith_api_key = values.get("LANGSMITH_API_KEY", "").strip() or None
+        web_search_api_key = (
+            values.get("SAGE_WEB_SEARCH_API_KEY", "").strip() or None
+        )
         langsmith_tracing = _parse_bool(
             values.get("LANGSMITH_TRACING", "false"),
             name="LANGSMITH_TRACING",
@@ -180,6 +224,39 @@ class Settings(BaseModel):
                 v2_reviewer_model=values.get(
                     "SAGE_V2_REVIEWER_MODEL", DEFAULT_V2_REVIEWER_MODEL
                 ).strip(),
+                v2_admission_enabled=_parse_bool(
+                    values.get("SAGE_V2_ADMISSION_ENABLED", "true"),
+                    name="SAGE_V2_ADMISSION_ENABLED",
+                ),
+                v2_admission_max_turns=values.get(
+                    "SAGE_V2_ADMISSION_MAX_TURNS", "12"
+                ),
+                v2_admission_context_chars=values.get(
+                    "SAGE_V2_ADMISSION_CONTEXT_CHARS", "48000"
+                ),
+                max_clarification_rounds=values.get(
+                    "SAGE_MAX_CLARIFICATION_ROUNDS", "2"
+                ),
+                research_enabled=_parse_bool(
+                    values.get("SAGE_RESEARCH_ENABLED", "true"),
+                    name="SAGE_RESEARCH_ENABLED",
+                ),
+                web_search_provider=values.get(
+                    "SAGE_WEB_SEARCH_PROVIDER", ""
+                ).strip().lower(),
+                web_search_api_key=web_search_api_key,
+                research_timeout_seconds=values.get(
+                    "SAGE_RESEARCH_TIMEOUT_SECONDS", "15"
+                ),
+                research_max_result_chars=values.get(
+                    "SAGE_RESEARCH_MAX_RESULT_CHARS", "12000"
+                ),
+                research_allowed_domains=_parse_domains(
+                    values.get("SAGE_RESEARCH_ALLOWED_DOMAINS", "")
+                ),
+                official_documentation_domains=_parse_domains(
+                    values.get("SAGE_OFFICIAL_DOCUMENTATION_DOMAINS", "")
+                ),
                 max_turns=values.get("SAGE_MAX_TURNS", "30"),
                 runs_dir=values.get("SAGE_RUNS_DIR", ".sage/runs"),
                 sandbox_image=values.get(
@@ -251,3 +328,20 @@ def _parse_verification_commands(
         raise ConfigurationError(
             "SAGE_VERIFICATION_COMMANDS_JSON contains an invalid command."
         ) from error
+
+
+def _parse_domains(value: str) -> tuple[str, ...]:
+    return tuple(
+        item.strip().lower().rstrip(".")
+        for item in value.split(",")
+        if item.strip()
+    )
+
+
+def _is_public_domain(value: str) -> bool:
+    if not _PUBLIC_DOMAIN.fullmatch(value) or value == "localhost":
+        return False
+    try:
+        return ipaddress.ip_address(value).is_global
+    except ValueError:
+        return not value.endswith(".localhost")

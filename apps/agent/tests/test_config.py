@@ -24,6 +24,16 @@ def test_settings_loads_all_supported_environment_values() -> None:
             "LANGSMITH_API_KEY": "langsmith-secret",
             "LANGSMITH_PROJECT": "sage-test",
             "LANGSMITH_WORKSPACE_ID": "workspace-123",
+            "SAGE_V2_ADMISSION_ENABLED": "false",
+            "SAGE_V2_ADMISSION_MAX_TURNS": "8",
+            "SAGE_V2_ADMISSION_CONTEXT_CHARS": "32000",
+            "SAGE_RESEARCH_ENABLED": "true",
+            "SAGE_WEB_SEARCH_PROVIDER": "tavily",
+            "SAGE_WEB_SEARCH_API_KEY": "search-secret",
+            "SAGE_RESEARCH_TIMEOUT_SECONDS": "20",
+            "SAGE_RESEARCH_MAX_RESULT_CHARS": "8000",
+            "SAGE_RESEARCH_ALLOWED_DOMAINS": "docs.example.com,example.org",
+            "SAGE_OFFICIAL_DOCUMENTATION_DOMAINS": "docs.example.com",
         }
     )
 
@@ -38,7 +48,18 @@ def test_settings_loads_all_supported_environment_values() -> None:
     assert settings.langsmith_tracing is True
     assert settings.langsmith_project == "sage-test"
     assert settings.langsmith_workspace_id == "workspace-123"
+    assert settings.v2_admission_enabled is False
+    assert settings.v2_admission_max_turns == 8
+    assert settings.v2_admission_context_chars == 32_000
+    assert settings.web_search_provider == "tavily"
+    assert settings.research_timeout_seconds == 20
+    assert settings.research_max_result_chars == 8_000
+    assert settings.research_allowed_domains == (
+        "docs.example.com",
+        "example.org",
+    )
     assert "langsmith-secret" not in repr(settings)
+    assert "search-secret" not in repr(settings)
 
 
 def test_settings_uses_the_project_default_openai_model() -> None:
@@ -83,6 +104,29 @@ def test_v2_settings_use_documented_default_models() -> None:
     assert settings.google_model_context_approved is True
     assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
     assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
+    assert settings.v2_admission_enabled is True
+    assert settings.research_enabled is True
+
+
+def test_selected_research_provider_requires_its_secret() -> None:
+    with pytest.raises(ConfigurationError, match="SAGE_WEB_SEARCH_API_KEY"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                "SAGE_WEB_SEARCH_PROVIDER": "tavily",
+            }
+        )
+
+
+@pytest.mark.parametrize("domain", ["localhost", "127.0.0.1", "bad domain"])
+def test_research_domains_must_be_public_hostnames(domain: str) -> None:
+    with pytest.raises(ConfigurationError, match="public hostnames"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                "SAGE_RESEARCH_ALLOWED_DOMAINS": domain,
+            }
+        )
 
 
 def test_v2_settings_require_gemini_credentials() -> None:
