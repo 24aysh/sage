@@ -176,6 +176,35 @@ def test_github_event_check_classifies_fixture_without_credentials(
     )
 
 
+def test_github_publication_smoke_runs_without_credentials(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("SAGE_GITHUB_TOKEN", raising=False)
+
+    exit_code = cli.main(
+        [
+            "github",
+            "publication-smoke",
+            "--output-dir",
+            str(tmp_path / "publication-smoke"),
+            "--issue-number",
+            "9",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "GitHub publication smoke: passed" in output
+    assert "Sage branch: sage/issue-9" in output
+    assert "Draft PR requested: true" in output
+    assert "Model calls: 0" in output
+    assert "Network calls: 0" in output
+
+
 def test_github_solve_wires_runner_paths_and_status_id(
     monkeypatch,
     tmp_path: Path,

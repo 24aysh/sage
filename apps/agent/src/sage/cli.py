@@ -26,6 +26,10 @@ from sage.integrations.github.events import (
 )
 from sage.integrations.github.gate import evaluate_gate
 from sage.integrations.github.outputs import write_gate_outputs
+from sage.integrations.github.publication_smoke import (
+    default_publication_smoke_dir,
+    run_publication_smoke,
+)
 from sage.runtimes.factory import build_runtime
 from sage.workflow import solve_issue
 from sage.workflow.github_issue import finalize_github_issue, run_github_issue
@@ -134,6 +138,22 @@ def _build_parser() -> argparse.ArgumentParser:
     event_parser.add_argument("--event-file", required=True, type=Path)
     event_parser.add_argument("--debug", action="store_true")
     event_parser.set_defaults(handler=_run_github_event_check)
+
+    publication_smoke_parser = github_subparsers.add_parser(
+        "publication-smoke",
+        help="Exercise branch and draft-PR publication entirely offline.",
+    )
+    publication_smoke_parser.add_argument("--output-dir", type=Path)
+    publication_smoke_parser.add_argument("--repo", type=Path)
+    publication_smoke_parser.add_argument("--patch-file", type=Path)
+    publication_smoke_parser.add_argument("--base-ref", default="HEAD")
+    publication_smoke_parser.add_argument(
+        "--issue-number",
+        default=17,
+        type=_positive_integer,
+    )
+    publication_smoke_parser.add_argument("--debug", action="store_true")
+    publication_smoke_parser.set_defaults(handler=_run_github_publication_smoke)
     return parser
 
 
@@ -243,6 +263,32 @@ def _run_github_event_check(arguments: argparse.Namespace) -> int:
     else:
         classification = f"supported_{invocation.command.value}"
     print(f"GitHub event classification: {classification}")
+    return 0
+
+
+def _run_github_publication_smoke(arguments: argparse.Namespace) -> int:
+    """Exercise production Git publication with local deterministic substitutes."""
+
+    output_dir = arguments.output_dir or default_publication_smoke_dir(Path.cwd())
+    result = run_publication_smoke(
+        output_dir,
+        repository=arguments.repo,
+        patch_file=arguments.patch_file,
+        base_ref=arguments.base_ref,
+        issue_number=arguments.issue_number,
+    )
+    print("GitHub publication smoke: passed")
+    print(f"  Output: {result.output_dir}")
+    print(f"  Default branch: main @ {result.default_branch_sha[:12]} (unchanged)")
+    print(
+        f"  Sage branch: {result.publication.branch_name} "
+        f"@ {result.sage_branch_sha[:12]}"
+    )
+    print(f"  Commit: fix: resolve issue #{arguments.issue_number}")
+    print(f"  Draft PR requested: {str(result.pull_request_draft).lower()}")
+    print(f"  PR title: {result.pull_request_title}")
+    print("  Model calls: 0")
+    print("  Network calls: 0")
     return 0
 
 

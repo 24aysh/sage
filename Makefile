@@ -13,12 +13,15 @@ REPO ?=
 ISSUE ?=
 BASE_REF ?= HEAD
 RUN_DIR ?=
+PATCH ?=
+OUTPUT_DIR ?=
+ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
 V2_SAMPLE_DIR ?= $(ROOT_DIR)/v2-manual-test
 DEBUG_FLAG :=
 
-.PHONY: help env setup bootstrap first-run v2-first-run doctor github-doctor sandbox-build \
+.PHONY: help env setup bootstrap first-run v2-first-run v2-github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check v1-check \
 	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
 	run-status run-test
@@ -32,6 +35,9 @@ help: ## Show the available commands and variables.
 		'                        Configure, set up, verify, and solve in one command.' \
 		'  make v2-first-run REPO=... ISSUE=...' \
 		'                        Run strict live V2; omit both inputs to use the sample.' \
+		'  make v2-github-smoke   Test branch/commit/draft-PR publication with no APIs.' \
+		'  make v2-github-smoke REPO=... PATCH=... BASE_REF=...' \
+		'                        Test a saved patch against a local clone and Git remote.' \
 		'  make env              Create .env from .env.example (never overwrites).' \
 		'  make bootstrap        Install Python deps, build/smoke-test the sandbox, run doctor.' \
 		'  make doctor           Check tools, Docker, the sandbox image, and API-key setup.' \
@@ -264,6 +270,28 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	echo; \
 	echo "V2 local workflow succeeded."; \
 	echo "Inspect the candidate and artifacts at: $$run_dir"
+
+v2-github-smoke: ## Exercise production publication locally without model or network calls.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -n "$(REPO)" || -n "$(PATCH)" ]]; then \
+		if [[ -z "$(REPO)" || -z "$(PATCH)" ]]; then \
+			echo "ERROR: REPO and PATCH must be provided together." >&2; \
+			echo "Use: make v2-github-smoke REPO=/absolute/repo PATCH=/absolute/diff.patch BASE_REF=<sha>" >&2; \
+			exit 1; \
+		fi; \
+		[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
+		[[ -f "$(PATCH)" ]] || { echo "ERROR: patch file does not exist: $(PATCH)" >&2; exit 1; }; \
+	fi; \
+	args=(github publication-smoke --base-ref "$(BASE_REF)" --issue-number "$(ISSUE_NUMBER)"); \
+	if [[ -n "$(REPO)" ]]; then \
+		args+=(--repo "$(REPO)" --patch-file "$(PATCH)"); \
+	fi; \
+	if [[ -n "$(OUTPUT_DIR)" ]]; then \
+		args+=(--output-dir "$(OUTPUT_DIR)"); \
+	fi; \
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-publication-smoke-uv-cache \
+		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
 
 doctor: ## Check all prerequisites needed for a live solve.
 	@set -euo pipefail; \
