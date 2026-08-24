@@ -1,5 +1,9 @@
 # Sage V2 Sequential Prototype Testing Guide
 
+> Historical guide for the removed Planner/patch-first prototype. Use
+> [`17_SAGE_V2_TOOL_DRIVEN_TESTING.md`](17_SAGE_V2_TOOL_DRIVEN_TESTING.md) for
+> the current two-role Solver/Reviewer runtime.
+
 ## Purpose
 
 This guide validates the first Sage V2 prototype from a maintainer's point of

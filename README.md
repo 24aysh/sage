@@ -23,11 +23,11 @@ user-side setup, provider recovery, and canary procedure. The completed goals,
 as-built contracts, release audit, and merge handoff are recorded in
 [`specs/12_V1.0_as_built_and_release.md`](specs/12_V1.0_as_built_and_release.md).
 
-An opt-in V2 sequential prototype now adds explicit autonomy admission,
-deterministic repository scouting, a constrained Gemini Planner / GPT Solver /
-Gemini Reviewer route, hard verification, bounded repairs, typed
-clarifications, and per-attempt provenance. V1 remains the default. See
-[`specs/15_SAGE_V2_PROTOTYPE_TESTING.md`](specs/15_SAGE_V2_PROTOTYPE_TESTING.md)
+An opt-in V2 sequential prototype now reuses the V1 repository-tool loop for
+an OpenAI Solver, persists the Solver's plan before mutation, and requires an
+independent Gemini Reviewer pass over the actual Git candidate. V1 remains the
+default. See
+[`specs/17_SAGE_V2_TOOL_DRIVEN_TESTING.md`](specs/17_SAGE_V2_TOOL_DRIVEN_TESTING.md)
 before enabling V2 or making a paid canary call.
 
 ## Architecture
@@ -153,12 +153,11 @@ make v2-first-run \
   ISSUE=/absolute/path/to/issue.md
 ```
 
-During a run, INFO logs render readable `Planner: activity`, `Solver: result`,
+During a run, INFO logs render readable `Solver: activity`, `Solver: result`,
 verification progress, and `Reviewer: finished` panels. They include the task,
 stage, provider, model, attempt, structured decision, counts, and latency, but
 never prompt, repository, patch, or review-evidence content. Optional LangSmith
-tracing records a `Sage V2 Workflow` trace with named `Planner`, `Solver`, and
-`Reviewer` spans; configuration and data-boundary guidance is in the V2 testing
+tracing records named `Solver` and `Reviewer` spans; configuration and data-boundary guidance is in the V2 testing
 guide.
 
 Use `make github-doctor` to check the local workflow installation and Docker
@@ -208,9 +207,8 @@ export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 All supported values are documented in [.env.example](.env.example). The V1
-model can be changed with `OPENAI_MODEL`. V2 Planner, Planner fallback, Solver,
-and Reviewer models can be changed with `SAGE_V2_PLANNER_MODEL`,
-`SAGE_V2_PLANNER_FALLBACK_MODEL`, `SAGE_V2_SOLVER_MODEL`, and
+model can be changed with `OPENAI_MODEL`. V2 has exactly two model roles: its
+Solver and Reviewer can be changed with `SAGE_V2_SOLVER_MODEL` and
 `SAGE_V2_REVIEWER_MODEL` without editing application code. Temporary
 OpenAI failures use bounded SDK backoff; `OPENAI_MAX_RETRIES` defaults to `2`
 and accepts values from `0` through `10`. Increasing retries does not repair
@@ -316,10 +314,10 @@ npm run build
   repair, pinned composite actions, and the installable workflow are
   implemented. A controlled live run completed the provider, sandbox,
   publication, and draft Pull Request path successfully.
-- **V2 — multi-agent workflow:** later work will extend project-owned
-  orchestration with exploration, implementation, and review roles. The first
-  opt-in sequential Planner/Solver/Reviewer prototype is implemented; parallel
-  workers, merge agents, replanning, and automatic merge remain deferred.
+- **V2 — multi-agent workflow:** the opt-in sequential Solver/Reviewer runtime
+  uses structured repository edits, Git-derived candidates, independent review,
+  and progress-based repairs. Parallel workers, merge agents, and automatic
+  merge remain deferred.
 
 Sage still contains no long-running GitHub App service, database, queue,
 checkpoint persistence, auto-merge, or parallel worker flow. V1.0 uses the
