@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "4639cd369af25512eef7d9e183ccb2e213141fdd"
+SAGE_ACTION_SHA = "281e158fba7333c037168108411981dea39f812f"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -39,6 +39,7 @@ def test_gate_action_is_model_secret_free_and_uses_pinned_source() -> None:
     assert "OPENAI_API_KEY" not in body
     assert "openai-api-key" not in body
     assert "GEMINI_API_KEY" not in body
+    assert "SAGE_WEB_SEARCH_API_KEY" not in body
     assert "github.action_path" in body
     assert "sage github gate" in body
     assert "sage github finalize" in body
@@ -82,6 +83,9 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
     assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
     assert "LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}" in body
+    assert "SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}" in body
+    assert document["inputs"]["web-search-provider"]["default"] == ""
+    assert document["inputs"]["admission-enabled"]["default"] == "true"
     assert "ANTHROPIC_API_KEY" not in body
     assert "SAGE_V2_PLANNER_MODEL" not in body
     assert "SAGE_V2_PLANNER_FALLBACK_MODEL" not in body
@@ -110,6 +114,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         assert "OPENAI_API_KEY" not in rendered
         assert "GEMINI_API_KEY" not in rendered
         assert "LANGSMITH_API_KEY" not in rendered
+        assert "SAGE_WEB_SEARCH_API_KEY" not in rendered
     assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
@@ -139,6 +144,28 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         "LANGSMITH_WORKSPACE_ID": "${{ vars.LANGSMITH_WORKSPACE_ID }}",
         "LANGSMITH_HIDE_INPUTS": "${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}",
         "LANGSMITH_HIDE_OUTPUTS": "${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}",
+        "SAGE_V2_ADMISSION_MAX_TURNS": (
+            "${{ vars.SAGE_V2_ADMISSION_MAX_TURNS || '12' }}"
+        ),
+        "SAGE_V2_ADMISSION_CONTEXT_CHARS": (
+            "${{ vars.SAGE_V2_ADMISSION_CONTEXT_CHARS || '48000' }}"
+        ),
+        "SAGE_MAX_CLARIFICATION_ROUNDS": (
+            "${{ vars.SAGE_MAX_CLARIFICATION_ROUNDS || '2' }}"
+        ),
+        "SAGE_RESEARCH_ENABLED": "${{ vars.SAGE_RESEARCH_ENABLED || 'true' }}",
+        "SAGE_RESEARCH_TIMEOUT_SECONDS": (
+            "${{ vars.SAGE_RESEARCH_TIMEOUT_SECONDS || '15' }}"
+        ),
+        "SAGE_RESEARCH_MAX_RESULT_CHARS": (
+            "${{ vars.SAGE_RESEARCH_MAX_RESULT_CHARS || '12000' }}"
+        ),
+        "SAGE_RESEARCH_ALLOWED_DOMAINS": (
+            "${{ vars.SAGE_RESEARCH_ALLOWED_DOMAINS }}"
+        ),
+        "SAGE_OFFICIAL_DOCUMENTATION_DOMAINS": (
+            "${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}"
+        ),
     }
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",
@@ -173,9 +200,12 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.SAGE_WEB_SEARCH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_PLANNER_MODEL" not in yaml.safe_dump(jobs["solve"])
@@ -183,6 +213,8 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_ADMISSION_ENABLED" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_WEB_SEARCH_PROVIDER" in yaml.safe_dump(jobs["solve"])
     solve_action = next(
         step
         for step in jobs["solve"]["steps"]
@@ -207,10 +239,14 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
     allowed = {
         "metadata.json",
         "github.json",
-            "agent-final.json",
-            "solver-plan.json",
-            "solver-final.json",
-            "changed-files.json",
+        "agent-final.json",
+        "admission-final.json",
+        "admission-context-summary.json",
+        "clarification.json",
+        "research-summary.json",
+        "solver-plan.json",
+        "solver-final.json",
+        "changed-files.json",
         "diff.patch",
         "usage.json",
         "terminal.json",
