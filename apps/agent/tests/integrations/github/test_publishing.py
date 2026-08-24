@@ -21,6 +21,7 @@ from sage.integrations.github.publishing import (
     render_pull_request_body,
     render_pull_request_title,
 )
+from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "github"
 
@@ -114,6 +115,38 @@ def test_publish_creates_only_sage_branch_commit_and_draft_pr(tmp_path: Path) ->
     )
     assert not (runner_temp / "sage-credentials" / "git-askpass.sh").exists()
     assert client.branch_checks == client.pull_request_checks == 2
+
+
+def test_publish_ignores_untracked_runtime_noise_outside_authoritative_diff(
+    tmp_path: Path,
+) -> None:
+    remote, _seed, candidate, base_sha = _repositories(tmp_path)
+    (candidate / "app.py").write_text("value = 2\n", encoding="utf-8")
+    generated = candidate / "node_modules" / "dependency" / "generated.js"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("generated\n", encoding="utf-8")
+    result = _solve_result(candidate, base_sha)
+
+    published = publish_solve_result(
+        _invocation(base_sha),
+        result,
+        FakeClient(),
+        github_token="token",
+        runner_temp=tmp_path / "runner",
+        remote_url_factory=lambda _: str(remote),
+    )
+
+    assert published.outcome is PublicationOutcome.PULL_REQUEST_CREATED
+    branch_sha = _git_output(remote, "rev-parse", "refs/heads/sage/issue-17")
+    assert _git_output(
+        remote,
+        "diff-tree",
+        "--no-commit-id",
+        "--name-only",
+        "-r",
+        branch_sha,
+    ) == "app.py"
+    assert generated.is_file()
 
 
 def test_publish_supports_add_delete_rename_and_binary_changes(tmp_path: Path) -> None:
@@ -423,6 +456,15 @@ def _repositories(tmp_path: Path) -> tuple[Path, Path, Path, str]:
 
 
 def _solve_result(candidate: Path, base_sha: str) -> SolveResult:
+    _git(
+        candidate,
+        "add",
+        "--intent-to-add",
+        "--all",
+        "--",
+        ".",
+        *IGNORED_UNTRACKED_PATHSPECS,
+    )
     return SolveResult(
         run_id="run-id",
         base_sha=base_sha,

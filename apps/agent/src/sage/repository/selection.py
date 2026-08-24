@@ -24,3 +24,9 @@ IGNORED_NAMES = frozenset(
         "vendor",
     }
 )
+
+# Keep untracked runtime/dependency noise outside the authoritative candidate
+# while still allowing tracked files under these names to be modified.
+IGNORED_UNTRACKED_PATHSPECS = tuple(
+    f":(exclude,glob)**/{name}/**" for name in sorted(IGNORED_NAMES)
+)

@@ -6,7 +6,7 @@ import shlex
 
 from sage.errors import CommandExecutionError, CommandTimeoutError
 from sage.repository.output import truncate_text
-from sage.repository.selection import IGNORED_NAMES
+from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 from sage.sandbox.base import CommandResult, Sandbox
 
 
@@ -73,8 +73,7 @@ def _ensure_untracked_files_are_diffable(
     # Intent-to-add records no file content; it only lets `git diff HEAD` include
     # new files in the authoritative patch without staging the candidate change.
     ignored_untracked = " ".join(
-        shlex.quote(f":(exclude,glob)**/{name}/**")
-        for name in sorted(IGNORED_NAMES)
+        shlex.quote(pathspec) for pathspec in IGNORED_UNTRACKED_PATHSPECS
     )
     _required_command(
         sandbox,
