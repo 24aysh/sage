@@ -66,6 +66,13 @@ def get_changed_files(sandbox: Sandbox, *, timeout_seconds: int) -> list[str]:
     return sorted(path for path in result.stdout.split("\0") if path)
 
 
+def get_head_sha(sandbox: Sandbox, *, timeout_seconds: int) -> str:
+    """Return the current workspace HEAD object ID."""
+
+    result = _required_command(sandbox, "git rev-parse HEAD", timeout_seconds)
+    return result.stdout.strip()
+
+
 def _ensure_untracked_files_are_diffable(
     sandbox: Sandbox,
     timeout_seconds: int,

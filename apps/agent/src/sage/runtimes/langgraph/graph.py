@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from time import perf_counter
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypeVar, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
 from langchain_core.runnables import Runnable
@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from sage.domain.results import AgentFinalOutput
 from sage.errors import AgentRuntimeError, RepositoryError
@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 GRAPH_NAME = "sage_v0_1"
 Route = Literal["tools", "finalize", "turn_limit", "invalid_response"]
+OutputModel = TypeVar("OutputModel", bound=BaseModel)
+ModelStartHook = Callable[[int], object]
+ModelFinishHook = Callable[[object, AIMessage, float], None]
 
 
 class GraphInput(TypedDict):
@@ -38,8 +41,8 @@ class AgentState(TypedDict):
 
     messages: Annotated[list[AnyMessage], add_messages]
     model_turns: int
-    pending_output: NotRequired[AgentFinalOutput | dict[str, object] | None]
-    final_output: NotRequired[AgentFinalOutput]
+    pending_output: NotRequired[BaseModel | dict[str, object] | None]
+    final_output: NotRequired[BaseModel]
 
 
 class GraphOutput(TypedDict):
@@ -52,6 +55,10 @@ def build_agent_node(
     *,
     model: Runnable[Any, AIMessage],
     max_turns: int,
+    instructions: str = CODING_AGENT_INSTRUCTIONS,
+    role_name: str = "Agent",
+    on_model_start: ModelStartHook | None = None,
+    on_model_finish: ModelFinishHook | None = None,
 ) -> Callable[[AgentState], Awaitable[dict[str, object]]]:
     """Create the node that performs exactly one asynchronous model decision."""
 
@@ -62,14 +69,19 @@ def build_agent_node(
                 f"Model turn limit ({max_turns}) was reached before a decision."
             )
 
+        turn_number = current_turns + 1
+        hook_state = on_model_start(turn_number) if on_model_start else None
+        logger.info("%s: activity turn=%d", role_name, turn_number)
         started = perf_counter()
         response = await model.ainvoke(
-            [SystemMessage(content=CODING_AGENT_INSTRUCTIONS), *state["messages"]]
+            [SystemMessage(content=instructions), *state["messages"]]
         )
         if not isinstance(response, AIMessage):
             raise AgentRuntimeError("Model returned a non-AI graph message.")
 
-        turn_number = current_turns + 1
+        duration_ms = round((perf_counter() - started) * 1000, 2)
+        if on_model_finish is not None:
+            on_model_finish(hook_state, response, duration_ms)
         parsed = response.additional_kwargs.get("parsed")
         tool_name = (
             response.tool_calls[0]["name"] if len(response.tool_calls) == 1 else None
@@ -81,7 +93,7 @@ def build_agent_node(
                 "has_structured_output": parsed is not None,
                 "tool_call_count": len(response.tool_calls),
                 "tool_name": tool_name,
-                "duration_ms": round((perf_counter() - started) * 1000, 2),
+                "duration_ms": duration_ms,
                 "total_tokens": _total_tokens(response),
             },
         )
@@ -121,17 +133,25 @@ def route_after_agent(
     return "tools"
 
 
-async def finalize(state: AgentState) -> dict[str, AgentFinalOutput]:
-    """Validate provider-parsed output into the project-owned result model."""
+def build_finalize_node(
+    output_schema: type[OutputModel],
+) -> Callable[[AgentState], Awaitable[dict[str, OutputModel]]]:
+    """Create a terminal node for one project-owned structured contract."""
 
-    pending_output = state.get("pending_output")
-    if pending_output is None:
-        raise AgentRuntimeError("Agent finished without structured output.")
-    try:
-        final_output = AgentFinalOutput.model_validate(pending_output)
-    except (TypeError, ValidationError) as error:
-        raise AgentRuntimeError("Agent returned invalid structured output.") from error
-    return {"final_output": final_output}
+    async def finalize(state: AgentState) -> dict[str, OutputModel]:
+        pending_output = state.get("pending_output")
+        if pending_output is None:
+            raise AgentRuntimeError("Agent finished without structured output.")
+        try:
+            final_output = output_schema.model_validate(pending_output)
+        except (TypeError, ValidationError) as error:
+            raise AgentRuntimeError("Agent returned invalid structured output.") from error
+        return {"final_output": final_output}
+
+    return finalize
+
+
+finalize = build_finalize_node(AgentFinalOutput)
 
 
 def build_turn_limit_node(max_turns: int) -> Callable[[AgentState], Awaitable[None]]:
@@ -162,6 +182,12 @@ def build_graph(
     model: Runnable[Any, AIMessage],
     tools: Sequence[BaseTool],
     max_turns: int,
+    instructions: str = CODING_AGENT_INSTRUCTIONS,
+    output_schema: type[BaseModel] = AgentFinalOutput,
+    graph_name: str = GRAPH_NAME,
+    role_name: str = "Agent",
+    on_model_start: ModelStartHook | None = None,
+    on_model_finish: ModelFinishHook | None = None,
 ) -> CompiledStateGraph[AgentState, None, GraphInput, GraphOutput]:
     """Compile a fresh, checkpoint-free V0.1 reasoning graph."""
 
@@ -184,7 +210,14 @@ def build_graph(
     )
     builder.add_node(
         "agent",
-        build_agent_node(model=model, max_turns=max_turns),
+        build_agent_node(
+            model=model,
+            max_turns=max_turns,
+            instructions=instructions,
+            role_name=role_name,
+            on_model_start=on_model_start,
+            on_model_finish=on_model_finish,
+        ),
     )
     builder.add_node(
         "tools",
@@ -194,7 +227,7 @@ def build_graph(
             handle_tool_errors=_handle_repository_tool_error,
         ),
     )
-    builder.add_node("finalize", finalize)
+    builder.add_node("finalize", build_finalize_node(output_schema))
     builder.add_node("turn_limit", build_turn_limit_node(max_turns))
     builder.add_node(
         "invalid_response",
@@ -216,7 +249,7 @@ def build_graph(
     builder.add_edge("finalize", END)
     builder.add_edge("turn_limit", END)
     builder.add_edge("invalid_response", END)
-    return builder.compile(name=GRAPH_NAME)
+    return builder.compile(name=graph_name)
 
 
 def _handle_repository_tool_error(error: RepositoryError) -> str:
