@@ -73,7 +73,7 @@ help: ## Show the available commands and variables.
 		'' \
 		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.' \
 		'See specs/10_V1.0_testing.md for current GitHub migration checks.' \
-		'See specs/17_SAGE_V2_TOOL_DRIVEN_TESTING.md for current V2 checks.'
+		'See specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md for current V2 checks.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -176,6 +176,7 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
 	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
 	inherited_langsmith_api_key="$${LANGSMITH_API_KEY:-}"; \
+	inherited_web_search_api_key="$${SAGE_WEB_SEARCH_API_KEY:-}"; \
 	inherited_langsmith_tracing="$${LANGSMITH_TRACING:-}"; \
 	inherited_langsmith_project="$${LANGSMITH_PROJECT:-}"; \
 	inherited_langsmith_workspace_id="$${LANGSMITH_WORKSPACE_ID:-}"; \
@@ -187,6 +188,7 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
 	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
 	if [[ -n "$$inherited_langsmith_api_key" ]]; then export LANGSMITH_API_KEY="$$inherited_langsmith_api_key"; fi; \
+	if [[ -n "$$inherited_web_search_api_key" ]]; then export SAGE_WEB_SEARCH_API_KEY="$$inherited_web_search_api_key"; fi; \
 	if [[ -n "$$inherited_langsmith_tracing" ]]; then export LANGSMITH_TRACING="$$inherited_langsmith_tracing"; fi; \
 	if [[ -n "$$inherited_langsmith_project" ]]; then export LANGSMITH_PROJECT="$$inherited_langsmith_project"; fi; \
 	if [[ -n "$$inherited_langsmith_workspace_id" ]]; then export LANGSMITH_WORKSPACE_ID="$$inherited_langsmith_workspace_id"; fi; \
@@ -359,6 +361,17 @@ doctor: ## Check all prerequisites needed for a live solve.
 		else \
 			echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; status=1; \
 		fi; \
+		if [[ -n "$${SAGE_WEB_SEARCH_PROVIDER:-}" ]]; then \
+			if [[ "$${SAGE_WEB_SEARCH_PROVIDER}" != "tavily" ]]; then \
+				echo "ERROR: SAGE_WEB_SEARCH_PROVIDER must be empty or tavily." >&2; status=1; \
+			elif [[ -n "$${SAGE_WEB_SEARCH_API_KEY:-}" ]]; then \
+				echo "OK: controller-side Tavily research is configured (API key hidden)."; \
+			else \
+				echo "ERROR: SAGE_WEB_SEARCH_API_KEY is required for Tavily research." >&2; status=1; \
+			fi; \
+		else \
+			echo "OK: external research is unconfigured; repository-local V2 remains available."; \
+		fi; \
 	fi; \
 	if [[ -x "$(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python" ]]; then \
 		python_version="$$($(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python --version 2>&1)"; \
@@ -433,6 +446,7 @@ v2-test: ## Run focused deterministic V2 tests without live provider calls.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
 		"$(AGENT_PROJECT)/tests/providers" \
+		"$(AGENT_PROJECT)/tests/research" \
 		"$(AGENT_PROJECT)/tests/repository" \
 		"$(AGENT_PROJECT)/tests/verification" \
 		"$(AGENT_PROJECT)/tests/artifacts/test_v2_artifacts.py" \
@@ -465,7 +479,7 @@ graph: ## Print Mermaid generated from the compiled V0.1 LangGraph.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/test_langgraph_graph.py::test_compiled_graph_renders_expected_mermaid"
 
-v2-graph: ## Validate the V2 Solver tool graph and two-role routing helpers.
+v2-graph: ## Validate V2 Admission/Solver routing and candidate helpers.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py"
@@ -539,6 +553,11 @@ run-status: ## Validate and summarize a completed run directory.
 	for artifact in request.json metadata.json issue.md agent-final.json changed-files.json diff.patch; do \
 		[[ -f "$$run_dir/$$artifact" ]] || { echo "ERROR: missing run artifact: $$run_dir/$$artifact" >&2; exit 1; }; \
 	done; \
+	if rg -q '"v2_admission_enabled": true' "$$run_dir/metadata.json"; then \
+		for artifact in admission-context.json admission-context-summary.json admission-final.json; do \
+			[[ -f "$$run_dir/$$artifact" ]] || { echo "ERROR: missing Admission artifact: $$run_dir/$$artifact" >&2; exit 1; }; \
+		done; \
+	fi; \
 	[[ -d "$$run_dir/repo/.git" ]] || { echo "ERROR: candidate Git checkout is missing: $$run_dir/repo" >&2; exit 1; }; \
 	echo "Run metadata:"; \
 	sed -n '1,160p' "$$run_dir/metadata.json"; \

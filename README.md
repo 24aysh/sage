@@ -153,12 +153,27 @@ make v2-first-run \
   ISSUE=/absolute/path/to/issue.md
 ```
 
-During a run, INFO logs render readable `Solver: activity`, `Solver: result`,
-verification progress, and `Reviewer: finished` panels. They include the task,
-stage, provider, model, attempt, structured decision, counts, and latency, but
-never prompt, repository, patch, or review-evidence content. Optional LangSmith
-tracing records named `Solver` and `Reviewer` spans; configuration and data-boundary guidance is in the V2 testing
-guide.
+During a run, INFO logs render readable `Admission: activity`, research-tool,
+`Solver: activity`, verification, and `Reviewer: finished` events. Admission
+reuses the Solver model, inspects only through read-only tools, and persists a
+bounded evidence snapshot for Solver instead of making Solver repeat the
+initial repository scan. Optional LangSmith tracing records Admission, Solver,
+Reviewer, and tool spans; configuration and data-boundary guidance is in the
+V2 testing guide.
+
+External coding research is optional. To enable the current Tavily adapter,
+keep the target Docker sandbox offline and configure only the trusted
+controller:
+
+```bash
+export SAGE_WEB_SEARCH_PROVIDER=tavily
+export SAGE_WEB_SEARCH_API_KEY="your-tavily-key"
+```
+
+Without those values, Admission and Solver continue with repository-local
+evidence. See
+[`specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md`](specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md)
+for clarification, context-artifact, research, and GitHub testing.
 
 Use `make github-doctor` to check the local workflow installation and Docker
 availability before a live canary.
@@ -207,9 +222,10 @@ export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 All supported values are documented in [.env.example](.env.example). The V1
-model can be changed with `OPENAI_MODEL`. V2 has exactly two model roles: its
-Solver and Reviewer can be changed with `SAGE_V2_SOLVER_MODEL` and
-`SAGE_V2_REVIEWER_MODEL` without editing application code. Temporary
+model can be changed with `OPENAI_MODEL`. V2 has exactly two configured model
+roles: Admission reuses the Solver model, while Solver and Reviewer can be
+changed with `SAGE_V2_SOLVER_MODEL` and `SAGE_V2_REVIEWER_MODEL` without
+editing application code. Temporary
 OpenAI failures use bounded SDK backoff; `OPENAI_MAX_RETRIES` defaults to `2`
 and accepts values from `0` through `10`. Increasing retries does not repair
 exhausted credits or organization/project limits.
@@ -314,10 +330,12 @@ npm run build
   repair, pinned composite actions, and the installable workflow are
   implemented. A controlled live run completed the provider, sandbox,
   publication, and draft Pull Request path successfully.
-- **V2 — multi-agent workflow:** the opt-in sequential Solver/Reviewer runtime
-  uses structured repository edits, Git-derived candidates, independent review,
-  and progress-based repairs. Parallel workers, merge agents, and automatic
-  merge remain deferred.
+- **V2 — multi-agent workflow:** the opt-in sequential
+  Admission/Solver/Reviewer graph uses two configured model roles, persisted
+  read-only Admission context, structured repository edits, optional safe
+  controller-side research, Git-derived candidates, independent review, and
+  progress-based repairs. Parallel workers, merge agents, and automatic merge
+  remain deferred.
 
 Sage still contains no long-running GitHub App service, database, queue,
 checkpoint persistence, auto-merge, or parallel worker flow. V1.0 uses the

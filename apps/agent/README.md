@@ -2,7 +2,9 @@
 
 The Python package contains the trusted controller, isolated workspace
 preparation, Docker sandbox, provider-neutral repository tools, artifact store,
-the V1 runtime, and the opt-in sequential V2 Planner/Solver/Reviewer runtime.
+the V1 runtime, and the opt-in sequential V2 Admission/Solver/Reviewer graph.
+Admission reuses the Solver model and persists its read-only evidence for the
+tool-driven Solver; Gemini remains the independent Reviewer.
 
 Run from the repository root:
 
@@ -20,5 +22,5 @@ make v2-graph
 ```
 
 See the root `README.md` for setup and
-`specs/15_SAGE_V2_PROTOTYPE_TESTING.md` for V2 configuration and end-to-end
-testing.
+`specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md` for current V2
+configuration and end-to-end testing.
