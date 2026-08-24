@@ -73,6 +73,17 @@ def test_write_modes_prevent_accidental_overwrite(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "original\n"
 
 
+def test_new_files_are_readable_by_the_sandbox_user(tmp_path: Path) -> None:
+    write_file(
+        tmp_path,
+        path="new.py",
+        content="value = 1\n",
+        mode=WriteMode.CREATE,
+    )
+
+    assert (tmp_path / "new.py").stat().st_mode & 0o777 == 0o644
+
+
 @pytest.mark.parametrize("path", ["../outside.py", "/tmp/outside.py", ".git/config"])
 def test_edits_reject_unsafe_paths(tmp_path: Path, path: str) -> None:
     with pytest.raises(PathSafetyError):

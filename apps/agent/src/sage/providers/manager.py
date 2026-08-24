@@ -112,6 +112,30 @@ class ModelCallManager:
             )
         )
 
+    def fail_solver_call(
+        self,
+        *,
+        stage: str,
+        call_number: int,
+        error: BaseException,
+        latency_ms: float,
+    ) -> None:
+        """Record a failed Solver turn without persisting provider payloads."""
+
+        self._append_record(
+            ModelCallRecord(
+                call_number=call_number,
+                stage=stage,
+                role=ModelRole.SOLVER,
+                attempt_kind=AttemptKind.PRIMARY,
+                provider="openai",
+                model=self._settings.v2_solver_model,
+                latency_ms=latency_ms,
+                outcome="error",
+                error_category=type(error).__name__[:80],
+            )
+        )
+
     async def invoke_reviewer(
         self,
         *,

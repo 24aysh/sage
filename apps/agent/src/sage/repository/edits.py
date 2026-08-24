@@ -142,7 +142,7 @@ def _read_utf8(path: Path, display_path: str) -> str:
 def _write_atomic(path: Path, content: str) -> None:
     try:
         encoded = content.encode("utf-8")
-        existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+        target_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
         file_descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{path.name}.",
             dir=path.parent,
@@ -153,8 +153,7 @@ def _write_atomic(path: Path, content: str) -> None:
                 handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
-            if existing_mode is not None:
-                os.chmod(temporary, existing_mode)
+            os.chmod(temporary, target_mode)
             os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)

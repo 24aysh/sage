@@ -27,6 +27,7 @@ Route = Literal["tools", "finalize", "turn_limit", "invalid_response"]
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 ModelStartHook = Callable[[int], object]
 ModelFinishHook = Callable[[object, AIMessage, float], None]
+ModelErrorHook = Callable[[object, BaseException, float], None]
 
 
 class GraphInput(TypedDict):
@@ -59,6 +60,7 @@ def build_agent_node(
     role_name: str = "Agent",
     on_model_start: ModelStartHook | None = None,
     on_model_finish: ModelFinishHook | None = None,
+    on_model_error: ModelErrorHook | None = None,
 ) -> Callable[[AgentState], Awaitable[dict[str, object]]]:
     """Create the node that performs exactly one asynchronous model decision."""
 
@@ -73,11 +75,27 @@ def build_agent_node(
         hook_state = on_model_start(turn_number) if on_model_start else None
         logger.info("%s: activity turn=%d", role_name, turn_number)
         started = perf_counter()
-        response = await model.ainvoke(
-            [SystemMessage(content=instructions), *state["messages"]]
-        )
+        try:
+            response = await model.ainvoke(
+                [SystemMessage(content=instructions), *state["messages"]]
+            )
+        except BaseException as error:
+            if on_model_error is not None:
+                on_model_error(
+                    hook_state,
+                    error,
+                    round((perf_counter() - started) * 1000, 2),
+                )
+            raise
         if not isinstance(response, AIMessage):
-            raise AgentRuntimeError("Model returned a non-AI graph message.")
+            error = AgentRuntimeError("Model returned a non-AI graph message.")
+            if on_model_error is not None:
+                on_model_error(
+                    hook_state,
+                    error,
+                    round((perf_counter() - started) * 1000, 2),
+                )
+            raise error
 
         duration_ms = round((perf_counter() - started) * 1000, 2)
         if on_model_finish is not None:
@@ -188,6 +206,7 @@ def build_graph(
     role_name: str = "Agent",
     on_model_start: ModelStartHook | None = None,
     on_model_finish: ModelFinishHook | None = None,
+    on_model_error: ModelErrorHook | None = None,
 ) -> CompiledStateGraph[AgentState, None, GraphInput, GraphOutput]:
     """Compile a fresh, checkpoint-free V0.1 reasoning graph."""
 
@@ -217,6 +236,7 @@ def build_graph(
             role_name=role_name,
             on_model_start=on_model_start,
             on_model_finish=on_model_finish,
+            on_model_error=on_model_error,
         ),
     )
     builder.add_node(

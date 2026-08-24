@@ -68,6 +68,7 @@ class V2GraphRuntime:
             model=settings.v2_solver_model,
             api_key=settings.openai_api_key,
             max_retries=settings.openai_max_retries,
+            timeout=float(settings.model_request_timeout_seconds),
             use_responses_api=True,
         )
 
@@ -358,6 +359,14 @@ class V2GraphRuntime:
                 latency_ms=duration_ms,
             )
 
+        def fail(token: object, error: BaseException, duration_ms: float) -> None:
+            calls.fail_solver_call(
+                stage=stage,
+                call_number=int(token),
+                error=error,
+                latency_ms=duration_ms,
+            )
+
         graph = build_tool_graph(
             model=model,
             tools=tools,
@@ -368,6 +377,7 @@ class V2GraphRuntime:
             role_name="Solver",
             on_model_start=start,
             on_model_finish=finish,
+            on_model_error=fail,
         )
         result = await graph.ainvoke(
             {"messages": [HumanMessage(content=message)], "model_turns": 0},
