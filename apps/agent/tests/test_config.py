@@ -81,12 +81,12 @@ def test_v2_settings_use_documented_default_models() -> None:
     settings = Settings.from_env(
         {
             "SAGE_RUNTIME": "v2-prototype",
-            "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
             "GEMINI_API_KEY": "gemini-secret",
             "OPENAI_API_KEY": "openai-secret",
         }
     )
 
+    assert settings.google_model_context_approved is True
     assert settings.v2_planner_model == DEFAULT_V2_PLANNER_MODEL == "gemini-3.5-flash"
     assert (
         settings.v2_planner_fallback_model
@@ -97,27 +97,26 @@ def test_v2_settings_use_documented_default_models() -> None:
     assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
 
 
-@pytest.mark.parametrize(
-    ("missing", "message"),
-    [
-        ("GEMINI_API_KEY", "GEMINI_API_KEY"),
-        ("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "CONTEXT_APPROVED"),
-    ],
-)
-def test_v2_settings_reject_missing_profile_requirements(
-    missing: str,
-    message: str,
-) -> None:
-    values = {
-        "SAGE_RUNTIME": "v2-prototype",
-        "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
-        "GEMINI_API_KEY": "gemini-secret",
-        "OPENAI_API_KEY": "openai-secret",
-    }
-    values.pop(missing)
+def test_v2_settings_require_gemini_credentials() -> None:
+    with pytest.raises(ConfigurationError, match="GEMINI_API_KEY"):
+        Settings.from_env(
+            {
+                "SAGE_RUNTIME": "v2-prototype",
+                "OPENAI_API_KEY": "openai-secret",
+            }
+        )
 
-    with pytest.raises(ConfigurationError, match=message):
-        Settings.from_env(values)
+
+def test_v2_settings_respect_explicit_google_context_rejection() -> None:
+    with pytest.raises(ConfigurationError, match="CONTEXT_APPROVED"):
+        Settings.from_env(
+            {
+                "SAGE_RUNTIME": "v2-prototype",
+                "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "false",
+                "GEMINI_API_KEY": "gemini-secret",
+                "OPENAI_API_KEY": "openai-secret",
+            }
+        )
 
 
 def test_v1_does_not_require_v2_credentials() -> None:

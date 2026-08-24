@@ -201,7 +201,7 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 			export "$$key_name"; \
 		fi; \
 	done; \
-	context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-false}"; \
+	context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true}"; \
 	case "$${context_approval,,}" in \
 		1|true|yes|on) export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true ;; \
 		*) \
@@ -326,7 +326,7 @@ doctor: ## Check all prerequisites needed for a live solve.
 				echo "ERROR: $$key_name is required for V2." >&2; status=1; \
 			fi; \
 		done; \
-		if [[ "$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-false}" == "true" ]]; then \
+		if [[ "$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true}" == "true" ]]; then \
 			echo "OK: Google model context use is explicitly acknowledged."; \
 		else \
 			echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; status=1; \

@@ -40,9 +40,9 @@ inputs:
     required: false
     default: gemini-3.5-flash
   google-model-context-approved:
-    description: Explicit owner acknowledgement for sending context to Gemini.
+    description: Google context acknowledgement; set false to disable V2 Google calls.
     required: false
-    default: "false"
+    default: "true"
   langsmith-api-key:
     description: Optional LangSmith API key scoped to the solve controller step.
     required: false

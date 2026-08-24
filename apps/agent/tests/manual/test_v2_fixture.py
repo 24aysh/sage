@@ -72,6 +72,13 @@ def test_v2_first_run_preserves_opt_in_langsmith_tracing() -> None:
     assert 'LANGSMITH_PROJECT:=sage-v2' in target
 
 
+def test_v2_first_run_defaults_google_context_approval_to_true() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("v2-first-run:", 1)[1].split("\ndoctor:", 1)[0]
+
+    assert 'SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true' in target
+
+
 def test_v2_first_run_accepts_custom_repo_and_issue_before_credentials(
     tmp_path: Path,
 ) -> None:

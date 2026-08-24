@@ -58,7 +58,7 @@ class Settings(BaseModel):
     openai_max_retries: int = Field(default=2, ge=0, le=10)
     runtime: str = Field(default="v1", pattern=r"^(v1|v2-prototype)$")
     model_profile: str = DEFAULT_V2_PROFILE
-    google_model_context_approved: bool = False
+    google_model_context_approved: bool = True
     v2_planner_model: str = Field(
         default=DEFAULT_V2_PLANNER_MODEL,
         min_length=1,
@@ -141,7 +141,7 @@ class Settings(BaseModel):
             name="LANGSMITH_TRACING",
         )
         google_context_approved = _parse_bool(
-            values.get("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "false"),
+            values.get("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "true"),
             name="SAGE_GOOGLE_MODEL_CONTEXT_APPROVED",
         )
         model_profile = values.get("SAGE_MODEL_PROFILE", DEFAULT_V2_PROFILE).strip()

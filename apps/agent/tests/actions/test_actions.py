@@ -67,6 +67,13 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     )
     assert document["inputs"]["v2-solver-model"]["default"] == "gpt-5.4-mini"
     assert document["inputs"]["v2-reviewer-model"]["default"] == "gemini-3.5-flash"
+    assert document["inputs"]["google-model-context-approved"] == {
+        "description": (
+            "Google context acknowledgement; set false to disable V2 Google calls."
+        ),
+        "required": False,
+        "default": "true",
+    }
     assert document["inputs"]["langsmith-api-key"] == {
         "description": "Optional LangSmith API key scoped to the solve controller step.",
         "required": False,
