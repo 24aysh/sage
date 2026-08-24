@@ -523,8 +523,8 @@ run-status: ## Validate and summarize a completed run directory.
 	git -C "$$run_dir/repo" status --short --untracked-files=all; \
 	echo; \
 	echo "Patch summary:"; \
-	git -C "$$run_dir/repo" diff --stat; \
-	git -C "$$run_dir/repo" diff --check; \
+	git --no-pager -C "$$run_dir/repo" diff --stat --no-ext-diff HEAD --; \
+	git --no-pager -C "$$run_dir/repo" diff --check HEAD --; \
 	echo "OK: required artifacts exist and 'git diff --check' passed."
 
 run-test: ## Run TEST_COMMAND against a completed candidate inside a fresh sandbox.

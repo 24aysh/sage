@@ -79,6 +79,14 @@ def test_v2_first_run_defaults_google_context_approval_to_true() -> None:
     assert 'SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true' in target
 
 
+def test_run_status_disables_the_git_pager() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("run-status:", 1)[1].split("\nrun-test:", 1)[0]
+
+    assert 'git --no-pager -C "$$run_dir/repo" diff --stat' in target
+    assert 'git --no-pager -C "$$run_dir/repo" diff --check' in target
+
+
 def test_v2_first_run_accepts_custom_repo_and_issue_before_credentials(
     tmp_path: Path,
 ) -> None:
