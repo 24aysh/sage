@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Authorize and deduplicate
         id: gate
-        uses: 24aysh/sage/.github/actions/sage-gate@b21b2ac2a4de1811502188ad7499d45ddcc80a57 # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-gate@8753f6d225788d77aa4227706da78a0901f1357c # V2 prototype
         with:
           github-token: ${{ github.token }}
 
@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 90
     env:
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
-      SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v1' }}
+      SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
       LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
       LANGSMITH_PROJECT: ${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}
       LANGSMITH_WORKSPACE_ID: ${{ vars.LANGSMITH_WORKSPACE_ID }}
@@ -65,14 +65,14 @@ jobs:
     steps:
       - name: Solve the accepted Issue
         id: solve
-        uses: 24aysh/sage/.github/actions/sage-solve@b21b2ac2a4de1811502188ad7499d45ddcc80a57 # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-solve@8753f6d225788d77aa4227706da78a0901f1357c # V2 prototype
         with:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
-          runtime: ${{ vars.SAGE_RUNTIME || 'v1' }}
+          runtime: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
           model-profile: constrained-cross-provider
           v2-planner-model: ${{ vars.SAGE_V2_PLANNER_MODEL || 'gemini-3.5-flash' }}
           v2-planner-fallback-model: ${{ vars.SAGE_V2_PLANNER_FALLBACK_MODEL || 'gemini-3.5-flash-lite' }}
@@ -115,7 +115,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Preserve or repair terminal status
-        uses: 24aysh/sage/.github/actions/sage-gate@b21b2ac2a4de1811502188ad7499d45ddcc80a57 # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-gate@8753f6d225788d77aa4227706da78a0901f1357c # V2 prototype
         with:
           github-token: ${{ github.token }}
           operation: finalize

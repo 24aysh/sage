@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "b21b2ac2a4de1811502188ad7499d45ddcc80a57"
+SAGE_ACTION_SHA = "8753f6d225788d77aa4227706da78a0901f1357c"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -132,7 +132,7 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
     }
     assert jobs["solve"]["env"] == {
         "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}",
-        "SAGE_RUNTIME": "${{ vars.SAGE_RUNTIME || 'v1' }}",
+        "SAGE_RUNTIME": "${{ vars.SAGE_RUNTIME || 'v2-prototype' }}",
         "LANGSMITH_TRACING": "${{ vars.LANGSMITH_TRACING || 'false' }}",
         "LANGSMITH_PROJECT": "${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}",
         "LANGSMITH_WORKSPACE_ID": "${{ vars.LANGSMITH_WORKSPACE_ID }}",
@@ -182,6 +182,14 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
+    solve_action = next(
+        step
+        for step in jobs["solve"]["steps"]
+        if "/sage-solve@" in step.get("uses", "")
+    )
+    assert solve_action["with"]["runtime"] == (
+        "${{ vars.SAGE_RUNTIME || 'v2-prototype' }}"
+    )
     assert "vars.LANGSMITH_TRACING" in yaml.safe_dump(jobs["solve"])
     assert "vars.LANGSMITH_PROJECT" in yaml.safe_dump(jobs["solve"])
     assert "ANTHROPIC_API_KEY" not in body

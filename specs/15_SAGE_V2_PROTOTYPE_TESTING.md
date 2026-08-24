@@ -406,7 +406,9 @@ successfully so maintainers can inspect the safe terminal artifacts.
 Use a non-sensitive disposable repository or branch policy first.
 
 1. Add repository secrets `GEMINI_API_KEY` and `OPENAI_API_KEY`.
-2. Set repository variable `SAGE_RUNTIME` to `v2-prototype`.
+2. Leave repository variable `SAGE_RUNTIME` unset to use the workflow's
+   `v2-prototype` default, or set it explicitly to `v2-prototype`. A stale
+   value of `v1` deliberately selects the legacy runtime and legacy logs.
 3. Set `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED` to `true` only after the repository
    owner approves Google context use.
 4. Optionally set `SAGE_V2_PLANNER_MODEL`,
@@ -429,6 +431,37 @@ Use a non-sensitive disposable repository or branch policy first.
    the allowlisted summaries—not contexts, full logs, the workspace, or keys.
 11. Review `usage.json`, `terminal.json`, the verification summary, and the draft
    diff before starting another canary.
+
+### Confirm V2 logs and publication integrity
+
+Open the `Solve and publish the authorized Issue` step in the Actions run. A V2
+run starts with `V2 workflow: started` and then prints the same privacy-safe
+panels as `make v2-first-run`, including `Planner: activity`, `Solver: activity`,
+and `Reviewer: activity` when routing reaches each role. Lines from
+`sage.runtimes.langgraph` instead mean repository variable `SAGE_RUNTIME` is
+still set to `v1`; remove it or change it to `v2-prototype` before invoking a
+new exact command comment.
+
+For a project whose verification installs dependencies or writes build output,
+confirm the resulting draft PR contains only the Issue implementation. In
+particular, generated untracked paths such as `node_modules/`, `.venv/`,
+`__pycache__/`, `dist/`, and `build/` must not appear in the commit. These paths
+are outside the authoritative candidate boundary even when the target
+repository does not ignore them. Tracked source files under a directory with
+one of those names remain eligible when the Issue intentionally modifies them.
+
+The deterministic regression can be rerun without API keys:
+
+```bash
+uv run --frozen --project apps/agent pytest -q \
+  apps/agent/tests/integrations/github/test_publishing.py \
+  apps/agent/tests/repository/test_git.py \
+  apps/agent/tests/repository/test_host_git.py
+```
+
+It creates a candidate with untracked `node_modules` output and verifies that
+publication succeeds without committing that output. It also retains coverage
+for additions, deletions, renames, and binary patches.
 
 The gate and finalizer jobs receive no model key. The checkout, dependency
 install, Docker build, Docker container, and artifact-upload steps also receive
@@ -454,6 +487,7 @@ part of the seven-day Actions diagnostics artifact.
 | `verification_failed` | Inspect `verification-summary.json` and the corresponding local log. Required checks never reach publication. |
 | `review_failed` | Inspect criterion results and blocking findings. A second review repair is not permitted. |
 | Clarification repeats | Answer all blocking questions explicitly; after round two, rewrite the Issue with a complete design. |
+| Candidate diff changed after solve | Confirm the workflow pins a Sage revision containing the authoritative publication fix. Older publishers re-added generated dependency/build output after solve; the corrected publisher stages only the validated patch. |
 | No Pull Request | Check `terminal.json`; every non-`completed` outcome is deliberately non-publishable. |
 
 ### Gemini HTTP 400 during Planner or Reviewer calls
