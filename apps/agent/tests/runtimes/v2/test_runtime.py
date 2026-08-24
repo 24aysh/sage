@@ -203,6 +203,7 @@ def test_v2_runtime_completes_three_provider_patch_path(
     assert "Task: Implement the approved execution plan" in caplog.text
     assert "Solver: result" in caplog.text
     assert "Decision: implemented" in caplog.text
+    assert "Verifier: check pass=1 id=git-diff-check status=pass" in caplog.text
     assert "Verifier: finished pass=1 status=pass" in caplog.text
     assert "Reviewer: activity" in caplog.text
     assert "Reviewer: result" in caplog.text

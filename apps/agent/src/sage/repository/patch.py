@@ -38,7 +38,7 @@ def apply_patch(
     logical_path_count = len({_strip_git_prefix(path) for path in paths})
     patch_digest = hashlib.sha256(patch.encode("utf-8")).hexdigest()[:12]
     logger.info(
-        "Patch: applying files=%d lines=%d digest=%s recount=true",
+        "Patch: applying files=%d lines=%d digest=%s recount=true whitespace=fix",
         logical_path_count,
         len(patch.splitlines()),
         patch_digest,
@@ -62,7 +62,7 @@ def apply_patch(
             raise PatchError("Unable to write the temporary patch file.") from error
         container_path = f"/workspace/.git/{temporary_path.name}"
         result = sandbox.exec(
-            "git apply --whitespace=nowarn --recount "
+            "git apply --whitespace=fix --recount "
             f"{shlex.quote(container_path)}",
             timeout_seconds=timeout_seconds,
         )
@@ -82,6 +82,13 @@ def apply_patch(
             detail,
         )
         raise PatchError(f"Patch could not be applied: {detail}")
+    whitespace_detail = _safe_patch_diagnostic(result.stderr.strip())
+    if result.stderr.strip():
+        logger.info(
+            "Patch: whitespace normalized digest=%s detail=%s",
+            patch_digest,
+            whitespace_detail,
+        )
     logger.info("Patch: finished status=applied digest=%s", patch_digest)
     output = result.stdout.strip() or "Patch applied successfully."
     return truncate_text(output, max_output_chars)

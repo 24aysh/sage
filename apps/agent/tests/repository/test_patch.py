@@ -160,6 +160,64 @@ new file mode 100644
     assert (tmp_path / "new_file.py").read_text(encoding="utf-8") == "value = 1\n"
 
 
+def test_apply_patch_fixes_blank_line_at_end_of_file(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO)
+    _initialize_repository(tmp_path)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Sage Tests",
+            "-c",
+            "user.email=sage-tests@example.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "base",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    sandbox = LocalPatchSandbox(tmp_path)
+    patch = """\
+diff --git a/test_example.py b/test_example.py
+new file mode 100644
+--- /dev/null
++++ b/test_example.py
+@@ -0,0 +1,2 @@
++assert 1 + 1 == 2
++
+"""
+
+    apply_patch(
+        tmp_path,
+        sandbox,
+        patch=patch,
+        max_output_chars=1_000,
+        timeout_seconds=10,
+    )
+
+    assert (tmp_path / "test_example.py").read_text(encoding="utf-8") == (
+        "assert 1 + 1 == 2\n"
+    )
+    assert "--whitespace=fix" in sandbox.commands[0]
+    assert "Patch: whitespace normalized" in caplog.text
+    diff_check = subprocess.run(
+        ["git", "diff", "--check", "HEAD", "--"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert diff_check.returncode == 0
+
+
 def _initialize_repository(repository: Path) -> None:
     subprocess.run(
         ["git", "init", "--quiet", str(repository)],

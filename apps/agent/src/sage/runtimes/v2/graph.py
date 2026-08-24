@@ -269,6 +269,27 @@ def build_graph(
             len(commands),
         )
         verification = services.verifier.verify(commands, pass_number=pass_number)
+        for check in verification.checks:
+            logger.info(
+                "Verifier: check pass=%d id=%s status=%s required=%s "
+                "exit_code=%d log=%s",
+                pass_number,
+                check.check.check_id,
+                check.status.value,
+                str(check.check.required).lower(),
+                check.exit_code,
+                check.log_ref,
+            )
+            if check.status in {
+                VerificationStatus.FAIL,
+                VerificationStatus.TIMEOUT,
+            }:
+                logger.info(
+                    "Verifier: failure pass=%d id=%s reason=%s",
+                    pass_number,
+                    check.check.check_id,
+                    _verification_log_detail(check.output_excerpt),
+                )
         logger.info(
             "Verifier: finished pass=%d status=%s passing_checks=%d total_checks=%d",
             pass_number,
@@ -980,6 +1001,24 @@ def _verification_reason(verification: VerificationResult) -> str:
         if check.status in {VerificationStatus.FAIL, VerificationStatus.TIMEOUT}
     ]
     return "\n".join(failures)[:8_000] or "Verification did not pass."
+
+
+def _verification_log_detail(output: str) -> str:
+    """Render one bounded, single-line failure reason for CI logs."""
+
+    meaningful_lines = [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip() and line.strip() not in {"STDOUT", "STDERR"}
+    ]
+    if not meaningful_lines:
+        return "no diagnostic output"
+    normalized = " ".join(meaningful_lines[:3])
+    printable = "".join(
+        character if ord(character) >= 32 and ord(character) != 127 else " "
+        for character in normalized
+    )
+    return printable[:500]
 
 
 def _terminal(

@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 from sage.config import Settings
-from sage.runtimes.v2.graph import V2Services, _prior_clarification_round, build_graph
+from sage.runtimes.v2.graph import (
+    V2Services,
+    _prior_clarification_round,
+    _verification_log_detail,
+    build_graph,
+)
 
 
 def test_v2_graph_is_sequential_and_renders_mermaid(tmp_path) -> None:
@@ -46,3 +51,16 @@ def test_prior_clarification_round_accepts_rendered_controller_marker() -> None:
     )
 
     assert _prior_clarification_round(issue_text) == 2
+
+
+def test_verification_log_detail_is_concise_and_single_line() -> None:
+    output = (
+        "STDOUT\n"
+        "test_calculator.py:10: new blank line at EOF.\n\n"
+        "STDERR\n"
+        "one more detail\n"
+    )
+
+    assert _verification_log_detail(output) == (
+        "test_calculator.py:10: new blank line at EOF. one more detail"
+    )
