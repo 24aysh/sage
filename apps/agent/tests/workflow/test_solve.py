@@ -5,8 +5,8 @@ import pytest
 
 from sage.config import Settings
 from sage.domain.requests import PreparedRun, SolveRequest
-from sage.domain.results import AgentFinalOutput
-from sage.errors import AgentRuntimeError
+from sage.domain.results import AgentFinalOutput, SolveOutcome
+from sage.errors import AgentRuntimeError, WorkspaceError
 from sage.workflow.solve import solve_issue
 
 
@@ -56,6 +56,14 @@ class FailingRuntime:
         raise AgentRuntimeError("model failed")
 
 
+class InconsistentV2Runtime:
+    async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
+        return AgentFinalOutput(
+            summary="Human approval is required.",
+            outcome=SolveOutcome.HUMAN_REQUIRED,
+        )
+
+
 def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
     monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
@@ -100,6 +108,36 @@ def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch
         )
 
     assert sandbox.started is True
+    assert sandbox.stopped is True
+
+
+def test_solve_issue_rejects_pre_mutation_terminal_with_diff(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request, prepared, settings = _run_values(tmp_path)
+    settings = settings.model_copy(
+        update={
+            "runtime": "v2-prototype",
+            "gemini_api_key": "gemini-test",
+            "google_model_context_approved": True,
+        }
+    )
+    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    sandbox = FakeSandbox()
+
+    with pytest.raises(WorkspaceError, match="pre-mutation"):
+        asyncio.run(
+            solve_issue(
+                request,
+                InconsistentV2Runtime(),
+                settings,
+                sandbox_factory=lambda *_: sandbox,
+                repository_factory=lambda *_: FakeRepository(),
+                artifact_store=FakeStore(),
+            )
+        )
+
     assert sandbox.stopped is True
 
 

@@ -12,9 +12,11 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from sage.config import Settings
 from sage.domain.requests import SolveRequest
-from sage.domain.results import SolveResult
+from sage.domain.results import SolveOutcome, SolveResult
 from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
@@ -24,7 +26,11 @@ from sage.integrations.github.events import (
 )
 from sage.integrations.github.gate import evaluate_gate
 from sage.integrations.github.outputs import write_gate_outputs
-from sage.runtimes.langgraph import LangGraphRuntime
+from sage.integrations.github.publication_smoke import (
+    default_publication_smoke_dir,
+    run_publication_smoke,
+)
+from sage.runtimes.factory import build_runtime
 from sage.workflow import solve_issue
 from sage.workflow.github_issue import finalize_github_issue, run_github_issue
 
@@ -54,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
             logger.exception("Unexpected Sage failure")
         print(f"ERROR: Unexpected failure: {error}", file=sys.stderr)
         return 1
+    finally:
+        _flush_langsmith_traces()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -130,6 +138,22 @@ def _build_parser() -> argparse.ArgumentParser:
     event_parser.add_argument("--event-file", required=True, type=Path)
     event_parser.add_argument("--debug", action="store_true")
     event_parser.set_defaults(handler=_run_github_event_check)
+
+    publication_smoke_parser = github_subparsers.add_parser(
+        "publication-smoke",
+        help="Exercise branch and draft-PR publication entirely offline.",
+    )
+    publication_smoke_parser.add_argument("--output-dir", type=Path)
+    publication_smoke_parser.add_argument("--repo", type=Path)
+    publication_smoke_parser.add_argument("--patch-file", type=Path)
+    publication_smoke_parser.add_argument("--base-ref", default="HEAD")
+    publication_smoke_parser.add_argument(
+        "--issue-number",
+        default=17,
+        type=_positive_integer,
+    )
+    publication_smoke_parser.add_argument("--debug", action="store_true")
+    publication_smoke_parser.set_defaults(handler=_run_github_publication_smoke)
     return parser
 
 
@@ -145,10 +169,17 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
-    runtime = LangGraphRuntime(settings)
+    runtime = build_runtime(settings)
     result = asyncio.run(solve_issue(request, runtime, settings))
-    _render_result(result, model=settings.openai_model)
-    return 0 if result.diff.strip() else 2
+    _render_result(
+        result,
+        model=(settings.model_profile if settings.runtime == "v2-prototype" else settings.openai_model),
+    )
+    return (
+        0
+        if result.outcome is SolveOutcome.COMPLETED and result.diff.strip()
+        else 2
+    )
 
 
 def _run_github_gate(arguments: argparse.Namespace) -> int:
@@ -235,6 +266,32 @@ def _run_github_event_check(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_github_publication_smoke(arguments: argparse.Namespace) -> int:
+    """Exercise production Git publication with local deterministic substitutes."""
+
+    output_dir = arguments.output_dir or default_publication_smoke_dir(Path.cwd())
+    result = run_publication_smoke(
+        output_dir,
+        repository=arguments.repo,
+        patch_file=arguments.patch_file,
+        base_ref=arguments.base_ref,
+        issue_number=arguments.issue_number,
+    )
+    print("GitHub publication smoke: passed")
+    print(f"  Output: {result.output_dir}")
+    print(f"  Default branch: main @ {result.default_branch_sha[:12]} (unchanged)")
+    print(
+        f"  Sage branch: {result.publication.branch_name} "
+        f"@ {result.sage_branch_sha[:12]}"
+    )
+    print(f"  Commit: fix: resolve issue #{arguments.issue_number}")
+    print(f"  Draft PR requested: {str(result.pull_request_draft).lower()}")
+    print(f"  PR title: {result.pull_request_title}")
+    print("  Model calls: 0")
+    print("  Network calls: 0")
+    return 0
+
+
 def _github_environment(event_file: Path | None) -> dict[str, str]:
     environment = dict(os.environ)
     if event_file is not None:
@@ -257,6 +314,20 @@ def _configure_logging(*, debug: bool) -> None:
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+
+def _flush_langsmith_traces() -> None:
+    if os.environ.get("LANGSMITH_TRACING", "false").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return
+    try:
+        wait_for_all_tracers()
+    except Exception:
+        logger.warning("LangSmith trace flush failed; the Sage result is unaffected.")
 
 
 def _validate_prerequisites(

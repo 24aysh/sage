@@ -29,6 +29,7 @@ from sage.integrations.github.models import (
 )
 from sage.repository.host_git import run_git
 from sage.repository.output import truncate_text
+from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 
 _CONTROLLER_BASE_REF = "refs/sage/controller/default-branch"
 _PULL_REQUEST_MARKER_PREFIX = "<!-- sage-pull-request:issue-"
@@ -328,7 +329,14 @@ def _validate_authoritative_candidate(
             "The candidate HEAD no longer matches the authoritative solve base."
         )
     _required_git(
-        ["add", "--intent-to-add", "--all", "--", "."],
+        [
+            "add",
+            "--intent-to-add",
+            "--all",
+            "--",
+            ".",
+            *IGNORED_UNTRACKED_PATHSPECS,
+        ],
         repository=workspace,
         timeout_seconds=timeout_seconds,
     )
@@ -433,10 +441,20 @@ def _create_commit(
         timeout_seconds=timeout_seconds,
         failure="Unable to create the deterministic local publication branch.",
     )
+    # Candidate discovery uses intent-to-add so untracked files appear in the
+    # diff. Reset only the index, then stage the already-validated patch itself.
+    # This preserves deletions/renames while leaving excluded runtime noise out.
     _required_git(
-        ["add", "--all", "--", "."],
+        ["reset", "--mixed", "HEAD", "--"],
         repository=workspace,
         timeout_seconds=timeout_seconds,
+        failure="Unable to reset the candidate index before publication.",
+    )
+    _required_git(
+        ["apply", "--cached", "--binary", "-"],
+        repository=workspace,
+        timeout_seconds=timeout_seconds,
+        input_text=result.diff,
         failure="Unable to stage the authoritative candidate.",
     )
     _required_git(
@@ -652,6 +670,7 @@ def _required_git(
     repository: Path,
     timeout_seconds: int,
     environment: Mapping[str, str] | None = None,
+    input_text: str | None = None,
     failure: str = "A required trusted Git operation failed.",
 ) -> CompletedProcess[str]:
     result = _git(
@@ -659,6 +678,7 @@ def _required_git(
         repository=repository,
         timeout_seconds=timeout_seconds,
         environment=environment,
+        input_text=input_text,
     )
     if result.returncode != 0:
         diagnostics = _git_failure_diagnostics(result)
@@ -723,6 +743,7 @@ def _git(
     repository: Path,
     timeout_seconds: int,
     environment: Mapping[str, str] | None = None,
+    input_text: str | None = None,
 ) -> CompletedProcess[str]:
     try:
         return run_git(
@@ -730,6 +751,7 @@ def _git(
             repository=repository,
             timeout_seconds=timeout_seconds,
             environment=environment or _base_git_environment(),
+            input_text=input_text,
         )
     except HostGitError as error:
         raise GitHubPublicationError(

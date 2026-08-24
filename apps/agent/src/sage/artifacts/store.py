@@ -31,6 +31,21 @@ class ArtifactStore:
             "base_ref": prepared_run.base_ref,
             "base_sha": prepared_run.base_sha,
             "model": settings.openai_model,
+            "runtime": settings.runtime,
+            "model_profile": (
+                settings.model_profile if settings.runtime == "v2-prototype" else None
+            ),
+            "v2_admission_enabled": (
+                settings.v2_admission_enabled
+                if settings.runtime == "v2-prototype"
+                else None
+            ),
+            "research_enabled": (
+                settings.research_enabled
+                if settings.runtime == "v2-prototype"
+                else None
+            ),
+            "web_search_provider": settings.web_search_provider or None,
             "sandbox_image": settings.sandbox_image,
         }
         try:
@@ -57,7 +72,7 @@ class ArtifactStore:
         try:
             write_json_atomic(
                 result.run_dir / "agent-final.json",
-                final_output.model_dump(mode="json"),
+                final_output.model_dump(mode="json", exclude_none=True),
             )
             write_json_atomic(
                 result.run_dir / "changed-files.json",

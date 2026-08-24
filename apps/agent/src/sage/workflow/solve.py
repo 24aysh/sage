@@ -8,7 +8,7 @@ from collections.abc import Callable
 from sage.artifacts import ArtifactStore
 from sage.config import Settings
 from sage.domain.requests import PreparedRun, SolveRequest
-from sage.domain.results import SolveResult
+from sage.domain.results import SolveOutcome, SolveResult
 from sage.domain.runtime import AgentRuntime, RuntimeContext
 from sage.errors import WorkspaceError
 from sage.repository import RepositoryTools
@@ -64,6 +64,28 @@ async def solve_issue(
         final_output = await runtime.solve(issue_text=issue_text, context=context)
         diff = repository.get_complete_diff()
         changed_files = repository.get_changed_files()
+        outcome = final_output.outcome
+        if settings.runtime == "v1" and outcome is SolveOutcome.COMPLETED and not diff.strip():
+            outcome = SolveOutcome.NO_CHANGE
+        if settings.runtime == "v2-prototype":
+            if outcome is SolveOutcome.COMPLETED and (not diff.strip() or not changed_files):
+                raise WorkspaceError(
+                    "Completed V2 result does not contain an authoritative candidate."
+                )
+            if outcome is SolveOutcome.NO_CHANGE and (diff.strip() or changed_files):
+                raise WorkspaceError("V2 no-change result contains repository changes.")
+            pre_mutation_outcomes = {
+                SolveOutcome.NEEDS_HUMAN_INFORMATION,
+                SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION,
+                SolveOutcome.NEEDS_MAINTAINER_REWRITE,
+                SolveOutcome.HUMAN_REQUIRED,
+                SolveOutcome.ENVIRONMENT_BLOCKED,
+                SolveOutcome.UNSUPPORTED,
+            }
+            if outcome in pre_mutation_outcomes and (diff.strip() or changed_files):
+                raise WorkspaceError(
+                    "A pre-mutation V2 outcome contains repository changes."
+                )
         result = SolveResult(
             run_id=prepared.run_id,
             base_sha=prepared.base_sha,
@@ -73,6 +95,9 @@ async def solve_issue(
             diff=diff,
             run_dir=prepared.run_dir,
             workspace_dir=prepared.workspace_dir,
+            outcome=outcome,
+            clarification=final_output.clarification,
+            provenance=final_output.provenance,
         )
         store.persist_result(final_output=final_output, result=result)
         logger.info("agent run completed", extra={"run_id": prepared.run_id})

@@ -23,6 +23,13 @@ user-side setup, provider recovery, and canary procedure. The completed goals,
 as-built contracts, release audit, and merge handoff are recorded in
 [`specs/12_V1.0_as_built_and_release.md`](specs/12_V1.0_as_built_and_release.md).
 
+An opt-in V2 sequential prototype now reuses the V1 repository-tool loop for
+an OpenAI Solver, persists the Solver's plan before mutation, and requires an
+independent Gemini Reviewer pass over the actual Git candidate. V1 remains the
+default. See
+[`specs/17_SAGE_V2_TOOL_DRIVEN_TESTING.md`](specs/17_SAGE_V2_TOOL_DRIVEN_TESTING.md)
+before enabling V2 or making a paid canary call.
+
 ## Architecture
 
 ```text
@@ -81,6 +88,8 @@ examples/
 - Git
 - Node.js and npm
 - an OpenAI API key
+- a Gemini API key when using V2
+- optionally, a LangSmith API key for hosted V2 traces
 
 The original design targeted Python 3.13; this bootstrap uses Python 3.14 at the
 repository owner's request.
@@ -117,8 +126,75 @@ and workflow policies without a GitHub token, network call, or model call:
 make v1-check
 ```
 
+Run the complete offline V2 prototype checks and print its sequential graph:
+
+```bash
+make v2-check
+make v2-graph
+```
+
+After configuring the OpenAI and Gemini provider keys and approving Google
+model context use, run the complete live V2 workflow against the checked-in
+disposable fixture:
+
+```bash
+make v2-first-run
+```
+
+The target creates a temporary Git repository from `v2-manual-test/project`,
+uses `v2-manual-test/issue.md`, requires a completed non-empty candidate, and
+validates the retained artifacts and diff under `.sage/runs/`.
+
+To run the same strict workflow against another committed repository and Issue:
+
+```bash
+make v2-first-run \
+  REPO=/absolute/path/to/repository \
+  ISSUE=/absolute/path/to/issue.md
+```
+
+During a run, INFO logs render readable `Admission: activity`, research-tool,
+`Solver: activity`, verification, and `Reviewer: finished` events. Admission
+reuses the Solver model, inspects only through read-only tools, and persists a
+bounded evidence snapshot for Solver instead of making Solver repeat the
+initial repository scan. Optional LangSmith tracing records Admission, Solver,
+Reviewer, and tool spans; configuration and data-boundary guidance is in the
+V2 testing guide.
+
+External coding research is optional. To enable the current Tavily adapter,
+keep the target Docker sandbox offline and configure only the trusted
+controller:
+
+```bash
+export SAGE_WEB_SEARCH_PROVIDER=tavily
+export SAGE_WEB_SEARCH_API_KEY="your-tavily-key"
+```
+
+Without those values, Admission and Solver continue with repository-local
+evidence. See
+[`specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md`](specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md)
+for clarification, context-artifact, research, and GitHub testing.
+
 Use `make github-doctor` to check the local workflow installation and Docker
 availability before a live canary.
+
+When a saved candidate already exists, test the complete Git branch, commit,
+creation-only push, and draft-PR request without spending model calls or
+contacting GitHub:
+
+```bash
+make v2-github-smoke
+
+make v2-github-smoke \
+  REPO=/absolute/path/to/repository \
+  PATCH=/absolute/path/to/diff.patch \
+  BASE_REF=<artifact-base-sha> \
+  ISSUE_NUMBER=5
+```
+
+The second form replays a downloaded run patch against an isolated local clone.
+See the offline publication section in the V2 testing guide for inspection and
+limitations.
 
 ## Backend setup
 
@@ -145,8 +221,11 @@ export OPENAI_API_KEY="your-key"
 export OPENAI_MODEL="gpt-5.4-mini"
 ```
 
-All supported values are documented in [.env.example](.env.example). The model
-can be changed with `OPENAI_MODEL` without changing application code. Temporary
+All supported values are documented in [.env.example](.env.example). The V1
+model can be changed with `OPENAI_MODEL`. V2 has exactly two configured model
+roles: Admission reuses the Solver model, while Solver and Reviewer can be
+changed with `SAGE_V2_SOLVER_MODEL` and `SAGE_V2_REVIEWER_MODEL` without
+editing application code. Temporary
 OpenAI failures use bounded SDK backoff; `OPENAI_MAX_RETRIES` defaults to `2`
 and accepts values from `0` through `10`. Increasing retries does not repair
 exhausted credits or organization/project limits.
@@ -251,11 +330,15 @@ npm run build
   repair, pinned composite actions, and the installable workflow are
   implemented. A controlled live run completed the provider, sandbox,
   publication, and draft Pull Request path successfully.
-- **V2 — multi-agent workflow:** later work will extend project-owned
-  orchestration with exploration, implementation, and review roles.
+- **V2 — multi-agent workflow:** the opt-in sequential
+  Admission/Solver/Reviewer graph uses two configured model roles, persisted
+  read-only Admission context, structured repository edits, optional safe
+  controller-side research, Git-derived candidates, independent review, and
+  progress-based repairs. Parallel workers, merge agents, and automatic merge
+  remain deferred.
 
 Sage still contains no long-running GitHub App service, database, queue,
-checkpoint persistence, auto-merge, or multi-agent flow. V1.0 uses the
+checkpoint persistence, auto-merge, or parallel worker flow. V1.0 uses the
 job-scoped GitHub Actions token through its project-owned REST client at the
 trusted controller boundary.
 

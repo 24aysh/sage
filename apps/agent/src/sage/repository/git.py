@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import shlex
+
 from sage.errors import CommandExecutionError, CommandTimeoutError
 from sage.repository.output import truncate_text
+from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 from sage.sandbox.base import CommandResult, Sandbox
 
 
@@ -63,15 +66,25 @@ def get_changed_files(sandbox: Sandbox, *, timeout_seconds: int) -> list[str]:
     return sorted(path for path in result.stdout.split("\0") if path)
 
 
+def get_head_sha(sandbox: Sandbox, *, timeout_seconds: int) -> str:
+    """Return the current workspace HEAD object ID."""
+
+    result = _required_command(sandbox, "git rev-parse HEAD", timeout_seconds)
+    return result.stdout.strip()
+
+
 def _ensure_untracked_files_are_diffable(
     sandbox: Sandbox,
     timeout_seconds: int,
 ) -> None:
     # Intent-to-add records no file content; it only lets `git diff HEAD` include
     # new files in the authoritative patch without staging the candidate change.
+    ignored_untracked = " ".join(
+        shlex.quote(pathspec) for pathspec in IGNORED_UNTRACKED_PATHSPECS
+    )
     _required_command(
         sandbox,
-        "git add --intent-to-add --all -- .",
+        f"git add --intent-to-add --all -- . {ignored_untracked}",
         timeout_seconds,
     )
 

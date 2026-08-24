@@ -13,8 +13,18 @@ from sage.integrations.github.models import GIT_OBJECT_ID_PATTERN, GitHubInvocat
 _DIAGNOSTIC_FILES = (
     "metadata.json",
     "agent-final.json",
+    "admission-final.json",
+    "admission-context-summary.json",
+    "clarification.json",
+    "research-summary.json",
+    "solver-plan.json",
+    "solver-final.json",
     "changed-files.json",
     "diff.patch",
+    "usage.json",
+    "terminal.json",
+    "verification-summary.json",
+    "review.json",
 )
 
 

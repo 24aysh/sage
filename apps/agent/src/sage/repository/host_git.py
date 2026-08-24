@@ -15,6 +15,7 @@ def run_git(
     repository: Path | None = None,
     timeout_seconds: int = 60,
     environment: Mapping[str, str] | None = None,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run Git without a shell and return its captured result.
 
@@ -39,6 +40,7 @@ def run_git(
             text=True,
             timeout=timeout_seconds,
             env=dict(environment) if environment is not None else None,
+            input=input_text,
         )
     except FileNotFoundError as error:
         raise HostGitError("Git executable was not found.") from error

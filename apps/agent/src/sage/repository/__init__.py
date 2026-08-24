@@ -12,10 +12,18 @@ from typing import Iterator
 
 from sage.config import Settings
 from sage.repository.commands import run_command as execute_command
+from sage.repository.edits import (
+    WriteMode,
+    delete_file as delete_repository_file,
+    move_file as move_repository_file,
+    replace_text as replace_repository_text,
+    write_file as write_repository_file,
+)
 from sage.repository.files import read_file as read_repository_file
 from sage.repository.git import (
     get_changed_files as read_changed_files,
     get_complete_diff as read_complete_diff,
+    get_head_sha as read_head_sha,
     show_diff as render_diff,
 )
 from sage.repository.output import truncate_text
@@ -92,6 +100,44 @@ class RepositoryTools:
                 timeout_seconds=self._settings.command_timeout_seconds,
             )
 
+    def replace_text(
+        self,
+        *,
+        path: str,
+        old_text: str,
+        new_text: str,
+        expected_occurrences: int = 1,
+    ) -> str:
+        with _tool_call("replace_text"):
+            return replace_repository_text(
+                self._workspace_root,
+                path=path,
+                old_text=old_text,
+                new_text=new_text,
+                expected_occurrences=expected_occurrences,
+            )
+
+    def write_file(self, *, path: str, content: str, mode: WriteMode) -> str:
+        with _tool_call("write_file"):
+            return write_repository_file(
+                self._workspace_root,
+                path=path,
+                content=content,
+                mode=mode,
+            )
+
+    def delete_file(self, *, path: str) -> str:
+        with _tool_call("delete_file"):
+            return delete_repository_file(self._workspace_root, path=path)
+
+    def move_file(self, *, source_path: str, destination_path: str) -> str:
+        with _tool_call("move_file"):
+            return move_repository_file(
+                self._workspace_root,
+                source_path=source_path,
+                destination_path=destination_path,
+            )
+
     def show_diff(self) -> str:
         with _tool_call("show_diff"):
             return render_diff(
@@ -125,6 +171,13 @@ class RepositoryTools:
     def get_changed_files(self) -> list[str]:
         with _tool_call("get_changed_files"):
             return read_changed_files(
+                self._sandbox,
+                timeout_seconds=self._settings.command_timeout_seconds,
+            )
+
+    def get_head_sha(self) -> str:
+        with _tool_call("get_head_sha"):
+            return read_head_sha(
                 self._sandbox,
                 timeout_seconds=self._settings.command_timeout_seconds,
             )

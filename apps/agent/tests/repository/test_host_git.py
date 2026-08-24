@@ -19,6 +19,13 @@ def test_run_git_executes_against_explicit_repository(tmp_path: Path) -> None:
     assert Path(result.stdout.strip()) == repository.resolve()
 
 
+def test_run_git_passes_text_to_standard_input() -> None:
+    result = run_git(["hash-object", "--stdin"], input_text="candidate\n")
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "02e8acdcc44da4d68465994d590e44bcab3296b2"
+
+
 def test_run_git_rejects_invalid_timeout() -> None:
     with pytest.raises(ValueError, match="at least one second"):
         run_git(["--version"], timeout_seconds=0)

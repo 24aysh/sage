@@ -8,10 +8,47 @@ inputs:
   openai-api-key:
     description: Model credential scoped to the solve controller step.
     required: true
+  gemini-api-key:
+    description: V2 Reviewer credential scoped to the solve controller step.
+    required: false
   openai-max-retries:
     description: Bounded OpenAI SDK retries for temporary rate limits.
     required: false
     default: "2"
+  runtime:
+    description: Trusted runtime selector (v1 or v2-prototype).
+    required: false
+    default: v1
+  model-profile:
+    description: Locked V2 provider profile.
+    required: false
+    default: constrained-cross-provider
+  v2-solver-model:
+    description: OpenAI model used for V2 implementation and repair.
+    required: false
+    default: gpt-5.4-mini
+  v2-reviewer-model:
+    description: Gemini model used for V2 semantic review.
+    required: false
+    default: gemini-3.5-flash
+  google-model-context-approved:
+    description: Google context acknowledgement; set false to disable V2 Google calls.
+    required: false
+    default: "true"
+  langsmith-api-key:
+    description: Optional LangSmith API key scoped to the solve controller step.
+    required: false
+  web-search-api-key:
+    description: Optional Tavily search key scoped to controller-side research.
+    required: false
+  web-search-provider:
+    description: Optional controller-side search provider (currently tavily).
+    required: false
+    default: ""
+  admission-enabled:
+    description: Run read-only V2 Admission before Solver.
+    required: false
+    default: "true"
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -80,7 +117,17 @@ runs:
       shell: bash
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
+        SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}
+        SAGE_WEB_SEARCH_PROVIDER: ${{ inputs.web-search-provider }}
+        SAGE_V2_ADMISSION_ENABLED: ${{ inputs.admission-enabled }}
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
+        SAGE_RUNTIME: ${{ inputs.runtime }}
+        SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}
+        SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}
+        SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}
+        SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..

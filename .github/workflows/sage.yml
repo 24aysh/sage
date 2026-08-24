@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Authorize and deduplicate
         id: gate
-        uses: 24aysh/sage/.github/actions/sage-gate@9556a8b5ec722d7acdaac0d056464ced40d1e6ca # V1.0
+        uses: 24aysh/sage/.github/actions/sage-gate@281e158fba7333c037168108411981dea39f812f # V2 admission
         with:
           github-token: ${{ github.token }}
 
@@ -52,6 +52,20 @@ jobs:
     timeout-minutes: 90
     env:
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
+      SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
+      LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
+      LANGSMITH_PROJECT: ${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}
+      LANGSMITH_WORKSPACE_ID: ${{ vars.LANGSMITH_WORKSPACE_ID }}
+      LANGSMITH_HIDE_INPUTS: ${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}
+      LANGSMITH_HIDE_OUTPUTS: ${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}
+      SAGE_V2_ADMISSION_MAX_TURNS: ${{ vars.SAGE_V2_ADMISSION_MAX_TURNS || '12' }}
+      SAGE_V2_ADMISSION_CONTEXT_CHARS: ${{ vars.SAGE_V2_ADMISSION_CONTEXT_CHARS || '48000' }}
+      SAGE_MAX_CLARIFICATION_ROUNDS: ${{ vars.SAGE_MAX_CLARIFICATION_ROUNDS || '2' }}
+      SAGE_RESEARCH_ENABLED: ${{ vars.SAGE_RESEARCH_ENABLED || 'true' }}
+      SAGE_RESEARCH_TIMEOUT_SECONDS: ${{ vars.SAGE_RESEARCH_TIMEOUT_SECONDS || '15' }}
+      SAGE_RESEARCH_MAX_RESULT_CHARS: ${{ vars.SAGE_RESEARCH_MAX_RESULT_CHARS || '12000' }}
+      SAGE_RESEARCH_ALLOWED_DOMAINS: ${{ vars.SAGE_RESEARCH_ALLOWED_DOMAINS }}
+      SAGE_OFFICIAL_DOCUMENTATION_DOMAINS: ${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}
     permissions:
       contents: write
       issues: write
@@ -59,11 +73,21 @@ jobs:
     steps:
       - name: Solve the accepted Issue
         id: solve
-        uses: 24aysh/sage/.github/actions/sage-solve@9556a8b5ec722d7acdaac0d056464ced40d1e6ca # V1.0
+        uses: 24aysh/sage/.github/actions/sage-solve@281e158fba7333c037168108411981dea39f812f # V2 admission
         with:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
+          web-search-api-key: ${{ secrets.SAGE_WEB_SEARCH_API_KEY }}
+          web-search-provider: ${{ vars.SAGE_WEB_SEARCH_PROVIDER || '' }}
+          admission-enabled: ${{ vars.SAGE_V2_ADMISSION_ENABLED || 'true' }}
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
+          runtime: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
+          model-profile: constrained-cross-provider
+          v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
+          v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
+          google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
           status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
 
@@ -76,8 +100,18 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/metadata.json
             ${{ steps.solve.outputs.diagnostics-path }}/github.json
             ${{ steps.solve.outputs.diagnostics-path }}/agent-final.json
+            ${{ steps.solve.outputs.diagnostics-path }}/admission-final.json
+            ${{ steps.solve.outputs.diagnostics-path }}/admission-context-summary.json
+            ${{ steps.solve.outputs.diagnostics-path }}/clarification.json
+            ${{ steps.solve.outputs.diagnostics-path }}/research-summary.json
+            ${{ steps.solve.outputs.diagnostics-path }}/solver-plan.json
+            ${{ steps.solve.outputs.diagnostics-path }}/solver-final.json
             ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json
             ${{ steps.solve.outputs.diagnostics-path }}/diff.patch
+            ${{ steps.solve.outputs.diagnostics-path }}/usage.json
+            ${{ steps.solve.outputs.diagnostics-path }}/terminal.json
+            ${{ steps.solve.outputs.diagnostics-path }}/verification-summary.json
+            ${{ steps.solve.outputs.diagnostics-path }}/review.json
           if-no-files-found: ignore
           retention-days: 7
           include-hidden-files: false
@@ -96,7 +130,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Preserve or repair terminal status
-        uses: 24aysh/sage/.github/actions/sage-gate@9556a8b5ec722d7acdaac0d056464ced40d1e6ca # V1.0
+        uses: 24aysh/sage/.github/actions/sage-gate@281e158fba7333c037168108411981dea39f812f # V2 admission
         with:
           github-token: ${{ github.token }}
           operation: finalize

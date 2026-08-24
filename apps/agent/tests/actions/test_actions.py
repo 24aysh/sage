@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "9556a8b5ec722d7acdaac0d056464ced40d1e6ca"
+SAGE_ACTION_SHA = "281e158fba7333c037168108411981dea39f812f"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -38,6 +38,8 @@ def test_gate_action_is_model_secret_free_and_uses_pinned_source() -> None:
 
     assert "OPENAI_API_KEY" not in body
     assert "openai-api-key" not in body
+    assert "GEMINI_API_KEY" not in body
+    assert "SAGE_WEB_SEARCH_API_KEY" not in body
     assert "github.action_path" in body
     assert "sage github gate" in body
     assert "sage github finalize" in body
@@ -53,21 +55,67 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     body = (ACTIONS / "sage-solve" / "action.yml").read_text(encoding="utf-8")
     document = yaml.safe_load(body)
 
+    assert "anthropic-api-key" not in document["inputs"]
     assert document["inputs"]["openai-max-retries"] == {
         "description": "Bounded OpenAI SDK retries for temporary rate limits.",
         "required": False,
         "default": "2",
+    }
+    assert "v2-planner-model" not in document["inputs"]
+    assert "v2-planner-fallback-model" not in document["inputs"]
+    assert document["inputs"]["v2-solver-model"]["default"] == "gpt-5.4-mini"
+    assert document["inputs"]["v2-reviewer-model"]["default"] == "gemini-3.5-flash"
+    assert document["inputs"]["google-model-context-approved"] == {
+        "description": (
+            "Google context acknowledgement; set false to disable V2 Google calls."
+        ),
+        "required": False,
+        "default": "true",
+    }
+    assert document["inputs"]["langsmith-api-key"] == {
+        "description": "Optional LangSmith API key scoped to the solve controller step.",
+        "required": False,
     }
     assert "ref: ${{ inputs.base-sha }}" in body
     assert "persist-credentials: false" in body
     assert "fetch-depth: 0" in body
     assert "github.action_path" in body
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
+    assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
+    assert "LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}" in body
+    assert "SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}" in body
+    assert document["inputs"]["web-search-provider"]["default"] == ""
+    assert document["inputs"]["admission-enabled"]["default"] == "true"
+    assert "ANTHROPIC_API_KEY" not in body
+    assert "SAGE_V2_PLANNER_MODEL" not in body
+    assert "SAGE_V2_PLANNER_FALLBACK_MODEL" not in body
+    assert "SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}" in body
+    assert "SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}" in body
+    assert "SAGE_RUNTIME: ${{ inputs.runtime }}" in body
+    assert (
+        "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "
+        "${{ inputs.google-model-context-approved }}"
+    ) in body
     assert "OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}" in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
     assert "docker build" in body
     assert "sage github solve" in body
     assert "upload-artifact" not in body
+
+    solve_step = next(
+        step
+        for step in document["runs"]["steps"]
+        if "sage github solve" in step.get("run", "")
+    )
+    for step in document["runs"]["steps"]:
+        if step is solve_step:
+            continue
+        rendered = yaml.safe_dump(step)
+        assert "OPENAI_API_KEY" not in rendered
+        assert "GEMINI_API_KEY" not in rendered
+        assert "LANGSMITH_API_KEY" not in rendered
+        assert "SAGE_WEB_SEARCH_API_KEY" not in rendered
+    assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
 def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> None:
@@ -89,7 +137,35 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         "pull-requests": "write",
     }
     assert jobs["solve"]["env"] == {
-        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}"
+        "OPENAI_MODEL": "${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}",
+        "SAGE_RUNTIME": "${{ vars.SAGE_RUNTIME || 'v2-prototype' }}",
+        "LANGSMITH_TRACING": "${{ vars.LANGSMITH_TRACING || 'false' }}",
+        "LANGSMITH_PROJECT": "${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}",
+        "LANGSMITH_WORKSPACE_ID": "${{ vars.LANGSMITH_WORKSPACE_ID }}",
+        "LANGSMITH_HIDE_INPUTS": "${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}",
+        "LANGSMITH_HIDE_OUTPUTS": "${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}",
+        "SAGE_V2_ADMISSION_MAX_TURNS": (
+            "${{ vars.SAGE_V2_ADMISSION_MAX_TURNS || '12' }}"
+        ),
+        "SAGE_V2_ADMISSION_CONTEXT_CHARS": (
+            "${{ vars.SAGE_V2_ADMISSION_CONTEXT_CHARS || '48000' }}"
+        ),
+        "SAGE_MAX_CLARIFICATION_ROUNDS": (
+            "${{ vars.SAGE_MAX_CLARIFICATION_ROUNDS || '2' }}"
+        ),
+        "SAGE_RESEARCH_ENABLED": "${{ vars.SAGE_RESEARCH_ENABLED || 'true' }}",
+        "SAGE_RESEARCH_TIMEOUT_SECONDS": (
+            "${{ vars.SAGE_RESEARCH_TIMEOUT_SECONDS || '15' }}"
+        ),
+        "SAGE_RESEARCH_MAX_RESULT_CHARS": (
+            "${{ vars.SAGE_RESEARCH_MAX_RESULT_CHARS || '12000' }}"
+        ),
+        "SAGE_RESEARCH_ALLOWED_DOMAINS": (
+            "${{ vars.SAGE_RESEARCH_ALLOWED_DOMAINS }}"
+        ),
+        "SAGE_OFFICIAL_DOCUMENTATION_DOMAINS": (
+            "${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}"
+        ),
     }
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",
@@ -97,6 +173,7 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
     }
     assert jobs["gate"]["timeout-minutes"] == 10
     assert jobs["solve"]["timeout-minutes"] == 90
+    assert jobs["solve"]["timeout-minutes"] * 60 > 4_800 + 300
     assert jobs["finalize"]["timeout-minutes"] == 5
     gate_filter = jobs["gate"]["if"]
     assert "pull_request == null" in gate_filter
@@ -119,9 +196,40 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     jobs = document["jobs"]
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.SAGE_WEB_SEARCH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_PLANNER_MODEL" not in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_PLANNER_FALLBACK_MODEL" not in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_ADMISSION_ENABLED" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_WEB_SEARCH_PROVIDER" in yaml.safe_dump(jobs["solve"])
+    solve_action = next(
+        step
+        for step in jobs["solve"]["steps"]
+        if "/sage-solve@" in step.get("uses", "")
+    )
+    assert solve_action["with"]["runtime"] == (
+        "${{ vars.SAGE_RUNTIME || 'v2-prototype' }}"
+    )
+    assert solve_action["with"]["google-model-context-approved"] == (
+        "${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}"
+    )
+    assert "vars.LANGSMITH_TRACING" in yaml.safe_dump(jobs["solve"])
+    assert "vars.LANGSMITH_PROJECT" in yaml.safe_dump(jobs["solve"])
+    assert "ANTHROPIC_API_KEY" not in body
+    assert "anthropic-api-key" not in body
     assert "pull_request_target" not in body
     assert "cancel-in-progress: false" in body
 
@@ -132,8 +240,18 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "metadata.json",
         "github.json",
         "agent-final.json",
+        "admission-final.json",
+        "admission-context-summary.json",
+        "clarification.json",
+        "research-summary.json",
+        "solver-plan.json",
+        "solver-final.json",
         "changed-files.json",
         "diff.patch",
+        "usage.json",
+        "terminal.json",
+        "verification-summary.json",
+        "review.json",
     }
     uploaded = set(
         re.findall(r"diagnostics-path }}/([^\s]+)", body)
