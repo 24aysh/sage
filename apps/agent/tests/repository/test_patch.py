@@ -160,30 +160,100 @@ new file mode 100644
     assert (tmp_path / "new_file.py").read_text(encoding="utf-8") == "value = 1\n"
 
 
+@pytest.mark.parametrize("null_header", ["a/dev/null", '"a/dev/null"'])
+def test_apply_patch_canonicalizes_prefixed_dev_null_for_new_file(
+    tmp_path: Path,
+    null_header: str,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO)
+    _initialize_repository(tmp_path)
+    sandbox = LocalPatchSandbox(tmp_path)
+    patch = f"""\
+diff --git a/new_file.py b/new_file.py
+new file mode 100644
+--- {null_header}
++++ b/new_file.py
+@@ -0,0 +1 @@
++value = 1
+"""
+
+    apply_patch(
+        tmp_path,
+        sandbox,
+        patch=patch,
+        max_output_chars=1_000,
+        timeout_seconds=10,
+    )
+
+    assert (tmp_path / "new_file.py").read_text(encoding="utf-8") == "value = 1\n"
+    assert "Patch: normalized null file headers count=1" in caplog.text
+
+
+def test_apply_patch_canonicalizes_prefixed_dev_null_for_deleted_file(
+    tmp_path: Path,
+) -> None:
+    _initialize_repository(tmp_path)
+    target = tmp_path / "old_file.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    _commit_paths(tmp_path, "old_file.py")
+    sandbox = LocalPatchSandbox(tmp_path)
+    patch = """\
+diff --git a/old_file.py b/old_file.py
+deleted file mode 100644
+--- a/old_file.py
++++ b/dev/null
+@@ -1 +0,0 @@
+-value = 1
+"""
+
+    apply_patch(
+        tmp_path,
+        sandbox,
+        patch=patch,
+        max_output_chars=1_000,
+        timeout_seconds=10,
+    )
+
+    assert not target.exists()
+
+
+def test_apply_patch_preserves_real_repository_path_named_dev_null(
+    tmp_path: Path,
+) -> None:
+    _initialize_repository(tmp_path)
+    target = tmp_path / "dev" / "null"
+    target.parent.mkdir()
+    target.write_text("value = 1\n", encoding="utf-8")
+    _commit_paths(tmp_path, "dev/null")
+    sandbox = LocalPatchSandbox(tmp_path)
+    patch = """\
+diff --git a/dev/null b/dev/null
+--- a/dev/null
++++ b/dev/null
+@@ -1 +1 @@
+-value = 1
++value = 2
+"""
+
+    apply_patch(
+        tmp_path,
+        sandbox,
+        patch=patch,
+        max_output_chars=1_000,
+        timeout_seconds=10,
+    )
+
+    assert target.read_text(encoding="utf-8") == "value = 2\n"
+
+
 def test_apply_patch_fixes_blank_line_at_end_of_file(
     tmp_path: Path,
     caplog,
 ) -> None:
     caplog.set_level(logging.INFO)
     _initialize_repository(tmp_path)
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=Sage Tests",
-            "-c",
-            "user.email=sage-tests@example.invalid",
-            "commit",
-            "--quiet",
-            "--allow-empty",
-            "-m",
-            "base",
-        ],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    _commit_paths(tmp_path)
     sandbox = LocalPatchSandbox(tmp_path)
     patch = """\
 diff --git a/test_example.py b/test_example.py
@@ -221,6 +291,36 @@ new file mode 100644
 def _initialize_repository(repository: Path) -> None:
     subprocess.run(
         ["git", "init", "--quiet", str(repository)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _commit_paths(repository: Path, *paths: str) -> None:
+    if paths:
+        subprocess.run(
+            ["git", "add", "--", *paths],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    empty_arguments = ["--allow-empty"] if not paths else []
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Sage Tests",
+            "-c",
+            "user.email=sage-tests@example.invalid",
+            "commit",
+            "--quiet",
+            *empty_arguments,
+            "-m",
+            "base",
+        ],
+        cwd=repository,
         check=True,
         capture_output=True,
         text=True,
