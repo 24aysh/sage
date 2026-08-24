@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "02d5e26a09678f34120eac2f218a26db954e224e"
+SAGE_ACTION_SHA = "fadeb18c5990eb3b8ba28faccfd48031ba70077f"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
