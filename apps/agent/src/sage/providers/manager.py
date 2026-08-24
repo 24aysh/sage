@@ -1,4 +1,4 @@
-"""Sequential Reviewer scheduling and unbounded V2 usage accounting."""
+"""Sequential V2 model scheduling and usage accounting."""
 
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ class ModelCallManager:
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
         self._consecutive_failures: dict[str, int] = {}
+        self.admission_sessions = 0
         self.solver_sessions = 0
         self.review_cycles = 0
 
@@ -63,20 +64,28 @@ class ModelCallManager:
     def provenance(self) -> RunProvenance:
         return RunProvenance(
             calls=self.records,
+            admission_sessions=self.admission_sessions,
             solver_sessions=self.solver_sessions,
             review_cycles=self.review_cycles,
         )
 
-    def start_solver_session(self) -> None:
-        self.solver_sessions += 1
+    def start_coding_session(self, *, role: ModelRole) -> None:
+        if role is ModelRole.ADMISSION:
+            self.admission_sessions += 1
+        elif role is ModelRole.SOLVER:
+            self.solver_sessions += 1
+        else:
+            raise ValueError("Only Admission and Solver use the coding tool loop.")
         self._persist()
 
-    def start_solver_call(self, *, stage: str) -> int:
+    def start_coding_call(self, *, role: ModelRole, stage: str) -> int:
+        if role not in {ModelRole.ADMISSION, ModelRole.SOLVER}:
+            raise ValueError("Coding calls require Admission or Solver role.")
         self._reserve("openai")
         call_number = len(self._records) + 1
         log_agent_activity(
             logger,
-            role=ModelRole.SOLVER,
+            role=role,
             stage=stage,
             attempt=AttemptKind.PRIMARY,
             provider="openai",
@@ -85,9 +94,10 @@ class ModelCallManager:
         )
         return call_number
 
-    def finish_solver_call(
+    def finish_coding_call(
         self,
         *,
+        role: ModelRole,
         stage: str,
         call_number: int,
         message: AIMessage,
@@ -99,7 +109,7 @@ class ModelCallManager:
             ModelCallRecord(
                 call_number=call_number,
                 stage=stage,
-                role=ModelRole.SOLVER,
+                role=role,
                 attempt_kind=AttemptKind.PRIMARY,
                 provider="openai",
                 model=self._settings.v2_solver_model,
@@ -112,9 +122,10 @@ class ModelCallManager:
             )
         )
 
-    def fail_solver_call(
+    def fail_coding_call(
         self,
         *,
+        role: ModelRole,
         stage: str,
         call_number: int,
         error: BaseException,
@@ -126,7 +137,7 @@ class ModelCallManager:
             ModelCallRecord(
                 call_number=call_number,
                 stage=stage,
-                role=ModelRole.SOLVER,
+                role=role,
                 attempt_kind=AttemptKind.PRIMARY,
                 provider="openai",
                 model=self._settings.v2_solver_model,

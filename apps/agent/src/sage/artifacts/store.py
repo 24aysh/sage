@@ -35,6 +35,17 @@ class ArtifactStore:
             "model_profile": (
                 settings.model_profile if settings.runtime == "v2-prototype" else None
             ),
+            "v2_admission_enabled": (
+                settings.v2_admission_enabled
+                if settings.runtime == "v2-prototype"
+                else None
+            ),
+            "research_enabled": (
+                settings.research_enabled
+                if settings.runtime == "v2-prototype"
+                else None
+            ),
+            "web_search_provider": settings.web_search_provider or None,
             "sandbox_image": settings.sandbox_image,
         }
         try:

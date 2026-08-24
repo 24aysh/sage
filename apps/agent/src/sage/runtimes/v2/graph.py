@@ -1,4 +1,4 @@
-"""Deterministic orchestration helpers for the two-role Sage V2 workflow."""
+"""Deterministic candidate helpers for the sequential Sage V2 workflow."""
 
 from __future__ import annotations
 

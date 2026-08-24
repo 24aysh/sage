@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
+from sage.domain.admission import AdmissionContextSnapshot, AdmissionContextSummary
 from sage.domain.usage import RunProvenance
 from sage.errors import ArtifactError
 
@@ -28,6 +29,35 @@ class V2ArtifactStore:
         path = self._json(Path("solver-plans") / f"{version:02d}.json", value)
         self._json("solver-plan.json", value)
         return path
+
+    def write_admission_context(self, value: AdmissionContextSnapshot) -> Path:
+        return self._json("admission-context.json", value)
+
+    def write_admission_context_summary(
+        self,
+        value: AdmissionContextSnapshot,
+    ) -> Path:
+        summary = AdmissionContextSummary(
+            base_sha=value.base_sha,
+            issue_digest=value.issue_digest,
+            context_digest=value.digest,
+            requirement_count=len(value.requirements),
+            evidence_count=len(value.evidence),
+            external_source_count=sum(
+                item.source_type.value != "repository" for item in value.evidence
+            ),
+            relevant_paths=value.relevant_paths,
+        )
+        return self._json("admission-context-summary.json", summary)
+
+    def write_admission_final(self, value: BaseModel) -> Path:
+        return self._json("admission-final.json", value)
+
+    def write_clarification(self, value: BaseModel) -> Path:
+        return self._json("clarification.json", value)
+
+    def write_research_summary(self, value: BaseModel) -> Path:
+        return self._json("research-summary.json", value)
 
     def write_solver_final(self, value: BaseModel) -> Path:
         return self._json("solver-final.json", value)

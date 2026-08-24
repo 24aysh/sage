@@ -15,7 +15,11 @@ from sage.domain.solver import (
     SolverPlanTask,
 )
 from sage.errors import RepositoryError
+from sage.research.models import ResearchRole
+from sage.research.service import ResearchService
+from sage.research.tools import build_research_tools
 from sage.repository.edits import WriteMode
+from sage.runtimes.v2.repository_tools import build_repository_read_tools
 from sage.verification.discovery import is_allowed_solver_verification_command
 
 
@@ -81,42 +85,9 @@ class SolverPlanSession:
 def build_solver_tools(
     context: RuntimeContext,
     plans: SolverPlanSession,
+    research: ResearchService | None = None,
 ) -> list[BaseTool]:
     """Build V2 Solver tools without exposing the V1 raw-patch tool."""
-
-    @tool
-    async def list_tree(path: str = ".", max_depth: int = 2) -> str:
-        """List a bounded repository tree without file contents."""
-
-        return context.repository.list_tree(path=path, max_depth=max_depth)
-
-    @tool
-    async def search_text(
-        query: str,
-        path: str = ".",
-        max_results: int = 50,
-    ) -> str:
-        """Search repository files for an exact literal text value."""
-
-        return context.repository.search_text(
-            query=query,
-            path=path,
-            max_results=max_results,
-        )
-
-    @tool
-    async def read_file(
-        path: str,
-        start_line: int = 1,
-        end_line: int | None = None,
-    ) -> str:
-        """Read at most 300 numbered lines from a repository text file."""
-
-        return context.repository.read_file(
-            path=path,
-            start_line=start_line,
-            end_line=end_line,
-        )
 
     @tool
     async def save_plan(
@@ -129,6 +100,9 @@ def build_solver_tools(
         assumptions: list[str],
         risks: list[str],
         status: Literal["implementable", "blocked"],
+        admission_context_digest: str | None = None,
+        admission_evidence_ids: list[str] | None = None,
+        research_result_ids: list[str] | None = None,
         blocker: str | None = None,
     ) -> str:
         """Validate and persist the complete plan before any file mutation."""
@@ -136,6 +110,9 @@ def build_solver_tools(
         saved = plans.save(
             SolverPlan(
                 issue_summary=issue_summary,
+                admission_context_digest=admission_context_digest,
+                admission_evidence_ids=tuple(admission_evidence_ids or ()),
+                research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -162,6 +139,9 @@ def build_solver_tools(
         assumptions: list[str],
         risks: list[str],
         status: Literal["implementable", "blocked"],
+        admission_context_digest: str | None = None,
+        admission_evidence_ids: list[str] | None = None,
+        research_result_ids: list[str] | None = None,
         blocker: str | None = None,
     ) -> str:
         """Persist a complete replacement for the current Solver plan."""
@@ -171,6 +151,9 @@ def build_solver_tools(
             reason=reason,
             plan=SolverPlan(
                 issue_summary=issue_summary,
+                admission_context_digest=admission_context_digest,
+                admission_evidence_ids=tuple(admission_evidence_ids or ()),
+                research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -261,10 +244,14 @@ def build_solver_tools(
         )
         return context.repository.format_command_result(result)
 
+    research_tools = (
+        build_research_tools(research, role=ResearchRole.SOLVER, allow_web=True)
+        if research is not None
+        else []
+    )
     return [
-        list_tree,
-        search_text,
-        read_file,
+        *build_repository_read_tools(context),
+        *research_tools,
         save_plan,
         revise_plan,
         replace_text,
@@ -274,49 +261,3 @@ def build_solver_tools(
         show_diff,
         run_command,
     ]
-
-
-def build_reviewer_tools(context: RuntimeContext) -> list[BaseTool]:
-    """Build the Reviewer's strictly read-only repository registry."""
-
-    @tool
-    async def list_tree(path: str = ".", max_depth: int = 2) -> str:
-        """List a bounded repository tree without file contents."""
-
-        return context.repository.list_tree(path=path, max_depth=max_depth)
-
-    @tool
-    async def search_text(
-        query: str,
-        path: str = ".",
-        max_results: int = 50,
-    ) -> str:
-        """Search repository files for an exact literal text value."""
-
-        return context.repository.search_text(
-            query=query,
-            path=path,
-            max_results=max_results,
-        )
-
-    @tool
-    async def read_file(
-        path: str,
-        start_line: int = 1,
-        end_line: int | None = None,
-    ) -> str:
-        """Read at most 300 numbered lines from a repository text file."""
-
-        return context.repository.read_file(
-            path=path,
-            start_line=start_line,
-            end_line=end_line,
-        )
-
-    @tool
-    async def show_diff() -> str:
-        """Show actual bounded Git status, statistics, and candidate diff."""
-
-        return context.repository.show_diff()
-
-    return [list_tree, search_text, read_file, show_diff]

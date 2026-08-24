@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sage.domain.review import ReviewResult, ReviewVerdict
+from sage.domain.admission import AdmissionContextSnapshot
 from sage.domain.solver import SavedSolverPlan, SolverFinalResult
 
 
@@ -24,6 +25,26 @@ def validate_solver_final(
     if result.outcome.value == "implemented" and plan.plan.status != "implementable":
         raise InvalidModelContractError(
             "Solver claimed implementation under a blocked plan."
+        )
+
+
+def validate_solver_plan_context(
+    plan: SavedSolverPlan,
+    *,
+    admission: AdmissionContextSnapshot | None,
+) -> None:
+    if admission is None:
+        return
+    if plan.plan.admission_context_digest != admission.digest:
+        raise InvalidModelContractError(
+            "Solver plan does not reference the accepted Admission context."
+        )
+    known = {item.evidence_id for item in admission.evidence}
+    unknown = set(plan.plan.admission_evidence_ids) - known
+    if unknown:
+        raise InvalidModelContractError(
+            "Solver plan references unknown Admission evidence: "
+            + ", ".join(sorted(unknown))
         )
 
 
