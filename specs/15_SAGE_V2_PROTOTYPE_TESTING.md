@@ -488,7 +488,45 @@ part of the seven-day Actions diagnostics artifact.
 | `review_failed` | Inspect criterion results and blocking findings. A second review repair is not permitted. |
 | Clarification repeats | Answer all blocking questions explicitly; after round two, rewrite the Issue with a complete design. |
 | Candidate diff changed after solve | Confirm the workflow pins a Sage revision containing the authoritative publication fix. Older publishers re-added generated dependency/build output after solve; the corrected publisher stages only the validated patch. |
+| Patch reports `dev/null: No such file` | Pin a revision with patch-header normalization. Sage canonicalizes the model's bare `dev/null` new/deleted-file marker to unified diff's required `/dev/null`. |
+| Patch reports `corrupt patch at line ...` | Pin a revision with deterministic Git recount support. Sage ignores inaccurate model-supplied hunk counts and lets Git recount the actual hunk lines while still requiring context to match. |
 | No Pull Request | Check `terminal.json`; every non-`completed` outcome is deliberately non-publishable. |
+
+### Patch application diagnostics
+
+For every Solver candidate, logs now show privacy-safe application metadata:
+
+```text
+Patch: applying files=2 lines=18 digest=4b2f... recount=true
+Patch: finished status=applied digest=4b2f...
+```
+
+The digest correlates the start and finish lines without printing repository
+content or the model patch. A rejected patch prints Git's bounded reason. The
+initial candidate and its one allowed implementation repair have different
+digests, which makes it clear whether the Solver returned a genuinely revised
+patch.
+
+Sage safely normalizes CRLF line endings and a bare `dev/null` file header. It
+also invokes `git apply --recount`, which corrects inaccurate numbers in `@@`
+hunk headers. Git still rejects missing context, wrong source content, unsafe
+paths, Git-internal paths, malformed file headers, and patches that do not
+apply to the exact workspace.
+
+Run the deterministic regression without provider keys:
+
+```bash
+uv run --frozen --project apps/agent pytest -q \
+  apps/agent/tests/repository/test_patch.py \
+  apps/agent/tests/runtimes/v2/test_validation.py \
+  apps/agent/tests/manual/test_v2_fixture.py
+```
+
+The tests apply real patches to temporary Git repositories, including a
+new-file patch with `--- dev/null` and a patch with deliberately inaccurate
+hunk counts. They also verify that `make v2-first-run` disables Git's pager for
+its final diff summary, so local testing cannot open an interactive `less`
+screen. If a pager is already open, press `q`; it did not alter the candidate.
 
 ### Gemini HTTP 400 during Planner or Reviewer calls
 
