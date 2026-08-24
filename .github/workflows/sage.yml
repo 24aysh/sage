@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Authorize and deduplicate
         id: gate
-        uses: 24aysh/sage/.github/actions/sage-gate@8753f6d225788d77aa4227706da78a0901f1357c # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-gate@02d5e26a09678f34120eac2f218a26db954e224e # V2 prototype
         with:
           github-token: ${{ github.token }}
 
@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Solve the accepted Issue
         id: solve
-        uses: 24aysh/sage/.github/actions/sage-solve@8753f6d225788d77aa4227706da78a0901f1357c # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-solve@02d5e26a09678f34120eac2f218a26db954e224e # V2 prototype
         with:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -78,7 +78,7 @@ jobs:
           v2-planner-fallback-model: ${{ vars.SAGE_V2_PLANNER_FALLBACK_MODEL || 'gemini-3.5-flash-lite' }}
           v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
           v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
-          google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'false' }}
+          google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
           status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
 
@@ -115,7 +115,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Preserve or repair terminal status
-        uses: 24aysh/sage/.github/actions/sage-gate@8753f6d225788d77aa4227706da78a0901f1357c # V2 prototype
+        uses: 24aysh/sage/.github/actions/sage-gate@02d5e26a09678f34120eac2f218a26db954e224e # V2 prototype
         with:
           github-token: ${{ github.token }}
           operation: finalize

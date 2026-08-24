@@ -24,12 +24,12 @@ runtime.
 ## Cost, privacy, and suitability warning
 
 OpenAI API calls may be billed to the configured project. Gemini account terms
-and data-use behavior depend on the account and service tier. Before V2 will run,
-a repository owner must explicitly set
-`SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true`. That setting acknowledges that Issue
-and bounded repository context may be sent to the configured Google model
-account; it does not detect or change the account's terms. It is a Sage privacy
-gate, not a Google API permission or OAuth scope.
+and data-use behavior depend on the account and service tier.
+`SAGE_GOOGLE_MODEL_CONTEXT_APPROVED` defaults to `true`, so selecting V2
+acknowledges that Issue and bounded repository context may be sent to the
+configured Google model account. Set it explicitly to `false` to block V2
+Google calls. This setting does not detect or change the account's terms; it is
+a Sage privacy switch, not a Google API permission or OAuth scope.
 
 Do not enable this profile for repositories whose source, Issue text, or
 discussion is not permitted to be sent to both configured providers. Do
@@ -78,7 +78,7 @@ SAGE_VERIFICATION_COMMANDS_JSON=[]
 ```
 
 `.env` must remain untracked. V2 rejects a missing credential, another model
-profile, or a missing Google-context acknowledgement before constructing the
+profile, or an explicit Google-context rejection before constructing the
 provider set.
 
 Optional trusted verification commands are a JSON list. They run only inside
@@ -200,9 +200,8 @@ parallel, or replanning nodes.
 
 ## Live test 1: ready three-call Issue
 
-The repository includes a ready-to-run version of this smoke test. Once the
-both keys and `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true` are present in `.env`,
-run from the repository root:
+The repository includes a ready-to-run version of this smoke test. Once both
+provider keys are present in `.env`, run from the repository root:
 
 ```bash
 make v2-first-run
@@ -409,8 +408,9 @@ Use a non-sensitive disposable repository or branch policy first.
 2. Leave repository variable `SAGE_RUNTIME` unset to use the workflow's
    `v2-prototype` default, or set it explicitly to `v2-prototype`. A stale
    value of `v1` deliberately selects the legacy runtime and legacy logs.
-3. Set `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED` to `true` only after the repository
-   owner approves Google context use.
+3. Google context approval defaults to `true`. After reviewing the data-use
+   warning above, either leave `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED` unset or set
+   it to `true`; set it to `false` to block V2 Google calls.
 4. Optionally set `SAGE_V2_PLANNER_MODEL`,
    `SAGE_V2_PLANNER_FALLBACK_MODEL`, `SAGE_V2_SOLVER_MODEL`, and
    `SAGE_V2_REVIEWER_MODEL`; otherwise the documented defaults are used.
@@ -476,7 +476,7 @@ part of the seven-day Actions diagnostics artifact.
 | Symptom | Meaning and recovery |
 | --- | --- |
 | Configuration rejects a missing key | Add the missing repository secret or switch to V1. Never post it in the Issue. |
-| Google acknowledgement missing | Review account/data-use suitability, then explicitly approve or do not use V2. |
+| Google context approval is false | Review account/data-use suitability, then remove the override or set it to true only when Google context use is acceptable. |
 | LangSmith trace is missing | Confirm `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` is set, the project/workspace values select the intended workspace, and the run reached a traced graph or model call. |
 | LangSmith shows the workflow but no role name | Search the trace spans for `Planner`, `Solver`, or `Reviewer`; only roles reached by deterministic routing are invoked. |
 | Authentication/model access | Replace or authorize only the affected provider credential/model, then create one fresh invocation. |

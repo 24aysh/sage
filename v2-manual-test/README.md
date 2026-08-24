@@ -4,8 +4,9 @@ This directory is a checked-in, non-sensitive project for a live local V2
 smoke test. The project intentionally contains a one-character calculator bug
 and a failing standard-library test that describes the expected behavior.
 
-From the Sage repository root, configure the OpenAI and Gemini provider keys
-and approve Google model context use in the untracked `.env`, then run:
+From the Sage repository root, configure the OpenAI and Gemini provider keys in
+the untracked `.env`, review the Google context-use warning in the V2 testing
+guide, then run:
 
 ```bash
 make v2-first-run

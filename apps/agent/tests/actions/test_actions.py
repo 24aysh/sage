@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "8753f6d225788d77aa4227706da78a0901f1357c"
+SAGE_ACTION_SHA = "02d5e26a09678f34120eac2f218a26db954e224e"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -196,6 +196,9 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     )
     assert solve_action["with"]["runtime"] == (
         "${{ vars.SAGE_RUNTIME || 'v2-prototype' }}"
+    )
+    assert solve_action["with"]["google-model-context-approved"] == (
+        "${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}"
     )
     assert "vars.LANGSMITH_TRACING" in yaml.safe_dump(jobs["solve"])
     assert "vars.LANGSMITH_PROJECT" in yaml.safe_dump(jobs["solve"])

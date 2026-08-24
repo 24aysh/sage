@@ -35,12 +35,13 @@ def test_factory_uses_configurable_google_openai_models() -> None:
     assert providers.planner_fallback.model_name == "planner-fallback-model"
 
 
-def test_factory_refuses_unacknowledged_google_context_use() -> None:
+def test_factory_refuses_explicitly_rejected_google_context_use() -> None:
     with pytest.raises(ConfigurationError, match="not acknowledged"):
         build_constrained_provider_set(
             Settings(
                 runtime="v2-prototype",
                 openai_api_key="openai-test",
                 gemini_api_key="gemini-test",
+                google_model_context_approved=False,
             )
         )
