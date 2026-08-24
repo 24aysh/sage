@@ -41,14 +41,14 @@ def test_structured_provider_forwards_named_trace_config() -> None:
         model_name="test-model",
     )
     trace_config = {
-        "run_name": "Planner",
-        "tags": ["sage-agent", "role:planner"],
+        "run_name": "Reviewer",
+        "tags": ["sage-agent", "role:reviewer"],
         "metadata": {"sage_run_id": "run-123"},
     }
 
     result = asyncio.run(
         provider.invoke_structured(
-            role=ModelRole.PLANNER,
+            role=ModelRole.REVIEWER,
             messages=[HumanMessage(content="private context")],
             schema=Result,
             timeout_seconds=30,

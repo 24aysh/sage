@@ -10,14 +10,10 @@ from langchain_core.runnables import RunnableConfig
 from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole
 
 _STAGE_ACTIVITIES = {
-    "intake-planner": "Assess issue readiness and draft the execution plan",
-    "readiness-recheck": "Reassess readiness with additional repository evidence",
-    "solver": "Implement the approved execution plan",
-    "solver-retry": "Implement the plan with expanded repository evidence",
-    "implementation-repair": "Repair the candidate after deterministic verification",
-    "review": "Review the verified candidate against the acceptance contract",
-    "review-repair": "Repair validated reviewer findings",
-    "rereview": "Review the repaired candidate against the acceptance contract",
+    "solver": "Plan, implement, and verify the Issue through repository tools",
+    "solver-repair": "Repair the actual candidate from Reviewer findings",
+    "review": "Review the actual candidate against the Issue and saved plan",
+    "rereview": "Review the repaired candidate against the Issue and saved plan",
 }
 
 
@@ -85,7 +81,7 @@ def log_agent_activity(
     provider: str,
     model: str,
     call_number: int,
-    max_calls: int,
+    max_calls: int | None = None,
 ) -> None:
     """Log what an agent is doing without exposing its prompt or context."""
 
@@ -98,7 +94,7 @@ def log_agent_activity(
                 ("Stage", stage),
                 ("Attempt", attempt.value),
                 ("Model", f"{provider}/{model}"),
-                ("Call", f"{call_number}/{max_calls}"),
+                ("Call", call_number if max_calls is None else f"{call_number}/{max_calls}"),
             ),
         )
     )

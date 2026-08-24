@@ -3,12 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from sage.artifacts.v2 import V2ArtifactStore
-from sage.config import ConfiguredVerificationCommand
-from sage.domain.planning import AcceptanceCriterion, ExecutionPlan, PlanTask
+from sage.config import ConfiguredVerificationCommand, Settings
+from sage.domain.solver import SolverAcceptanceCriterion, SolverPlan, SolverPlanTask
 from sage.domain.verification import VerificationSource, VerificationStatus
-from sage.repository.scout import RepositoryMap
 from sage.sandbox.base import CommandResult
-from sage.verification.discovery import discover_verification_commands
+from sage.verification.discovery import discover_solver_verification_commands
 from sage.verification.runner import Verifier
 
 
@@ -38,55 +37,39 @@ class FakeRepository:
         return "diff --git a/app.py b/app.py\n"
 
 
-def _repository_map() -> RepositoryMap:
-    return RepositoryMap(
-        base_sha="a" * 40,
-        tracked_file_count=1,
-        tracked_paths_sample=("app.py",),
-        top_level_summary=("app.py",),
-        language_summary={"python": 1},
-        manifests=(),
-        test_roots=(),
-        ci_build_files=(),
-        documentation_files=(),
-        likely_entry_points=("app.py",),
-        exact_issue_paths=(),
-        lexical_matches=(),
-        key_excerpts=(),
-    )
-
-
-def _plan() -> ExecutionPlan:
-    return ExecutionPlan(
-        task_summary="Update app.",
-        acceptance_contract=(
-            AcceptanceCriterion(
+def _plan() -> SolverPlan:
+    return SolverPlan(
+        issue_summary="Update app.",
+        approach="Edit and verify app.py.",
+        acceptance_criteria=(
+            SolverAcceptanceCriterion(
                 criterion_id="updated",
-                behavior="App is updated.",
-                verification="Inspect the diff.",
+                requirement="App is updated.",
             ),
         ),
         tasks=(
-            PlanTask(
+            SolverPlanTask(
                 task_id="update",
                 objective="Update app.",
                 criterion_ids=("updated",),
             ),
         ),
-        allowed_write_scopes=("app.py",),
+        status="implementable",
     )
 
 
 def test_discovery_orders_mandatory_then_trusted_configured_commands() -> None:
-    commands = discover_verification_commands(
-        repository_map=_repository_map(),
+    commands = discover_solver_verification_commands(
         plan=_plan(),
-        timeout_seconds=30,
-        configured=(
-            ConfiguredVerificationCommand(
-                id="focused",
-                command="pytest -q tests/test_app.py",
-                timeout_seconds=90,
+        settings=Settings(
+            openai_api_key="test",
+            command_timeout_seconds=30,
+            verification_commands=(
+                ConfiguredVerificationCommand(
+                    id="focused",
+                    command="pytest -q tests/test_app.py",
+                    timeout_seconds=90,
+                ),
             ),
         ),
     )
@@ -99,10 +82,9 @@ def test_discovery_orders_mandatory_then_trusted_configured_commands() -> None:
 def test_verifier_runs_sequentially_and_redacts_secret_like_logs(tmp_path: Path) -> None:
     repository = FakeRepository()
     artifacts = V2ArtifactStore(tmp_path)
-    commands = discover_verification_commands(
-        repository_map=_repository_map(),
+    commands = discover_solver_verification_commands(
         plan=_plan(),
-        timeout_seconds=30,
+        settings=Settings(openai_api_key="test", command_timeout_seconds=30),
     )
 
     result = Verifier(
@@ -122,20 +104,22 @@ def test_verifier_runs_sequentially_and_redacts_secret_like_logs(tmp_path: Path)
 def test_optional_failure_is_visible_without_blocking_required_success(
     tmp_path: Path,
 ) -> None:
-    commands = discover_verification_commands(
-        repository_map=_repository_map(),
+    commands = discover_solver_verification_commands(
         plan=_plan(),
-        timeout_seconds=30,
-        configured=(
-            ConfiguredVerificationCommand(
-                id="required-test",
-                command="pytest -q tests/test_app.py",
-                required=True,
-            ),
-            ConfiguredVerificationCommand(
-                id="optional-test",
-                command="python3 -m unittest discover -v",
-                required=False,
+        settings=Settings(
+            openai_api_key="test",
+            command_timeout_seconds=30,
+            verification_commands=(
+                ConfiguredVerificationCommand(
+                    id="required-test",
+                    command="pytest -q tests/test_app.py",
+                    required=True,
+                ),
+                ConfiguredVerificationCommand(
+                    id="optional-test",
+                    command="python3 -m unittest discover -v",
+                    required=False,
+                ),
             ),
         ),
     )

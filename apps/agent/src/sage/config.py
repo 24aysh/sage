@@ -13,8 +13,6 @@ from sage.errors import ConfigurationError
 
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_PROFILE = "constrained-cross-provider"
-DEFAULT_V2_PLANNER_MODEL = "gemini-3.5-flash"
-DEFAULT_V2_PLANNER_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_V2_SOLVER_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_REVIEWER_MODEL = "gemini-3.5-flash"
 
@@ -59,18 +57,6 @@ class Settings(BaseModel):
     runtime: str = Field(default="v1", pattern=r"^(v1|v2-prototype)$")
     model_profile: str = DEFAULT_V2_PROFILE
     google_model_context_approved: bool = True
-    v2_planner_model: str = Field(
-        default=DEFAULT_V2_PLANNER_MODEL,
-        min_length=1,
-        max_length=120,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
-    )
-    v2_planner_fallback_model: str = Field(
-        default=DEFAULT_V2_PLANNER_FALLBACK_MODEL,
-        min_length=1,
-        max_length=120,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
-    )
     v2_solver_model: str = Field(
         default=DEFAULT_V2_SOLVER_MODEL,
         min_length=1,
@@ -88,20 +74,11 @@ class Settings(BaseModel):
     sandbox_image: str = "sage-sandbox:v0"
     command_timeout_seconds: int = Field(default=60, ge=1)
     max_tool_output_chars: int = Field(default=12_000, ge=1_000)
-    max_model_calls: int = Field(default=6, ge=3, le=6)
-    max_readiness_context_expansions: int = Field(default=1, ge=0, le=1)
-    max_solver_context_expansions: int = Field(default=1, ge=0, le=1)
-    max_implementation_repairs: int = Field(default=1, ge=0, le=1)
-    max_review_repairs: int = Field(default=1, ge=0, le=1)
     max_rate_limit_retries_per_call: int = Field(default=1, ge=0, le=1)
-    max_blocking_questions: int = Field(default=3, ge=1, le=3)
-    max_clarification_rounds: int = Field(default=2, ge=1, le=2)
     max_retry_after_seconds: int = Field(default=30, ge=0, le=60)
     model_request_timeout_seconds: int = Field(default=600, ge=1, le=900)
     run_deadline_seconds: int = Field(default=4_800, ge=600, le=5_100)
     finalization_reserve_seconds: int = Field(default=300, ge=60, le=900)
-    planner_input_chars: int = Field(default=48_000, ge=4_000, le=100_000)
-    readiness_recheck_input_chars: int = Field(default=40_000, ge=4_000, le=100_000)
     solver_input_chars: int = Field(default=96_000, ge=8_000, le=200_000)
     reviewer_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     repair_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
@@ -149,6 +126,26 @@ class Settings(BaseModel):
             values.get("SAGE_VERIFICATION_COMMANDS_JSON", "[]")
         )
         if runtime == "v2-prototype":
+            obsolete = sorted(
+                name
+                for name in (
+                    "SAGE_V2_PLANNER_MODEL",
+                    "SAGE_V2_PLANNER_FALLBACK_MODEL",
+                    "SAGE_MAX_MODEL_CALLS",
+                    "SAGE_MAX_READINESS_CONTEXT_EXPANSIONS",
+                    "SAGE_MAX_SOLVER_CONTEXT_EXPANSIONS",
+                    "SAGE_MAX_IMPLEMENTATION_REPAIRS",
+                    "SAGE_MAX_REVIEW_REPAIRS",
+                    "SAGE_PLANNER_INPUT_CHARS",
+                    "SAGE_READINESS_RECHECK_INPUT_CHARS",
+                )
+                if name in values
+            )
+            if obsolete:
+                raise ConfigurationError(
+                    "Obsolete patch-first V2 configuration is not supported: "
+                    + ", ".join(obsolete)
+                )
             if model_profile != DEFAULT_V2_PROFILE:
                 raise ConfigurationError(
                     "SAGE_MODEL_PROFILE must be constrained-cross-provider for V2."
@@ -177,13 +174,6 @@ class Settings(BaseModel):
                 runtime=runtime,
                 model_profile=model_profile,
                 google_model_context_approved=google_context_approved,
-                v2_planner_model=values.get(
-                    "SAGE_V2_PLANNER_MODEL", DEFAULT_V2_PLANNER_MODEL
-                ).strip(),
-                v2_planner_fallback_model=values.get(
-                    "SAGE_V2_PLANNER_FALLBACK_MODEL",
-                    DEFAULT_V2_PLANNER_FALLBACK_MODEL,
-                ).strip(),
                 v2_solver_model=values.get(
                     "SAGE_V2_SOLVER_MODEL", DEFAULT_V2_SOLVER_MODEL
                 ).strip(),
@@ -201,25 +191,8 @@ class Settings(BaseModel):
                 max_tool_output_chars=values.get(
                     "SAGE_MAX_TOOL_OUTPUT_CHARS", "12000"
                 ),
-                max_model_calls=values.get("SAGE_MAX_MODEL_CALLS", "6"),
-                max_readiness_context_expansions=values.get(
-                    "SAGE_MAX_READINESS_CONTEXT_EXPANSIONS", "1"
-                ),
-                max_solver_context_expansions=values.get(
-                    "SAGE_MAX_SOLVER_CONTEXT_EXPANSIONS", "1"
-                ),
-                max_implementation_repairs=values.get(
-                    "SAGE_MAX_IMPLEMENTATION_REPAIRS", "1"
-                ),
-                max_review_repairs=values.get("SAGE_MAX_REVIEW_REPAIRS", "1"),
                 max_rate_limit_retries_per_call=values.get(
                     "SAGE_MAX_RATE_LIMIT_RETRIES_PER_CALL", "1"
-                ),
-                max_blocking_questions=values.get(
-                    "SAGE_MAX_BLOCKING_QUESTIONS", "3"
-                ),
-                max_clarification_rounds=values.get(
-                    "SAGE_MAX_CLARIFICATION_ROUNDS", "2"
                 ),
                 max_retry_after_seconds=values.get(
                     "SAGE_MAX_RETRY_AFTER_SECONDS", "30"
@@ -232,10 +205,6 @@ class Settings(BaseModel):
                 ),
                 finalization_reserve_seconds=values.get(
                     "SAGE_FINALIZATION_RESERVE_SECONDS", "300"
-                ),
-                planner_input_chars=values.get("SAGE_PLANNER_INPUT_CHARS", "48000"),
-                readiness_recheck_input_chars=values.get(
-                    "SAGE_READINESS_RECHECK_INPUT_CHARS", "40000"
                 ),
                 solver_input_chars=values.get("SAGE_SOLVER_INPUT_CHARS", "96000"),
                 reviewer_input_chars=values.get(

@@ -73,7 +73,7 @@ help: ## Show the available commands and variables.
 		'' \
 		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.' \
 		'See specs/10_V1.0_testing.md for current GitHub migration checks.' \
-		'See specs/15_SAGE_V2_PROTOTYPE_TESTING.md for V2 prototype checks.'
+		'See specs/17_SAGE_V2_TOOL_DRIVEN_TESTING.md for current V2 checks.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -434,7 +434,6 @@ v2-test: ## Run focused deterministic V2 tests without live provider calls.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
 		"$(AGENT_PROJECT)/tests/providers" \
 		"$(AGENT_PROJECT)/tests/repository" \
-		"$(AGENT_PROJECT)/tests/context" \
 		"$(AGENT_PROJECT)/tests/verification" \
 		"$(AGENT_PROJECT)/tests/artifacts/test_v2_artifacts.py" \
 		"$(AGENT_PROJECT)/tests/manual" \
@@ -466,10 +465,10 @@ graph: ## Print Mermaid generated from the compiled V0.1 LangGraph.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/test_langgraph_graph.py::test_compiled_graph_renders_expected_mermaid"
 
-v2-graph: ## Print and validate the compiled sequential V2 LangGraph.
+v2-graph: ## Validate the V2 Solver tool graph and two-role routing helpers.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
-		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py::test_v2_graph_is_sequential_and_renders_mermaid"
+		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \

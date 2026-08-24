@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelRole(StrEnum):
-    PLANNER = "planner"
     SOLVER = "solver"
     REVIEWER = "reviewer"
 
@@ -44,8 +43,6 @@ class RunProvenance(BaseModel):
     graph_version: str = "sage_v2_prototype"
     route: str = "single"
     profile: str = "constrained-cross-provider"
-    calls: tuple[ModelCallRecord, ...] = Field(default=(), max_length=6)
-    implementation_repairs: int = Field(default=0, ge=0, le=1)
-    review_repairs: int = Field(default=0, ge=0, le=1)
-    readiness_context_expansions: int = Field(default=0, ge=0, le=1)
-    solver_context_expansions: int = Field(default=0, ge=0, le=1)
+    calls: tuple[ModelCallRecord, ...] = ()
+    solver_sessions: int = Field(default=0, ge=0)
+    review_cycles: int = Field(default=0, ge=0)

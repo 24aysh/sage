@@ -20,25 +20,20 @@ class V2ArtifactStore:
     def __init__(self, run_dir: Path) -> None:
         self._run_dir = run_dir
 
-    def write_repository_map(self, value: BaseModel) -> Path:
-        return self._json("repository-map.json", value)
+    def write_solver_plan(self, version: int, value: BaseModel) -> Path:
+        """Persist one immutable revision and update the latest plan pointer."""
 
-    def write_intake(self, value: BaseModel) -> Path:
-        return self._json("intake.json", value)
+        if version < 1:
+            raise ArtifactError("Solver plan version must be positive.")
+        path = self._json(Path("solver-plans") / f"{version:02d}.json", value)
+        self._json("solver-plan.json", value)
+        return path
 
-    def write_plan(self, value: BaseModel) -> Path:
-        return self._json("plan.json", value)
+    def write_solver_final(self, value: BaseModel) -> Path:
+        return self._json("solver-final.json", value)
 
-    def write_autonomy_contract(self, value: BaseModel) -> Path:
-        return self._json("autonomy-contract.json", value)
-
-    def write_context(self, stage: str, call_number: int, content: str) -> Path:
-        name = _safe_stage(stage)
-        return self._text(Path("contexts") / f"{call_number:02d}-{name}.txt", content)
-
-    def write_proposal(self, stage: str, call_number: int, patch: str) -> Path:
-        name = _safe_stage(stage)
-        return self._text(Path("proposals") / f"{call_number:02d}-{name}.patch", patch)
+    def write_candidate_snapshot(self, value: BaseModel) -> Path:
+        return self._json("candidate-snapshot.json", value)
 
     def write_verification_summary(self, pass_number: int, value: BaseModel) -> Path:
         path = self._json(
@@ -55,8 +50,13 @@ class V2ArtifactStore:
             value,
         )
 
-    def write_review(self, value: BaseModel) -> Path:
-        return self._json("review.json", value)
+    def write_review(self, value: BaseModel, *, version: int | None = None) -> Path:
+        path = self._json("review.json", value)
+        if version is not None:
+            if version < 1:
+                raise ArtifactError("Review version must be positive.")
+            self._json(Path("reviews") / f"{version:02d}.json", value)
+        return path
 
     def write_usage(self, value: RunProvenance) -> Path:
         return self._json("usage.json", value)

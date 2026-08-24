@@ -60,11 +60,8 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "required": False,
         "default": "2",
     }
-    assert document["inputs"]["v2-planner-model"]["default"] == "gemini-3.5-flash"
-    assert (
-        document["inputs"]["v2-planner-fallback-model"]["default"]
-        == "gemini-3.5-flash-lite"
-    )
+    assert "v2-planner-model" not in document["inputs"]
+    assert "v2-planner-fallback-model" not in document["inputs"]
     assert document["inputs"]["v2-solver-model"]["default"] == "gpt-5.4-mini"
     assert document["inputs"]["v2-reviewer-model"]["default"] == "gemini-3.5-flash"
     assert document["inputs"]["google-model-context-approved"] == {
@@ -86,11 +83,8 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
     assert "LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}" in body
     assert "ANTHROPIC_API_KEY" not in body
-    assert "SAGE_V2_PLANNER_MODEL: ${{ inputs.v2-planner-model }}" in body
-    assert (
-        "SAGE_V2_PLANNER_FALLBACK_MODEL: "
-        "${{ inputs.v2-planner-fallback-model }}"
-    ) in body
+    assert "SAGE_V2_PLANNER_MODEL" not in body
+    assert "SAGE_V2_PLANNER_FALLBACK_MODEL" not in body
     assert "SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}" in body
     assert "SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}" in body
     assert "SAGE_RUNTIME: ${{ inputs.runtime }}" in body
@@ -184,8 +178,8 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
-    assert "vars.SAGE_V2_PLANNER_MODEL" in yaml.safe_dump(jobs["solve"])
-    assert "vars.SAGE_V2_PLANNER_FALLBACK_MODEL" in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_PLANNER_MODEL" not in yaml.safe_dump(jobs["solve"])
+    assert "vars.SAGE_V2_PLANNER_FALLBACK_MODEL" not in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
@@ -213,8 +207,10 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
     allowed = {
         "metadata.json",
         "github.json",
-        "agent-final.json",
-        "changed-files.json",
+            "agent-final.json",
+            "solver-plan.json",
+            "solver-final.json",
+            "changed-files.json",
         "diff.patch",
         "usage.json",
         "terminal.json",

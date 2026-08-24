@@ -1,45 +1,73 @@
 import pytest
 
-from sage.errors import RepositoryError
-from sage.runtimes.v2.validation import normalize_patch
+from sage.domain.review import CriterionResult, ReviewResult, ReviewVerdict
+from sage.domain.solver import (
+    SavedSolverPlan,
+    SolverAcceptanceCriterion,
+    SolverFinalResult,
+    SolverOutcome,
+    SolverPlan,
+    SolverPlanTask,
+)
+from sage.runtimes.v2.validation import (
+    InvalidModelContractError,
+    validate_review,
+    validate_solver_final,
+)
 
 
-def test_normalize_patch_accepts_unified_diff_code_fence() -> None:
-    patch = normalize_patch(
-        """```diff
---- a/app.py
-+++ b/app.py
-@@ -1 +1 @@
--old
-+new
-```"""
-    )
-
-    assert patch.startswith("--- a/app.py\n+++ b/app.py")
-    assert patch.endswith("\n")
-
-
-def test_normalize_patch_rejects_apply_patch_markers_with_repair_guidance() -> None:
-    with pytest.raises(RepositoryError, match="apply-patch markers"):
-        normalize_patch(
-            """*** Begin Patch
-*** Update File: app.py
-@@
--old
-+new
-*** End Patch"""
+def test_solver_must_reference_latest_saved_plan() -> None:
+    with pytest.raises(InvalidModelContractError, match="latest"):
+        validate_solver_final(
+            SolverFinalResult(
+                outcome=SolverOutcome.IMPLEMENTED,
+                summary="done",
+                plan_version=2,
+            ),
+            plan=_plan(),
         )
 
 
-def test_normalize_patch_canonicalizes_bare_dev_null_header() -> None:
-    patch = normalize_patch(
-        """diff --git a/new.py b/new.py
-new file mode 100644
---- dev/null
-+++ b/new.py
-@@ -0,0 +1 @@
-+value = 1
-"""
+def test_reviewer_pass_requires_complete_criterion_coverage() -> None:
+    with pytest.raises(InvalidModelContractError, match="complete"):
+        validate_review(
+            ReviewResult(verdict=ReviewVerdict.PASS, confidence=0.9),
+            plan=_plan(),
+        )
+
+    validate_review(
+        ReviewResult(
+            verdict=ReviewVerdict.PASS,
+            criterion_results=(
+                CriterionResult(
+                    criterion_id="value",
+                    satisfied=True,
+                    evidence="Diff sets value to two.",
+                ),
+            ),
+            confidence=0.9,
+        ),
+        plan=_plan(),
     )
 
-    assert "--- /dev/null\n" in patch
+
+def _plan() -> SavedSolverPlan:
+    plan = SolverPlan(
+        issue_summary="Change value.",
+        approach="Edit the file.",
+        tasks=(
+            SolverPlanTask(
+                task_id="edit",
+                objective="Edit.",
+                criterion_ids=("value",),
+            ),
+        ),
+        acceptance_criteria=(
+            SolverAcceptanceCriterion(
+                criterion_id="value",
+                requirement="Value is two.",
+            ),
+        ),
+        status="implementable",
+    )
+    return SavedSolverPlan(version=1, digest=plan.digest(), plan=plan)

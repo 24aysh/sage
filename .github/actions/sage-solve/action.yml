@@ -9,7 +9,7 @@ inputs:
     description: Model credential scoped to the solve controller step.
     required: true
   gemini-api-key:
-    description: V2 Planner and Reviewer credential scoped to the solve controller step.
+    description: V2 Reviewer credential scoped to the solve controller step.
     required: false
   openai-max-retries:
     description: Bounded OpenAI SDK retries for temporary rate limits.
@@ -23,14 +23,6 @@ inputs:
     description: Locked V2 provider profile.
     required: false
     default: constrained-cross-provider
-  v2-planner-model:
-    description: Gemini model used for V2 planning and autonomy classification.
-    required: false
-    default: gemini-3.5-flash
-  v2-planner-fallback-model:
-    description: Gemini fallback model used only after an allowed Planner failure.
-    required: false
-    default: gemini-3.5-flash-lite
   v2-solver-model:
     description: OpenAI model used for V2 implementation and repair.
     required: false
@@ -119,8 +111,6 @@ runs:
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
         SAGE_RUNTIME: ${{ inputs.runtime }}
         SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}
-        SAGE_V2_PLANNER_MODEL: ${{ inputs.v2-planner-model }}
-        SAGE_V2_PLANNER_FALLBACK_MODEL: ${{ inputs.v2-planner-fallback-model }}
         SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}
         SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}
         SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}

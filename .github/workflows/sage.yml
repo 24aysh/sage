@@ -74,8 +74,6 @@ jobs:
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
           runtime: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
           model-profile: constrained-cross-provider
-          v2-planner-model: ${{ vars.SAGE_V2_PLANNER_MODEL || 'gemini-3.5-flash' }}
-          v2-planner-fallback-model: ${{ vars.SAGE_V2_PLANNER_FALLBACK_MODEL || 'gemini-3.5-flash-lite' }}
           v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
           v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
           google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
@@ -91,6 +89,8 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/metadata.json
             ${{ steps.solve.outputs.diagnostics-path }}/github.json
             ${{ steps.solve.outputs.diagnostics-path }}/agent-final.json
+            ${{ steps.solve.outputs.diagnostics-path }}/solver-plan.json
+            ${{ steps.solve.outputs.diagnostics-path }}/solver-final.json
             ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json
             ${{ steps.solve.outputs.diagnostics-path }}/diff.patch
             ${{ steps.solve.outputs.diagnostics-path }}/usage.json

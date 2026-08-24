@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import shlex
 
-from sage.config import ConfiguredVerificationCommand
-from sage.domain.planning import ExecutionPlan
+from sage.config import Settings
+from sage.domain.solver import SolverPlan
 from sage.domain.verification import VerificationCommand, VerificationSource
-from sage.repository.scout import RepositoryMap
 
 _ALLOWED_PREFIXES = (
     "python ",
@@ -23,14 +22,12 @@ _ALLOWED_PREFIXES = (
 )
 
 
-def discover_verification_commands(
+def discover_solver_verification_commands(
     *,
-    repository_map: RepositoryMap,
-    plan: ExecutionPlan,
-    timeout_seconds: int,
-    configured: tuple[ConfiguredVerificationCommand, ...] = (),
+    plan: SolverPlan,
+    settings: Settings,
 ) -> tuple[VerificationCommand, ...]:
-    """Build at most four sequential sandbox checks in stable order."""
+    """Build V2 checks from trusted configuration and Solver plan hints."""
 
     commands: list[VerificationCommand] = [
         VerificationCommand(
@@ -38,11 +35,11 @@ def discover_verification_commands(
             command="git diff --check HEAD --",
             source=VerificationSource.MANDATORY,
             required=True,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=settings.command_timeout_seconds,
         )
     ]
     seen = {commands[0].command}
-    for item in configured:
+    for item in settings.verification_commands:
         if item.command in seen:
             continue
         commands.append(
@@ -51,51 +48,32 @@ def discover_verification_commands(
                 command=item.command,
                 source=VerificationSource.CONFIGURED,
                 required=item.required,
-                timeout_seconds=min(timeout_seconds, item.timeout_seconds),
+                timeout_seconds=min(
+                    settings.command_timeout_seconds,
+                    item.timeout_seconds,
+                ),
             )
         )
         seen.add(item.command)
         if len(commands) >= 4:
             return tuple(commands)
-    for index, hint in enumerate(plan.verification_hints, start=1):
-        command = _validated_hint(hint.command)
+    for index, hint in enumerate(plan.verification_commands, start=1):
+        command = _validated_hint(hint)
         if command is None or command in seen:
             continue
         commands.append(
             VerificationCommand(
-                check_id=f"planned-{index}",
+                check_id=f"solver-plan-{index}",
                 command=command,
                 source=VerificationSource.PLANNED,
-                required=hint.required,
-                timeout_seconds=timeout_seconds,
+                required=False,
+                timeout_seconds=settings.command_timeout_seconds,
             )
         )
         seen.add(command)
         if len(commands) >= 4:
-            return tuple(commands)
-
-    paths = set(repository_map.tracked_paths_sample)
-    if (
-        len(commands) < 4
-        and any(path.endswith(".py") for path in paths)
-        and any(
-            part in {"test", "tests"}
-            for path in paths
-            for part in path.split("/")
-        )
-    ):
-        command = "python3 -m unittest discover -v"
-        if command not in seen:
-            commands.append(
-                VerificationCommand(
-                    check_id="python-unittest",
-                    command=command,
-                    source=VerificationSource.DISCOVERED,
-                    required=False,
-                    timeout_seconds=timeout_seconds,
-                )
-            )
-    return tuple(commands[:4])
+            break
+    return tuple(commands)
 
 
 def _validated_hint(command: str) -> str | None:
@@ -109,3 +87,10 @@ def _validated_hint(command: str) -> str | None:
     if any(token in normalized for token in ("git push", "git commit", "git reset", "git clean")):
         return None
     return normalized if normalized.startswith(_ALLOWED_PREFIXES) else None
+
+
+def is_allowed_solver_verification_command(command: str) -> bool:
+    """Return whether an untrusted Solver command is verification-only."""
+
+    normalized = command.strip()
+    return normalized == "git diff --check HEAD --" or _validated_hint(normalized) is not None
