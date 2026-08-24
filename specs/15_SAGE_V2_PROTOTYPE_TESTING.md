@@ -539,7 +539,7 @@ controlled canary after the offline test passes.
 | `review_failed` | Inspect criterion results and blocking findings. A second review repair is not permitted. |
 | Clarification repeats | Answer all blocking questions explicitly; after round two, rewrite the Issue with a complete design. |
 | Candidate diff changed after solve | Confirm the workflow pins a Sage revision containing the authoritative publication fix. Older publishers re-added generated dependency/build output after solve; the corrected publisher stages only the validated patch. |
-| Patch reports `dev/null: No such file` | Pin a revision with patch-header normalization. Sage canonicalizes the model's bare `dev/null` new/deleted-file marker to unified diff's required `/dev/null`. |
+| Patch reports `dev/null: No such file` | Pin a revision with pair-aware patch-header normalization. Sage canonicalizes bare, quoted, and Git-prefixed aliases such as `dev/null`, `"a/dev/null"`, and `b/dev/null` to unified diff's required `/dev/null`. It preserves a real repository path named `dev/null`. |
 | Patch reports `corrupt patch at line ...` | Pin a revision with deterministic Git recount support. Sage ignores inaccurate model-supplied hunk counts and lets Git recount the actual hunk lines while still requiring context to match. |
 | No Pull Request | Check `terminal.json`; every non-`completed` outcome is deliberately non-publishable. |
 
@@ -559,13 +559,19 @@ initial candidate and its one allowed implementation repair have different
 digests, which makes it clear whether the Solver returned a genuinely revised
 patch.
 
-Sage safely normalizes CRLF line endings and a bare `dev/null` file header. It
-also invokes `git apply --recount --whitespace=fix`, which corrects inaccurate
-numbers in `@@` hunk headers and Git-recognized whitespace errors such as a new
-blank line at EOF. The adjustment is logged without printing patch content.
-Git still rejects missing context, wrong source content, unsafe paths,
-Git-internal paths, malformed file headers, and patches that do not apply to
-the exact workspace.
+Sage safely normalizes CRLF line endings and unambiguous null-file header
+variants. Models sometimes emit `a/dev/null` or `b/dev/null`; Git strips the
+Git prefix and then tries to open a real `dev/null` path. Pair-aware
+normalization converts these variants only when the opposite `---`/`+++`
+header names a different file, so a legitimate repository file named
+`dev/null` remains usable. A correction appears as
+`Patch: normalized null file headers count=1` without printing patch content.
+
+Sage also invokes `git apply --recount --whitespace=fix`, which corrects
+inaccurate numbers in `@@` hunk headers and Git-recognized whitespace errors
+such as a new blank line at EOF. Git still rejects missing context, wrong source
+content, unsafe paths, Git-internal paths, malformed file headers, and patches
+that do not apply to the exact workspace.
 
 Run the deterministic regression without provider keys:
 
@@ -576,12 +582,13 @@ uv run --frozen --project apps/agent pytest -q \
   apps/agent/tests/manual/test_v2_fixture.py
 ```
 
-The tests apply real patches to temporary Git repositories, including a
-new-file patch with `--- dev/null`, a trailing blank line, and deliberately
-inaccurate hunk counts. They also verify that `make v2-first-run` disables Git's
-pager for its final diff summary, so local testing cannot open an interactive
-`less` screen. If a pager is already open, press `q`; it did not alter the
-candidate.
+The tests apply real patches to temporary Git repositories, including new-file
+patches with `--- dev/null`, `--- a/dev/null`, and a quoted alias; deletion via
+`+++ b/dev/null`; an actual tracked `dev/null` path; a trailing blank line; and
+deliberately inaccurate hunk counts. They also verify that
+`make v2-first-run` disables Git's pager for its final diff summary, so local
+testing cannot open an interactive `less` screen. If a pager is already open,
+press `q`; it did not alter the candidate.
 
 ### Gemini HTTP 400 during Planner or Reviewer calls
 
