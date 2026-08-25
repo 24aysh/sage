@@ -88,15 +88,8 @@ V1 intentionally retains `apply_patch` as its rollback-compatible tool.
 
 ## 4. Run one local end-to-end solve
 
-The repository includes a small manual project and Issue. This command creates
-a disposable Git repository, runs the configured models in Docker, and checks
-the completed artifacts:
-
-```bash
-make v2-first-run
-```
-
-To use your own committed repository and Issue file:
+Use a committed repository and an Issue file. This command runs the configured
+models in Docker and checks the completed artifacts:
 
 ```bash
 make v2-first-run \
@@ -104,7 +97,7 @@ make v2-first-run \
   ISSUE=/absolute/path/to/issue.md
 ```
 
-Both `REPO` and `ISSUE` must be supplied together. Expected logs include:
+Both `REPO` and `ISSUE` are required. Expected logs include:
 
 ```text
 Solver: activity

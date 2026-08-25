@@ -134,24 +134,17 @@ make v2-graph
 ```
 
 After configuring the OpenAI and Gemini provider keys and approving Google
-model context use, run the complete live V2 workflow against the checked-in
-disposable fixture:
-
-```bash
-make v2-first-run
-```
-
-The target creates a temporary Git repository from `v2-manual-test/project`,
-uses `v2-manual-test/issue.md`, requires a completed non-empty candidate, and
-validates the retained artifacts and diff under `.sage/runs/`.
-
-To run the same strict workflow against another committed repository and Issue:
+model context use, run the complete live V2 workflow against a committed
+repository and Issue file:
 
 ```bash
 make v2-first-run \
   REPO=/absolute/path/to/repository \
   ISSUE=/absolute/path/to/issue.md
 ```
+
+The strict target requires a completed non-empty candidate and validates the
+retained artifacts and diff under `.sage/runs/`.
 
 During a run, INFO logs render readable `Admission: activity`, research-tool,
 `Solver: activity`, verification, and `Reviewer: finished` events. Admission

@@ -118,7 +118,9 @@ LANGSMITH_WORKSPACE_ID=<workspace-id>
 Run the normal workflow:
 
 ```bash
-make v2-first-run
+make v2-first-run \
+  REPO=/absolute/path/to/repository \
+  ISSUE=/absolute/path/to/issue.md
 ```
 
 Open the `sage-v2` project in LangSmith and locate the trace named
@@ -204,30 +206,8 @@ parallel, or replanning nodes.
 
 ## Live test 1: ready three-call Issue
 
-The repository includes a ready-to-run version of this smoke test. Once both
-provider keys are present in `.env`, run from the repository root:
-
-```bash
-make v2-first-run
-```
-
-The target performs setup, rebuilds and smoke-tests the network-disabled
-sandbox, runs the deterministic V2 checks, copies `v2-manual-test/project` into
-a temporary Git repository, and solves `v2-manual-test/issue.md`. It forces the
-constrained cross-provider profile and a required
-`python3 calculator_checks.py` verification command for this fixture. It
-then validates the retained candidate and artifacts under `.sage/runs/`.
-
-Unlike the general `make solve` wrapper, this smoke target is strict: a safe
-clarification, blocked, no-change, or other non-publishable terminal outcome
-causes the command to fail. Success therefore means the local V2 workflow
-produced a non-empty, Git-authoritative candidate and passed artifact checks.
-
-The checked-in fixture is never modified. Its initial failing tests are
-intentional and reproduce the one-character bug described by the Issue.
-
-The same strict command accepts a custom committed repository and Issue, like
-the V1 `first-run` target:
+Once both provider keys are present in `.env`, choose a committed test
+repository and a complete Issue file. Run from the repository root:
 
 ```bash
 make v2-first-run \
@@ -236,9 +216,18 @@ make v2-first-run \
   BASE_REF=HEAD
 ```
 
-Provide `REPO` and `ISSUE` together. If both are omitted, the checked-in sample
-is used. Custom runs retain `SAGE_VERIFICATION_COMMANDS_JSON` from trusted local
-configuration; only the sample run forces its fixture-specific check.
+The target performs setup, rebuilds and smoke-tests the network-disabled
+sandbox, runs the deterministic V2 checks, and solves the requested Issue with
+the constrained cross-provider profile. It then validates the retained
+candidate and artifacts under `.sage/runs/`.
+
+Unlike the general `make solve` wrapper, this smoke target is strict: a safe
+clarification, blocked, no-change, or other non-publishable terminal outcome
+causes the command to fail. Success therefore means the local V2 workflow
+produced a non-empty, Git-authoritative candidate and passed artifact checks.
+
+Provide `REPO` and `ISSUE` together. The target retains
+`SAGE_VERIFICATION_COMMANDS_JSON` from trusted local configuration.
 
 Live CLI output includes progress lines for every model attempt:
 
@@ -583,13 +572,13 @@ Run the deterministic regression without provider keys:
 uv run --frozen --project apps/agent pytest -q \
   apps/agent/tests/repository/test_patch.py \
   apps/agent/tests/runtimes/v2/test_validation.py \
-  apps/agent/tests/manual/test_v2_fixture.py
+  apps/agent/tests/test_makefile.py
 ```
 
 The tests apply real patches to temporary Git repositories, including new-file
 patches with `--- dev/null`, `--- a/dev/null`, and a quoted alias; deletion via
 `+++ b/dev/null`; an actual tracked `dev/null` path; a trailing blank line; and
-deliberately inaccurate hunk counts. They also verify that
+deliberately inaccurate hunk counts. The Makefile checks also verify that
 `make v2-first-run` disables Git's pager for its final diff summary, so local
 testing cannot open an interactive `less` screen. If a pager is already open,
 press `q`; it did not alter the candidate.

@@ -84,13 +84,7 @@ They make no live OpenAI, Gemini, Tavily, or GitHub requests.
 
 ## 3. Test a normal READY Issue locally
 
-Run the checked-in sample:
-
-```bash
-make v2-first-run
-```
-
-Or use another committed repository and Issue file:
+Use a committed repository and Issue file whose requirements are complete:
 
 ```bash
 make v2-first-run \

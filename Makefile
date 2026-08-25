@@ -18,7 +18,6 @@ OUTPUT_DIR ?=
 ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
-V2_SAMPLE_DIR ?= $(ROOT_DIR)/v2-manual-test
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run v2-first-run v2-github-smoke doctor github-doctor sandbox-build \
@@ -34,7 +33,7 @@ help: ## Show the available commands and variables.
 		'  make first-run REPO=... ISSUE=...' \
 		'                        Configure, set up, verify, and solve in one command.' \
 		'  make v2-first-run REPO=... ISSUE=...' \
-		'                        Run strict live V2; omit both inputs to use the sample.' \
+		'                        Run a strict live V2 solve against explicit inputs.' \
 		'  make v2-github-smoke   Test branch/commit/draft-PR publication with no APIs.' \
 		'  make v2-github-smoke REPO=... PATCH=... BASE_REF=...' \
 		'                        Test a saved patch against a local clone and Git remote.' \
@@ -157,21 +156,13 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	cd "$(ROOT_DIR)"; \
 	requested_repo="$(REPO)"; \
 	requested_issue="$(ISSUE)"; \
-	if [[ -z "$$requested_repo" && -z "$$requested_issue" ]]; then \
-		use_sample=1; \
-		sample_project="$(V2_SAMPLE_DIR)/project"; \
-		sample_issue="$(V2_SAMPLE_DIR)/issue.md"; \
-		[[ -d "$$sample_project" ]] || { echo "ERROR: sample project is missing: $$sample_project" >&2; exit 1; }; \
-		[[ -f "$$sample_issue" ]] || { echo "ERROR: sample issue is missing: $$sample_issue" >&2; exit 1; }; \
-	elif [[ -z "$$requested_repo" || -z "$$requested_issue" ]]; then \
+	if [[ -z "$$requested_repo" || -z "$$requested_issue" ]]; then \
 		echo "ERROR: REPO and ISSUE must be provided together." >&2; \
 		echo "Use: make v2-first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
 		exit 1; \
-	else \
-		use_sample=0; \
-		[[ -d "$$requested_repo" ]] || { echo "ERROR: repository path does not exist: $$requested_repo" >&2; exit 1; }; \
-		[[ -f "$$requested_issue" ]] || { echo "ERROR: issue file does not exist: $$requested_issue" >&2; exit 1; }; \
 	fi; \
+	[[ -d "$$requested_repo" ]] || { echo "ERROR: repository path does not exist: $$requested_repo" >&2; exit 1; }; \
+	[[ -f "$$requested_issue" ]] || { echo "ERROR: issue file does not exist: $$requested_issue" >&2; exit 1; }; \
 	inherited_openai_api_key="$${OPENAI_API_KEY:-}"; \
 	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
 	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
@@ -227,9 +218,6 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	export SAGE_MODEL_PROFILE=constrained-cross-provider; \
 	: "$${LANGSMITH_TRACING:=false}"; export LANGSMITH_TRACING; \
 	: "$${LANGSMITH_PROJECT:=sage-v2}"; export LANGSMITH_PROJECT; \
-	if [[ "$$use_sample" -eq 1 ]]; then \
-		export SAGE_VERIFICATION_COMMANDS_JSON='[{"id":"sample-unittest","command":"python3 calculator_checks.py","required":true,"timeout_seconds":60}]'; \
-	fi; \
 	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
 	echo "Step 1/8: syncing the Python environment"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
@@ -241,30 +229,13 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null doctor; \
 	echo "Step 5/8: running deterministic V2 checks"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null v2-check; \
-	if [[ "$$use_sample" -eq 1 ]]; then \
-		echo "Step 6/8: creating a disposable Git repository from $(V2_SAMPLE_DIR)"; \
-		fixture_root="$$(mktemp -d "$${TMPDIR:-/tmp}/sage-v2-first-run.XXXXXX")"; \
-		trap 'rm -rf -- "$$fixture_root"' EXIT; \
-		target_repo="$$fixture_root/repo"; \
-		target_issue="$$sample_issue"; \
-		mkdir -p "$$target_repo"; \
-		cp -R "$$sample_project/." "$$target_repo/"; \
-		git init -q --initial-branch=main "$$target_repo"; \
-		git -C "$$target_repo" config user.name "Sage V2 Local Test"; \
-		git -C "$$target_repo" config user.email "sage-v2-local@example.invalid"; \
-		git -C "$$target_repo" add --all; \
-		git -C "$$target_repo" commit -q -m "test: initialize V2 manual fixture"; \
-	else \
-		echo "Step 6/8: using the requested repository and Issue"; \
-		target_repo="$$requested_repo"; \
-		target_issue="$$requested_issue"; \
-	fi; \
+	echo "Step 6/8: using the requested repository and Issue"; \
 	mkdir -p "$(ROOT_DIR)/.sage/runs"; \
 	manual_run_root="$$(mktemp -d "$(ROOT_DIR)/.sage/runs/v2-manual.XXXXXX")"; \
 	export SAGE_RUNS_DIR="$$manual_run_root"; \
 	echo "Step 7/8: solving the Issue with the constrained V2 profile"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null REQUIRE_COMPLETED=true solve \
-		REPO="$$target_repo" ISSUE="$$target_issue" BASE_REF="$(BASE_REF)"; \
+		REPO="$$requested_repo" ISSUE="$$requested_issue" BASE_REF="$(BASE_REF)"; \
 	run_dir="$$(find "$$manual_run_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
 	[[ -n "$$run_dir" ]] || { echo "ERROR: V2 solve did not create a run directory." >&2; exit 1; }; \
 	echo "Step 8/8: validating the completed run artifacts and candidate diff"; \
@@ -450,7 +421,7 @@ v2-test: ## Run focused deterministic V2 tests without live provider calls.
 		"$(AGENT_PROJECT)/tests/repository" \
 		"$(AGENT_PROJECT)/tests/verification" \
 		"$(AGENT_PROJECT)/tests/artifacts/test_v2_artifacts.py" \
-		"$(AGENT_PROJECT)/tests/manual" \
+		"$(AGENT_PROJECT)/tests/test_makefile.py" \
 		"$(AGENT_PROJECT)/tests/runtimes/v2" \
 		"$(AGENT_PROJECT)/tests/test_config.py" \
 		"$(AGENT_PROJECT)/tests/integrations/github/test_context.py" \
