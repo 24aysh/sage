@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Sage — Issues into code changes",
+  title: "Sage",
   description:
-    "An execution-grounded software-engineering agent built around isolated repository workspaces.",
+    "Give Sage a GitHub issue and get back a reviewable draft pull request.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full bg-background text-foreground">{children}</body>
     </html>
   );

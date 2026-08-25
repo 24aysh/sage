@@ -1,7 +1,7 @@
 # Sage web
 
-This Next.js App Router application is the V0 product landing page. It explains
-the execution architecture and version roadmap; it has no backend or agent
+This Next.js App Router application is the Sage product landing page. It contains
+a focused liquid hero and five-card capability bento; it has no backend or agent
 execution path.
 
 ```bash
@@ -9,5 +9,6 @@ npm install
 npm run dev
 ```
 
-The page is written in TypeScript, styled with Tailwind CSS, and uses Motion in
-small client-component islands for progressive reveal and flow animation.
+The page is written in TypeScript, styled with Tailwind CSS, and uses focused
+GSAP client islands for scroll motion. See [TESTING.md](./TESTING.md) for the
+landing-page interaction and responsive testing guide.
