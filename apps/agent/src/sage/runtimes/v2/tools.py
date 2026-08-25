@@ -19,7 +19,10 @@ from sage.research.models import ResearchRole
 from sage.research.service import ResearchService
 from sage.research.tools import build_research_tools
 from sage.repository.edits import WriteMode
-from sage.runtimes.v2.repository_tools import build_repository_read_tools
+from sage.runtimes.repository_tools import (
+    build_repository_read_tools,
+    build_show_diff_tool,
+)
 from sage.verification.discovery import is_allowed_solver_verification_command
 
 
@@ -217,12 +220,6 @@ def build_solver_tools(
         )
 
     @tool
-    async def show_diff() -> str:
-        """Show actual bounded Git status, statistics, and candidate diff."""
-
-        return context.repository.show_diff()
-
-    @tool
     async def run_command(command: str, timeout_seconds: int | None = None) -> str:
         """Run a policy-checked repository command in the isolated sandbox."""
 
@@ -248,6 +245,10 @@ def build_solver_tools(
         build_research_tools(research, role=ResearchRole.SOLVER, allow_web=True)
         if research is not None
         else []
+    )
+    show_diff = build_show_diff_tool(
+        context,
+        description="Show actual bounded Git status, statistics, and candidate diff.",
     )
     return [
         *build_repository_read_tools(context),

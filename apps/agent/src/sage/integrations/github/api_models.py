@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sage.integrations.github.models import (
     GIT_OBJECT_ID_PATTERN,
     validate_github_login,
+    validate_github_timestamp,
     validate_github_url,
 )
 
@@ -58,9 +59,7 @@ class GitHubIssueCommentSnapshot(BaseModel):
     @field_validator("created_at")
     @classmethod
     def validate_created_at(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("GitHub comment timestamp must include a timezone.")
-        return value
+        return validate_github_timestamp(value)
 
     @field_validator("html_url")
     @classmethod

@@ -27,6 +27,14 @@ _ACTOR_PATTERN = re.compile(
 )
 
 
+def validate_github_timestamp(value: datetime) -> datetime:
+    """Require the timezone information present on GitHub timestamps."""
+
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("GitHub comment timestamp must include a timezone.")
+    return value
+
+
 class GitHubRepository(BaseModel):
     """Validated target repository identity."""
 
@@ -114,9 +122,7 @@ class GitHubComment(BaseModel):
     @field_validator("created_at")
     @classmethod
     def validate_created_at(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("GitHub comment timestamp must include a timezone.")
-        return value
+        return validate_github_timestamp(value)
 
     @field_validator("html_url")
     @classmethod

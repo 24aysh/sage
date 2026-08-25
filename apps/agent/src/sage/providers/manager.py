@@ -14,7 +14,7 @@ from sage.config import Settings
 from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole, RunProvenance
 from sage.errors import AgentRuntimeError
 from sage.observability import agent_trace_config, log_agent_activity, log_agent_finished
-from sage.providers.base import ModelProvider, ProviderResult
+from sage.providers.base import ProviderResult
 from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 from sage.providers.factory import ProviderSet
 

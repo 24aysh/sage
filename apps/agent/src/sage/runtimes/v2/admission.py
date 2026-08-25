@@ -16,7 +16,6 @@ from sage.domain.admission import (
     AdmissionResult,
     EvidenceReference,
     EvidenceSourceType,
-    ReadinessDisposition,
     RepositoryEvidenceInput,
     ResearchEvidenceInput,
 )
@@ -26,7 +25,7 @@ from sage.repository.paths import resolve_workspace_path
 from sage.research.models import ResearchRole, ResearchSourceType
 from sage.research.service import ResearchService
 from sage.research.tools import build_research_tools
-from sage.runtimes.v2.repository_tools import build_repository_read_tools
+from sage.runtimes.repository_tools import build_repository_read_tools
 
 _CLARIFICATION_ROUND = re.compile(r"sage-clarification:v1\s+round=([0-9]+)")
 

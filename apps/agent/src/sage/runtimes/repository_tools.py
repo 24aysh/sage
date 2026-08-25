@@ -1,4 +1,4 @@
-"""Shared read-only repository tool registry for V2 graph nodes."""
+"""Shared LangChain adapters for bounded repository reads."""
 
 from __future__ import annotations
 
@@ -7,12 +7,8 @@ from langchain_core.tools import BaseTool, tool
 from sage.domain.runtime import RuntimeContext
 
 
-def build_repository_read_tools(
-    context: RuntimeContext,
-    *,
-    include_diff: bool = False,
-) -> list[BaseTool]:
-    """Build one reusable bounded repository read registry."""
+def build_repository_read_tools(context: RuntimeContext) -> list[BaseTool]:
+    """Build the repository read tools shared by every agent runtime."""
 
     @tool
     async def list_tree(path: str = ".", max_depth: int = 2) -> str:
@@ -48,14 +44,18 @@ def build_repository_read_tools(
             end_line=end_line,
         )
 
-    tools: list[BaseTool] = [list_tree, search_text, read_file]
-    if not include_diff:
-        return tools
+    return [list_tree, search_text, read_file]
 
-    @tool
+
+def build_show_diff_tool(
+    context: RuntimeContext,
+    *,
+    description: str,
+) -> BaseTool:
+    """Build a diff tool while retaining each runtime's model-facing wording."""
+
+    @tool(description=description)
     async def show_diff() -> str:
-        """Show actual bounded Git status, statistics, and candidate diff."""
-
         return context.repository.show_diff()
 
-    return [*tools, show_diff]
+    return show_diff
