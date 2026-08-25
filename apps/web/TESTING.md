@@ -21,6 +21,16 @@ Open `http://localhost:3000` in a current version of Chrome, Firefox, or Safari.
 Use a private window if browser extensions alter page styling.
 Confirm the browser tab title is exactly `Sage` with no appended tagline.
 
+## Check development console warnings
+
+1. Restart `npm run dev` after changing `next.config.ts`.
+2. Open the page through the `10.81.77.100` development host and confirm Next.js
+   does not report a blocked cross-origin request for `/_next/` resources.
+3. With Dark Reader enabled, reload the page and confirm its injected
+   `data-darkreader-*` attributes do not produce a root hydration warning.
+4. Disable Dark Reader and reload once more. Confirm there are no application
+   hydration warnings caused by changing values or invalid HTML nesting.
+
 ## Check the hero interaction
 
 1. Confirm the first viewport has a near-black dotted field, a two-line headline,
