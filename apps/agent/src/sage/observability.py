@@ -32,7 +32,7 @@ def workflow_trace_config(
         "metadata": {
             "sage_run_id": run_id,
             "sage_graph": graph_name,
-            "sage_runtime": "v2-prototype",
+            "sage_runtime": "v2",
             "sage_model_profile": model_profile,
         },
         "recursion_limit": 80,

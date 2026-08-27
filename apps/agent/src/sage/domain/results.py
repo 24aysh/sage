@@ -10,7 +10,7 @@ from sage.domain.usage import RunProvenance
 
 
 class SolveOutcome(StrEnum):
-    """Provider-neutral terminal outcomes for V1 and V2 solve workflows."""
+    """Provider-neutral terminal outcomes for V2 solve workflows."""
 
     COMPLETED = "completed"
     NO_CHANGE = "no_change"

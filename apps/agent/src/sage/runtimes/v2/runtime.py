@@ -36,6 +36,7 @@ from sage.observability import agent_trace_config, log_agent_result, workflow_tr
 from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 from sage.providers.factory import ProviderSet, build_constrained_provider_set
 from sage.providers.manager import FinalizationReserveError, ModelCallManager
+from sage.providers.openai import is_openai_quota_error
 from sage.research import ResearchService, build_research_service
 from sage.runtimes.v2.admission import (
     AdmissionContextSession,
@@ -45,8 +46,8 @@ from sage.runtimes.v2.admission import (
     render_admission_context,
     validate_admission_result,
 )
-from sage.runtimes.langgraph.graph import build_graph as build_tool_graph
-from sage.runtimes.langgraph.runtime import is_openai_quota_error, recursion_limit
+from sage.runtimes.tool_loop import build_graph as build_tool_graph
+from sage.runtimes.tool_loop import recursion_limit
 from sage.runtimes.v2.graph import (
     GRAPH_NAME,
     create_candidate_snapshot,
@@ -644,7 +645,7 @@ class V2GraphRuntime:
     def _preflight(self, *, issue_text: str, context: RuntimeContext) -> None:
         if not issue_text.strip():
             raise AgentRuntimeError("V2 Issue context is empty.")
-        if self._settings.runtime != "v2-prototype":
+        if self._settings.runtime != "v2":
             raise AgentRuntimeError("V2 runtime was selected with invalid settings.")
         workspace = context.prepared_run.workspace_dir
         if not workspace.is_dir() or not (workspace / ".git").is_dir():

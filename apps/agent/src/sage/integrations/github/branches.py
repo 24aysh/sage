@@ -2,7 +2,7 @@
 
 
 def issue_branch_name(issue_number: int) -> str:
-    """Return the single V1.0 Sage branch allocated to an Issue."""
+    """Return the single Sage branch allocated to an Issue."""
 
     if issue_number < 1:
         raise ValueError("Issue number must be positive.")

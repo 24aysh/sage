@@ -21,8 +21,8 @@ class ProviderSet:
 def build_constrained_provider_set(settings: Settings) -> ProviderSet:
     """Build the constrained profile's independent Reviewer provider."""
 
-    if settings.runtime != "v2-prototype":
-        raise ConfigurationError("V2 providers require SAGE_RUNTIME=v2-prototype.")
+    if settings.runtime != "v2":
+        raise ConfigurationError("V2 providers require SAGE_RUNTIME=v2.")
     if settings.model_profile != DEFAULT_V2_PROFILE:
         raise ConfigurationError("Unsupported V2 model profile.")
     if not settings.google_model_context_approved:

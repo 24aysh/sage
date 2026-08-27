@@ -10,15 +10,15 @@ inputs:
     required: true
   gemini-api-key:
     description: V2 Reviewer credential scoped to the solve controller step.
-    required: false
+    required: true
   openai-max-retries:
     description: Bounded OpenAI SDK retries for temporary rate limits.
     required: false
     default: "2"
   runtime:
-    description: Trusted runtime selector (v1 or v2-prototype).
+    description: Trusted runtime selector (v2).
     required: false
-    default: v1
+    default: v2
   model-profile:
     description: Locked V2 provider profile.
     required: false
@@ -48,7 +48,7 @@ inputs:
   admission-enabled:
     description: Run read-only V2 Admission before Solver.
     required: false
-    default: "true"
+    default: "false"
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true

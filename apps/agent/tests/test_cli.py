@@ -24,7 +24,7 @@ def test_cli_uses_sage_name(capsys, tmp_path: Path) -> None:
     _render_result(result, model="test-model")
 
     assert parser.prog == "sage"
-    assert capsys.readouterr().out.startswith("Sage V0\n")
+    assert capsys.readouterr().out.startswith("Sage V2\n")
 
 
 def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
@@ -69,7 +69,7 @@ def test_v2_non_publishable_partial_diff_returns_exit_two(
     tmp_path: Path,
 ) -> None:
     settings = Settings(
-        runtime="v2-prototype",
+        runtime="v2",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
         google_model_context_approved=True,
@@ -215,6 +215,7 @@ def test_github_solve_wires_runner_paths_and_status_id(
     _github_environment(monkeypatch, fixture)
     monkeypatch.setenv("SAGE_GITHUB_TOKEN", "github-token")
     monkeypatch.setenv("OPENAI_API_KEY", "model-token")
+    monkeypatch.setenv("GEMINI_API_KEY", "reviewer-token")
     monkeypatch.setattr(cli, "RestGitHubClient", lambda settings: fake_client)
 
     async def fake_run(invocation, client, settings, **kwargs):

@@ -13,7 +13,7 @@ _EXTERNAL_USE = re.compile(r"^\s*-?\s*uses:\s+([^\s]+)", re.MULTILINE)
 
 
 def main() -> int:
-    """Check local V1 installation prerequisites without reading secret values."""
+    """Check local installation prerequisites without reading secret values."""
 
     root = Path.cwd().resolve()
     status = 0
@@ -21,7 +21,7 @@ def main() -> int:
         root / ".github/actions/sage-gate/action.yml",
         root / ".github/actions/sage-solve/action.yml",
         root / ".github/workflows/sage.yml",
-        root / "specs/10_V1.0_testing.md",
+        root / "specs/22_V2_DEFAULT_RUNTIME_TESTING.md",
         root / ".env.example",
     )
     for path in required:
@@ -44,7 +44,7 @@ def main() -> int:
             _error(f"moving or placeholder action reference in {path.relative_to(root)}")
             status = 1
 
-    guide = root / "specs/10_V1.0_testing.md"
+    guide = root / "specs/22_V2_DEFAULT_RUNTIME_TESTING.md"
     if guide.is_file():
         guide_body = guide.read_text(encoding="utf-8")
         if "OPENAI_API_KEY" in guide_body and "github-doctor" in guide_body:

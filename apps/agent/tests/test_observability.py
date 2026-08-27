@@ -5,7 +5,7 @@ from sage.observability import agent_trace_config, workflow_trace_config
 def test_workflow_trace_has_stable_name_and_safe_correlation_metadata() -> None:
     config = workflow_trace_config(
         run_id="run-123",
-        graph_name="sage_v2_prototype",
+        graph_name="v2",
         model_profile="constrained-cross-provider",
     )
 
@@ -16,8 +16,8 @@ def test_workflow_trace_has_stable_name_and_safe_correlation_metadata() -> None:
     ]
     assert config["metadata"] == {
         "sage_run_id": "run-123",
-        "sage_graph": "sage_v2_prototype",
-        "sage_runtime": "v2-prototype",
+        "sage_graph": "v2",
+        "sage_runtime": "v2",
         "sage_model_profile": "constrained-cross-provider",
     }
     assert config["recursion_limit"] == 80

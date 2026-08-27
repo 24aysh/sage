@@ -51,8 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
-      SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
+      SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v2' }}
       LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
       LANGSMITH_PROJECT: ${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}
       LANGSMITH_WORKSPACE_ID: ${{ vars.LANGSMITH_WORKSPACE_ID }}
@@ -81,9 +80,9 @@ jobs:
           langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
           web-search-api-key: ${{ secrets.SAGE_WEB_SEARCH_API_KEY }}
           web-search-provider: ${{ vars.SAGE_WEB_SEARCH_PROVIDER || '' }}
-          admission-enabled: ${{ vars.SAGE_V2_ADMISSION_ENABLED || 'true' }}
+          admission-enabled: ${{ vars.SAGE_V2_ADMISSION_ENABLED || 'false' }}
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
-          runtime: ${{ vars.SAGE_RUNTIME || 'v2-prototype' }}
+          runtime: ${{ vars.SAGE_RUNTIME || 'v2' }}
           model-profile: constrained-cross-provider
           v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
           v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}

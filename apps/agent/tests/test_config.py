@@ -1,7 +1,6 @@
 import pytest
 
 from sage.config import (
-    DEFAULT_OPENAI_MODEL,
     DEFAULT_V2_REVIEWER_MODEL,
     DEFAULT_V2_SOLVER_MODEL,
     Settings,
@@ -13,7 +12,7 @@ def test_settings_loads_all_supported_environment_values() -> None:
     settings = Settings.from_env(
         {
             "OPENAI_API_KEY": "secret",
-            "OPENAI_MODEL": "test-model",
+            "GEMINI_API_KEY": "gemini-secret",
             "OPENAI_MAX_RETRIES": "4",
             "SAGE_MAX_TURNS": "12",
             "SAGE_RUNS_DIR": "/tmp/test-runs",
@@ -38,7 +37,6 @@ def test_settings_loads_all_supported_environment_values() -> None:
     )
 
     assert settings.openai_api_key == "secret"
-    assert settings.openai_model == "test-model"
     assert settings.openai_max_retries == 4
     assert settings.max_turns == 12
     assert str(settings.runs_dir) == "/tmp/test-runs"
@@ -62,16 +60,21 @@ def test_settings_loads_all_supported_environment_values() -> None:
     assert "search-secret" not in repr(settings)
 
 
-def test_settings_uses_the_project_default_openai_model() -> None:
-    settings = Settings.from_env({"OPENAI_API_KEY": "secret"})
+def test_settings_uses_v2_and_documented_models_by_default() -> None:
+    settings = Settings.from_env(
+        {"OPENAI_API_KEY": "secret", "GEMINI_API_KEY": "gemini-secret"}
+    )
 
-    assert settings.openai_model == DEFAULT_OPENAI_MODEL == "gpt-5.4-mini"
+    assert settings.runtime == "v2"
+    assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
+    assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
+    assert settings.v2_admission_enabled is False
 
 
 def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() -> None:
     settings = Settings.from_env(
         {
-            "SAGE_RUNTIME": "v2-prototype",
+            "SAGE_RUNTIME": "v2",
             "SAGE_MODEL_PROFILE": "constrained-cross-provider",
             "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
             "GEMINI_API_KEY": "gemini-secret",
@@ -85,7 +88,7 @@ def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() ->
         }
     )
 
-    assert settings.runtime == "v2-prototype"
+    assert settings.runtime == "v2"
     assert settings.v2_solver_model == "custom-solver"
     assert settings.v2_reviewer_model == "custom-reviewer"
     assert settings.verification_commands[0].check_id == "focused"
@@ -95,7 +98,7 @@ def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() ->
 def test_v2_settings_use_documented_default_models() -> None:
     settings = Settings.from_env(
         {
-            "SAGE_RUNTIME": "v2-prototype",
+            "SAGE_RUNTIME": "v2",
             "GEMINI_API_KEY": "gemini-secret",
             "OPENAI_API_KEY": "openai-secret",
         }
@@ -104,7 +107,7 @@ def test_v2_settings_use_documented_default_models() -> None:
     assert settings.google_model_context_approved is True
     assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
     assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
-    assert settings.v2_admission_enabled is True
+    assert settings.v2_admission_enabled is False
     assert settings.research_enabled is True
 
 
@@ -113,6 +116,7 @@ def test_selected_research_provider_requires_its_secret() -> None:
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
                 "SAGE_WEB_SEARCH_PROVIDER": "tavily",
             }
         )
@@ -124,6 +128,7 @@ def test_research_domains_must_be_public_hostnames(domain: str) -> None:
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
                 "SAGE_RESEARCH_ALLOWED_DOMAINS": domain,
             }
         )
@@ -133,7 +138,7 @@ def test_v2_settings_require_gemini_credentials() -> None:
     with pytest.raises(ConfigurationError, match="GEMINI_API_KEY"):
         Settings.from_env(
             {
-                "SAGE_RUNTIME": "v2-prototype",
+                "SAGE_RUNTIME": "v2",
                 "OPENAI_API_KEY": "openai-secret",
             }
         )
@@ -143,7 +148,7 @@ def test_v2_settings_respect_explicit_google_context_rejection() -> None:
     with pytest.raises(ConfigurationError, match="CONTEXT_APPROVED"):
         Settings.from_env(
             {
-                "SAGE_RUNTIME": "v2-prototype",
+                "SAGE_RUNTIME": "v2",
                 "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "false",
                 "GEMINI_API_KEY": "gemini-secret",
                 "OPENAI_API_KEY": "openai-secret",
@@ -151,11 +156,59 @@ def test_v2_settings_respect_explicit_google_context_rejection() -> None:
         )
 
 
-def test_v1_does_not_require_v2_credentials() -> None:
-    settings = Settings.from_env({"OPENAI_API_KEY": "openai-secret"})
+@pytest.mark.parametrize("runtime", ["v1", "v2-prototype", "unknown"])
+def test_removed_or_unknown_runtime_is_rejected(runtime: str) -> None:
+    with pytest.raises(ConfigurationError, match="SAGE_RUNTIME"):
+        Settings.from_env({"SAGE_RUNTIME": runtime})
 
-    assert settings.runtime == "v1"
-    assert settings.gemini_api_key is None
+
+def test_blank_runtime_defaults_to_v2() -> None:
+    settings = Settings.from_env(
+        {
+            "SAGE_RUNTIME": " ",
+            "OPENAI_API_KEY": "openai-secret",
+            "GEMINI_API_KEY": "gemini-secret",
+        }
+    )
+
+    assert settings.runtime == "v2"
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
+def test_admission_environment_override(value: str, expected: bool) -> None:
+    settings = Settings.from_env(
+        {
+            "OPENAI_API_KEY": "openai-secret",
+            "GEMINI_API_KEY": "gemini-secret",
+            "SAGE_V2_ADMISSION_ENABLED": value,
+        }
+    )
+
+    assert settings.v2_admission_enabled is expected
+
+
+def test_invalid_admission_environment_value_is_rejected() -> None:
+    with pytest.raises(ConfigurationError, match="SAGE_V2_ADMISSION_ENABLED"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
+                "SAGE_V2_ADMISSION_ENABLED": "sometimes",
+            }
+        )
+
+
+def test_legacy_openai_model_environment_is_ignored() -> None:
+    settings = Settings.from_env(
+        {
+            "OPENAI_API_KEY": "openai-secret",
+            "GEMINI_API_KEY": "gemini-secret",
+            "OPENAI_MODEL": "legacy-model",
+        }
+    )
+
+    assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL
+    assert not hasattr(settings, "openai_model")
 
 
 def test_langsmith_tracing_requires_api_key() -> None:
@@ -163,13 +216,19 @@ def test_langsmith_tracing_requires_api_key() -> None:
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
                 "LANGSMITH_TRACING": "true",
             }
         )
 
 
 def test_langsmith_defaults_to_disabled_named_project() -> None:
-    settings = Settings.from_env({"OPENAI_API_KEY": "openai-secret"})
+    settings = Settings.from_env(
+        {
+            "OPENAI_API_KEY": "openai-secret",
+            "GEMINI_API_KEY": "gemini-secret",
+        }
+    )
 
     assert settings.langsmith_tracing is False
     assert settings.langsmith_api_key is None
@@ -188,6 +247,7 @@ def test_settings_rejects_empty_v2_model_names(name: str) -> None:
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
                 name: " ",
             }
         )
@@ -206,7 +266,7 @@ def test_v2_rejects_obsolete_patch_first_configuration(name: str) -> None:
     with pytest.raises(ConfigurationError, match="Obsolete patch-first"):
         Settings.from_env(
             {
-                "SAGE_RUNTIME": "v2-prototype",
+                "SAGE_RUNTIME": "v2",
                 "OPENAI_API_KEY": "openai-secret",
                 "GEMINI_API_KEY": "gemini-secret",
                 name: "1",
@@ -224,6 +284,7 @@ def test_settings_rejects_invalid_bounds() -> None:
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "secret",
+                "GEMINI_API_KEY": "gemini-secret",
                 "SAGE_MAX_TURNS": "0",
             }
         )
@@ -235,6 +296,7 @@ def test_settings_rejects_invalid_openai_retry_limit(value: str) -> None:
         Settings.from_env(
             {
                 "OPENAI_API_KEY": "secret",
+                "GEMINI_API_KEY": "gemini-secret",
                 "OPENAI_MAX_RETRIES": value,
             }
         )

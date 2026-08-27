@@ -1,4 +1,4 @@
-"""V0 issue-solving workflow orchestration."""
+"""V2 issue-solving workflow orchestration."""
 
 from __future__ import annotations
 
@@ -65,27 +65,24 @@ async def solve_issue(
         diff = repository.get_complete_diff()
         changed_files = repository.get_changed_files()
         outcome = final_output.outcome
-        if settings.runtime == "v1" and outcome is SolveOutcome.COMPLETED and not diff.strip():
-            outcome = SolveOutcome.NO_CHANGE
-        if settings.runtime == "v2-prototype":
-            if outcome is SolveOutcome.COMPLETED and (not diff.strip() or not changed_files):
-                raise WorkspaceError(
-                    "Completed V2 result does not contain an authoritative candidate."
-                )
-            if outcome is SolveOutcome.NO_CHANGE and (diff.strip() or changed_files):
-                raise WorkspaceError("V2 no-change result contains repository changes.")
-            pre_mutation_outcomes = {
-                SolveOutcome.NEEDS_HUMAN_INFORMATION,
-                SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION,
-                SolveOutcome.NEEDS_MAINTAINER_REWRITE,
-                SolveOutcome.HUMAN_REQUIRED,
-                SolveOutcome.ENVIRONMENT_BLOCKED,
-                SolveOutcome.UNSUPPORTED,
-            }
-            if outcome in pre_mutation_outcomes and (diff.strip() or changed_files):
-                raise WorkspaceError(
-                    "A pre-mutation V2 outcome contains repository changes."
-                )
+        if outcome is SolveOutcome.COMPLETED and (not diff.strip() or not changed_files):
+            raise WorkspaceError(
+                "Completed V2 result does not contain an authoritative candidate."
+            )
+        if outcome is SolveOutcome.NO_CHANGE and (diff.strip() or changed_files):
+            raise WorkspaceError("V2 no-change result contains repository changes.")
+        pre_mutation_outcomes = {
+            SolveOutcome.NEEDS_HUMAN_INFORMATION,
+            SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION,
+            SolveOutcome.NEEDS_MAINTAINER_REWRITE,
+            SolveOutcome.HUMAN_REQUIRED,
+            SolveOutcome.ENVIRONMENT_BLOCKED,
+            SolveOutcome.UNSUPPORTED,
+        }
+        if outcome in pre_mutation_outcomes and (diff.strip() or changed_files):
+            raise WorkspaceError(
+                "A pre-mutation V2 outcome contains repository changes."
+            )
         result = SolveResult(
             run_id=prepared.run_id,
             base_sha=prepared.base_sha,

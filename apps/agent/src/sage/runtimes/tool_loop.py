@@ -1,4 +1,4 @@
-"""Explicit LangGraph state, nodes, routing, and compiled V0.1 topology."""
+"""Reusable sequential LangGraph tool loop for Sage model roles."""
 
 from __future__ import annotations
 
@@ -16,13 +16,10 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, ValidationError
 
-from sage.domain.results import AgentFinalOutput
 from sage.errors import AgentRuntimeError, RepositoryError
-from sage.runtimes.langgraph.prompt import CODING_AGENT_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
-GRAPH_NAME = "sage_v0_1"
 Route = Literal["tools", "finalize", "turn_limit", "invalid_response"]
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 ModelStartHook = Callable[[int], object]
@@ -49,15 +46,15 @@ class AgentState(TypedDict):
 class GraphOutput(TypedDict):
     """Only the validated provider-neutral result leaves the graph."""
 
-    final_output: AgentFinalOutput
+    final_output: BaseModel
 
 
 def build_agent_node(
     *,
     model: Runnable[Any, AIMessage],
     max_turns: int,
-    instructions: str = CODING_AGENT_INSTRUCTIONS,
-    role_name: str = "Agent",
+    instructions: str,
+    role_name: str,
     on_model_start: ModelStartHook | None = None,
     on_model_finish: ModelFinishHook | None = None,
     on_model_error: ModelErrorHook | None = None,
@@ -169,9 +166,6 @@ def build_finalize_node(
     return finalize
 
 
-finalize = build_finalize_node(AgentFinalOutput)
-
-
 def build_turn_limit_node(max_turns: int) -> Callable[[AgentState], Awaitable[None]]:
     """Create the terminal failure node for an exhausted model-turn budget."""
 
@@ -200,15 +194,15 @@ def build_graph(
     model: Runnable[Any, AIMessage],
     tools: Sequence[BaseTool],
     max_turns: int,
-    instructions: str = CODING_AGENT_INSTRUCTIONS,
-    output_schema: type[BaseModel] = AgentFinalOutput,
-    graph_name: str = GRAPH_NAME,
-    role_name: str = "Agent",
+    instructions: str,
+    output_schema: type[BaseModel],
+    graph_name: str,
+    role_name: str,
     on_model_start: ModelStartHook | None = None,
     on_model_finish: ModelFinishHook | None = None,
     on_model_error: ModelErrorHook | None = None,
 ) -> CompiledStateGraph[AgentState, None, GraphInput, GraphOutput]:
-    """Compile a fresh, checkpoint-free V0.1 reasoning graph."""
+    """Compile a fresh, checkpoint-free sequential tool graph."""
 
     if max_turns < 1:
         raise ValueError("max_turns must be at least one.")
@@ -310,3 +304,9 @@ def _total_tokens(message: AIMessage) -> int | None:
         return None
     total = usage.get("total_tokens")
     return int(total) if total is not None else None
+
+
+def recursion_limit(max_turns: int) -> int:
+    """Return a defensive graph-step limit distinct from model-turn semantics."""
+
+    return (2 * max_turns) + 4

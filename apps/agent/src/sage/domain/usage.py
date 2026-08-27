@@ -41,7 +41,7 @@ class ModelCallRecord(BaseModel):
 class RunProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    graph_version: str = "sage_v2_prototype"
+    graph_version: str = "v2"
     route: str = "single"
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()

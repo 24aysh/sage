@@ -90,7 +90,7 @@ def build_solver_tools(
     plans: SolverPlanSession,
     research: ResearchService | None = None,
 ) -> list[BaseTool]:
-    """Build V2 Solver tools without exposing the V1 raw-patch tool."""
+    """Build the V2 Solver's structured repository tool set."""
 
     @tool
     async def save_plan(

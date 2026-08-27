@@ -265,12 +265,11 @@ def test_v2_tool_solver_can_complete_two_review_repairs(
     caplog.set_level(logging.INFO)
     workspace, base_sha = _repository(tmp_path)
     settings = Settings(
-        runtime="v2-prototype",
+        runtime="v2",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
         v2_solver_model="solver-model",
         v2_reviewer_model="reviewer-model",
-        v2_admission_enabled=False,
         command_timeout_seconds=10,
         run_deadline_seconds=600,
         finalization_reserve_seconds=60,
@@ -372,6 +371,7 @@ def test_v2_tool_solver_can_complete_two_review_repairs(
     assert result.outcome is SolveOutcome.COMPLETED
     assert (workspace / "app.py").read_text(encoding="utf-8") == "value = 4\n"
     assert result.provenance is not None
+    assert result.provenance.admission_sessions == 0
     assert result.provenance.solver_sessions == 3
     assert result.provenance.review_cycles == 3
     assert len(result.provenance.calls) > 6
@@ -394,11 +394,12 @@ def test_v2_admission_halts_with_questions_before_solver_or_publication(
     caplog.set_level(logging.INFO)
     workspace, base_sha = _repository(tmp_path)
     settings = Settings(
-        runtime="v2-prototype",
+        runtime="v2",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
         v2_solver_model="solver-model",
         v2_reviewer_model="reviewer-model",
+        v2_admission_enabled=True,
         command_timeout_seconds=10,
         run_deadline_seconds=600,
         finalization_reserve_seconds=60,
@@ -455,11 +456,12 @@ def test_v2_ready_admission_context_is_reused_by_solver_and_reviewer(
 ) -> None:
     workspace, base_sha = _repository(tmp_path)
     settings = Settings(
-        runtime="v2-prototype",
+        runtime="v2",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
         v2_solver_model="solver-model",
         v2_reviewer_model="reviewer-model",
+        v2_admission_enabled=True,
         command_timeout_seconds=10,
         run_deadline_seconds=600,
         finalization_reserve_seconds=60,

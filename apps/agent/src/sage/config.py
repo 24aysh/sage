@@ -8,12 +8,12 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sage.errors import ConfigurationError
 
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_PROFILE = "constrained-cross-provider"
 DEFAULT_V2_SOLVER_MODEL = "gpt-5.4-mini"
 DEFAULT_V2_REVIEWER_MODEL = "gemini-3.5-flash"
@@ -58,9 +58,8 @@ class Settings(BaseModel):
     langsmith_tracing: bool = False
     langsmith_project: str = Field(default="sage-v2", min_length=1, max_length=200)
     langsmith_workspace_id: str | None = Field(default=None, max_length=200)
-    openai_model: str = DEFAULT_OPENAI_MODEL
     openai_max_retries: int = Field(default=2, ge=0, le=10)
-    runtime: str = Field(default="v1", pattern=r"^(v1|v2-prototype)$")
+    runtime: Literal["v2"] = "v2"
     model_profile: str = DEFAULT_V2_PROFILE
     google_model_context_approved: bool = True
     v2_solver_model: str = Field(
@@ -75,7 +74,7 @@ class Settings(BaseModel):
         max_length=120,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
     )
-    v2_admission_enabled: bool = True
+    v2_admission_enabled: bool = False
     v2_admission_max_turns: int = Field(default=12, ge=1, le=30)
     v2_admission_context_chars: int = Field(
         default=48_000,
@@ -148,7 +147,14 @@ class Settings(BaseModel):
         """Load settings from a single explicit environment boundary."""
 
         values = os.environ if environ is None else environ
-        runtime = values.get("SAGE_RUNTIME", "v1").strip() or "v1"
+        runtime = values.get("SAGE_RUNTIME", "v2").strip() or "v2"
+        if runtime != "v2":
+            if runtime in {"v1", "v2-prototype"}:
+                raise ConfigurationError(
+                    f"SAGE_RUNTIME={runtime} is no longer supported; use "
+                    "SAGE_RUNTIME=v2."
+                )
+            raise ConfigurationError("SAGE_RUNTIME must be v2.")
         api_key = values.get("OPENAI_API_KEY", "").strip()
         if not api_key:
             raise ConfigurationError("OPENAI_API_KEY is required.")
@@ -169,37 +175,36 @@ class Settings(BaseModel):
         verification_commands = _parse_verification_commands(
             values.get("SAGE_VERIFICATION_COMMANDS_JSON", "[]")
         )
-        if runtime == "v2-prototype":
-            obsolete = sorted(
-                name
-                for name in (
-                    "SAGE_V2_PLANNER_MODEL",
-                    "SAGE_V2_PLANNER_FALLBACK_MODEL",
-                    "SAGE_MAX_MODEL_CALLS",
-                    "SAGE_MAX_READINESS_CONTEXT_EXPANSIONS",
-                    "SAGE_MAX_SOLVER_CONTEXT_EXPANSIONS",
-                    "SAGE_MAX_IMPLEMENTATION_REPAIRS",
-                    "SAGE_MAX_REVIEW_REPAIRS",
-                    "SAGE_PLANNER_INPUT_CHARS",
-                    "SAGE_READINESS_RECHECK_INPUT_CHARS",
-                )
-                if name in values
+        obsolete = sorted(
+            name
+            for name in (
+                "SAGE_V2_PLANNER_MODEL",
+                "SAGE_V2_PLANNER_FALLBACK_MODEL",
+                "SAGE_MAX_MODEL_CALLS",
+                "SAGE_MAX_READINESS_CONTEXT_EXPANSIONS",
+                "SAGE_MAX_SOLVER_CONTEXT_EXPANSIONS",
+                "SAGE_MAX_IMPLEMENTATION_REPAIRS",
+                "SAGE_MAX_REVIEW_REPAIRS",
+                "SAGE_PLANNER_INPUT_CHARS",
+                "SAGE_READINESS_RECHECK_INPUT_CHARS",
             )
-            if obsolete:
-                raise ConfigurationError(
-                    "Obsolete patch-first V2 configuration is not supported: "
-                    + ", ".join(obsolete)
-                )
-            if model_profile != DEFAULT_V2_PROFILE:
-                raise ConfigurationError(
-                    "SAGE_MODEL_PROFILE must be constrained-cross-provider for V2."
-                )
-            if gemini_api_key is None:
-                raise ConfigurationError("GEMINI_API_KEY is required for V2.")
-            if not google_context_approved:
-                raise ConfigurationError(
-                    "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2."
-                )
+            if name in values
+        )
+        if obsolete:
+            raise ConfigurationError(
+                "Obsolete patch-first V2 configuration is not supported: "
+                + ", ".join(obsolete)
+            )
+        if model_profile != DEFAULT_V2_PROFILE:
+            raise ConfigurationError(
+                "SAGE_MODEL_PROFILE must be constrained-cross-provider for V2."
+            )
+        if gemini_api_key is None:
+            raise ConfigurationError("GEMINI_API_KEY is required for V2.")
+        if not google_context_approved:
+            raise ConfigurationError(
+                "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2."
+            )
 
         try:
             return cls(
@@ -213,7 +218,6 @@ class Settings(BaseModel):
                 langsmith_workspace_id=(
                     values.get("LANGSMITH_WORKSPACE_ID", "").strip() or None
                 ),
-                openai_model=values.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
                 openai_max_retries=values.get("OPENAI_MAX_RETRIES", "2"),
                 runtime=runtime,
                 model_profile=model_profile,
@@ -225,7 +229,7 @@ class Settings(BaseModel):
                     "SAGE_V2_REVIEWER_MODEL", DEFAULT_V2_REVIEWER_MODEL
                 ).strip(),
                 v2_admission_enabled=_parse_bool(
-                    values.get("SAGE_V2_ADMISSION_ENABLED", "true"),
+                    values.get("SAGE_V2_ADMISSION_ENABLED", "false"),
                     name="SAGE_V2_ADMISSION_ENABLED",
                 ),
                 v2_admission_max_turns=values.get(

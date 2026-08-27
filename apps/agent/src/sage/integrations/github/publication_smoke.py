@@ -23,8 +23,8 @@ from sage.integrations.github.publishing import (
     PublicationResult,
     publish_solve_result,
 )
+from sage.integrations.github.smoke_patch import normalize_null_file_headers
 from sage.repository.host_git import run_git
-from sage.repository.patch import normalize_null_file_headers
 from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 
 
