@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from sage.domain.review import CriterionResult, ReviewResult, ReviewVerdict
 from sage.domain.solver import (
@@ -49,6 +50,15 @@ def test_reviewer_pass_requires_complete_criterion_coverage() -> None:
         ),
         plan=_plan(),
     )
+
+
+def test_solver_plan_rejects_removed_context_fields() -> None:
+    payload = _plan().plan.model_dump(mode="json")
+    payload["admission_context_digest"] = "a" * 64
+    payload["admission_evidence_ids"] = ["old-evidence"]
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        SolverPlan.model_validate(payload)
 
 
 def _plan() -> SavedSolverPlan:

@@ -74,14 +74,6 @@ class Settings(BaseModel):
         max_length=120,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
     )
-    v2_admission_enabled: bool = False
-    v2_admission_max_turns: int = Field(default=12, ge=1, le=30)
-    v2_admission_context_chars: int = Field(
-        default=48_000,
-        ge=8_000,
-        le=96_000,
-    )
-    max_clarification_rounds: int = Field(default=2, ge=1, le=2)
     research_enabled: bool = True
     web_search_provider: str = Field(default="", pattern=r"^(|tavily)$")
     web_search_api_key: str | None = Field(default=None, repr=False)
@@ -228,19 +220,6 @@ class Settings(BaseModel):
                 v2_reviewer_model=values.get(
                     "SAGE_V2_REVIEWER_MODEL", DEFAULT_V2_REVIEWER_MODEL
                 ).strip(),
-                v2_admission_enabled=_parse_bool(
-                    values.get("SAGE_V2_ADMISSION_ENABLED", "false"),
-                    name="SAGE_V2_ADMISSION_ENABLED",
-                ),
-                v2_admission_max_turns=values.get(
-                    "SAGE_V2_ADMISSION_MAX_TURNS", "12"
-                ),
-                v2_admission_context_chars=values.get(
-                    "SAGE_V2_ADMISSION_CONTEXT_CHARS", "48000"
-                ),
-                max_clarification_rounds=values.get(
-                    "SAGE_MAX_CLARIFICATION_ROUNDS", "2"
-                ),
                 research_enabled=_parse_bool(
                     values.get("SAGE_RESEARCH_ENABLED", "true"),
                     name="SAGE_RESEARCH_ENABLED",

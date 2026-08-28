@@ -66,13 +66,8 @@ class GitHubWorkflowOutcome(StrEnum):
     EXISTING_PULL_REQUEST = "existing_pull_request"
     UNAUTHORIZED = "unauthorized"
     BLOCKED_EXISTING_BRANCH = "blocked_existing_branch"
-    NEEDS_HUMAN_INFORMATION = "needs_human_information"
-    NEEDS_HUMAN_DESIGN_DECISION = "needs_human_design_decision"
-    NEEDS_MAINTAINER_REWRITE = "needs_maintainer_rewrite"
-    HUMAN_REQUIRED = "human_required"
     HUMAN_REQUIRED_AFTER_START = "human_required_after_start"
     ENVIRONMENT_BLOCKED = "environment_blocked"
-    UNSUPPORTED = "unsupported"
     UNRESOLVED = "unresolved"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     RATE_LIMITED = "rate_limited"
@@ -224,7 +219,6 @@ async def run_github_issue(
                 state=terminal_state,
                 summary=solve_result.summary,
                 remaining_uncertainty=solve_result.remaining_uncertainty,
-                clarification=solve_result.clarification,
             )
             return GitHubWorkflowResult(
                 outcome=workflow_outcome,
@@ -427,22 +421,6 @@ def _v2_terminal_mapping(
     outcome: SolveOutcome,
 ) -> tuple[GitHubWorkflowOutcome, WorkflowStatusState] | None:
     mapping = {
-        SolveOutcome.NEEDS_HUMAN_INFORMATION: (
-            GitHubWorkflowOutcome.NEEDS_HUMAN_INFORMATION,
-            WorkflowStatusState.NEEDS_HUMAN_INFORMATION,
-        ),
-        SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION: (
-            GitHubWorkflowOutcome.NEEDS_HUMAN_DESIGN_DECISION,
-            WorkflowStatusState.NEEDS_HUMAN_DESIGN_DECISION,
-        ),
-        SolveOutcome.NEEDS_MAINTAINER_REWRITE: (
-            GitHubWorkflowOutcome.NEEDS_MAINTAINER_REWRITE,
-            WorkflowStatusState.NEEDS_MAINTAINER_REWRITE,
-        ),
-        SolveOutcome.HUMAN_REQUIRED: (
-            GitHubWorkflowOutcome.HUMAN_REQUIRED,
-            WorkflowStatusState.HUMAN_REQUIRED,
-        ),
         SolveOutcome.HUMAN_REQUIRED_AFTER_START: (
             GitHubWorkflowOutcome.HUMAN_REQUIRED_AFTER_START,
             WorkflowStatusState.HUMAN_REQUIRED_AFTER_START,
@@ -450,10 +428,6 @@ def _v2_terminal_mapping(
         SolveOutcome.ENVIRONMENT_BLOCKED: (
             GitHubWorkflowOutcome.ENVIRONMENT_BLOCKED,
             WorkflowStatusState.ENVIRONMENT_BLOCKED,
-        ),
-        SolveOutcome.UNSUPPORTED: (
-            GitHubWorkflowOutcome.UNSUPPORTED,
-            WorkflowStatusState.UNSUPPORTED,
         ),
         SolveOutcome.UNRESOLVED: (
             GitHubWorkflowOutcome.UNRESOLVED,

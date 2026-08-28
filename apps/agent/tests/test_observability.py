@@ -36,19 +36,3 @@ def test_agent_trace_omits_missing_local_run_id() -> None:
 
     assert config["run_name"] == "Reviewer"
     assert "sage_run_id" not in config["metadata"]
-
-
-def test_admission_trace_is_named_without_creating_a_new_model_configuration() -> None:
-    config = agent_trace_config(
-        run_id="run-123",
-        role=ModelRole.ADMISSION,
-        stage="admission",
-        attempt=AttemptKind.PRIMARY,
-        provider="openai",
-        model="solver-model",
-        call_number=1,
-    )
-
-    assert config["run_name"] == "Admission"
-    assert "role:admission" in config["tags"]
-    assert config["metadata"]["sage_model"] == "solver-model"

@@ -110,7 +110,6 @@ first-run: ## Configure, verify, and run a live V2 solve.
 	inherited_openai_api_key="$${OPENAI_API_KEY:-}"; \
 	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
 	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
-	inherited_admission_enabled="$${SAGE_V2_ADMISSION_ENABLED:-}"; \
 	inherited_langsmith_api_key="$${LANGSMITH_API_KEY:-}"; \
 	inherited_web_search_api_key="$${SAGE_WEB_SEARCH_API_KEY:-}"; \
 	inherited_langsmith_tracing="$${LANGSMITH_TRACING:-}"; \
@@ -123,7 +122,6 @@ first-run: ## Configure, verify, and run a live V2 solve.
 	if [[ -n "$$inherited_openai_api_key" ]]; then export OPENAI_API_KEY="$$inherited_openai_api_key"; fi; \
 	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
 	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
-	if [[ -n "$$inherited_admission_enabled" ]]; then export SAGE_V2_ADMISSION_ENABLED="$$inherited_admission_enabled"; fi; \
 	if [[ -n "$$inherited_langsmith_api_key" ]]; then export LANGSMITH_API_KEY="$$inherited_langsmith_api_key"; fi; \
 	if [[ -n "$$inherited_web_search_api_key" ]]; then export SAGE_WEB_SEARCH_API_KEY="$$inherited_web_search_api_key"; fi; \
 	if [[ -n "$$inherited_langsmith_tracing" ]]; then export LANGSMITH_TRACING="$$inherited_langsmith_tracing"; fi; \
@@ -162,7 +160,6 @@ first-run: ## Configure, verify, and run a live V2 solve.
 	esac; \
 	export SAGE_RUNTIME=v2; \
 	export SAGE_MODEL_PROFILE=constrained-cross-provider; \
-	: "$${SAGE_V2_ADMISSION_ENABLED:=false}"; export SAGE_V2_ADMISSION_ENABLED; \
 	: "$${LANGSMITH_TRACING:=false}"; export LANGSMITH_TRACING; \
 	: "$${LANGSMITH_PROJECT:=sage-v2}"; export LANGSMITH_PROJECT; \
 	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
@@ -392,7 +389,7 @@ graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/test_tool_loop.py::test_compiled_graph_renders_expected_mermaid"
 
-v2-graph: ## Validate V2 Admission/Solver routing and candidate helpers.
+v2-graph: ## Validate V2 Solver/Reviewer routing and candidate helpers.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py"
@@ -466,11 +463,6 @@ run-status: ## Validate and summarize a completed run directory.
 	for artifact in request.json metadata.json issue.md agent-final.json changed-files.json diff.patch; do \
 		[[ -f "$$run_dir/$$artifact" ]] || { echo "ERROR: missing run artifact: $$run_dir/$$artifact" >&2; exit 1; }; \
 	done; \
-	if rg -q '"v2_admission_enabled": true' "$$run_dir/metadata.json"; then \
-		for artifact in admission-context.json admission-context-summary.json admission-final.json; do \
-			[[ -f "$$run_dir/$$artifact" ]] || { echo "ERROR: missing Admission artifact: $$run_dir/$$artifact" >&2; exit 1; }; \
-		done; \
-	fi; \
 	[[ -d "$$run_dir/repo/.git" ]] || { echo "ERROR: candidate Git checkout is missing: $$run_dir/repo" >&2; exit 1; }; \
 	echo "Run metadata:"; \
 	sed -n '1,160p' "$$run_dir/metadata.json"; \

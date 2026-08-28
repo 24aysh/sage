@@ -29,12 +29,11 @@ def test_first_run_defaults_google_context_approval_to_true() -> None:
     assert 'SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true' in target
 
 
-def test_first_run_defaults_to_v2_with_admission_disabled() -> None:
+def test_first_run_selects_v2_without_admission_configuration() -> None:
     target = _first_run_target()
 
     assert "export SAGE_RUNTIME=v2" in target
-    assert 'SAGE_V2_ADMISSION_ENABLED:=false' in target
-    assert 'inherited_admission_enabled="$${SAGE_V2_ADMISSION_ENABLED:-}"' in target
+    assert "ADMISSION" not in target
 
 
 def test_v2_first_run_is_a_compatibility_alias() -> None:

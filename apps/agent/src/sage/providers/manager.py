@@ -47,7 +47,6 @@ class ModelCallManager:
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
         self._consecutive_failures: dict[str, int] = {}
-        self.admission_sessions = 0
         self.solver_sessions = 0
         self.review_cycles = 0
 
@@ -64,23 +63,19 @@ class ModelCallManager:
     def provenance(self) -> RunProvenance:
         return RunProvenance(
             calls=self.records,
-            admission_sessions=self.admission_sessions,
             solver_sessions=self.solver_sessions,
             review_cycles=self.review_cycles,
         )
 
-    def start_coding_session(self, *, role: ModelRole) -> None:
-        if role is ModelRole.ADMISSION:
-            self.admission_sessions += 1
-        elif role is ModelRole.SOLVER:
-            self.solver_sessions += 1
-        else:
-            raise ValueError("Only Admission and Solver use the coding tool loop.")
+    def start_solver_session(self) -> None:
+        """Record one initial or repair Solver tool-loop session."""
+
+        self.solver_sessions += 1
         self._persist()
 
     def start_coding_call(self, *, role: ModelRole, stage: str) -> int:
-        if role not in {ModelRole.ADMISSION, ModelRole.SOLVER}:
-            raise ValueError("Coding calls require Admission or Solver role.")
+        if role is not ModelRole.SOLVER:
+            raise ValueError("Coding calls require the Solver role.")
         self._reserve("openai")
         call_number = len(self._records) + 1
         log_agent_activity(

@@ -32,10 +32,6 @@ from sage.research.models import (
 logger = logging.getLogger(__name__)
 
 _ROLE_SEARCH_BUDGETS = {
-    ResearchRole.ADMISSION: {
-        ResearchSourceType.OFFICIAL_DOCUMENTATION: 4,
-        ResearchSourceType.WEB: 3,
-    },
     ResearchRole.SOLVER: {
         ResearchSourceType.OFFICIAL_DOCUMENTATION: 4,
         ResearchSourceType.WEB: 3,

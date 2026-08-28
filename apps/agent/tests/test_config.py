@@ -23,9 +23,6 @@ def test_settings_loads_all_supported_environment_values() -> None:
             "LANGSMITH_API_KEY": "langsmith-secret",
             "LANGSMITH_PROJECT": "sage-test",
             "LANGSMITH_WORKSPACE_ID": "workspace-123",
-            "SAGE_V2_ADMISSION_ENABLED": "false",
-            "SAGE_V2_ADMISSION_MAX_TURNS": "8",
-            "SAGE_V2_ADMISSION_CONTEXT_CHARS": "32000",
             "SAGE_RESEARCH_ENABLED": "true",
             "SAGE_WEB_SEARCH_PROVIDER": "tavily",
             "SAGE_WEB_SEARCH_API_KEY": "search-secret",
@@ -46,9 +43,6 @@ def test_settings_loads_all_supported_environment_values() -> None:
     assert settings.langsmith_tracing is True
     assert settings.langsmith_project == "sage-test"
     assert settings.langsmith_workspace_id == "workspace-123"
-    assert settings.v2_admission_enabled is False
-    assert settings.v2_admission_max_turns == 8
-    assert settings.v2_admission_context_chars == 32_000
     assert settings.web_search_provider == "tavily"
     assert settings.research_timeout_seconds == 20
     assert settings.research_max_result_chars == 8_000
@@ -68,7 +62,6 @@ def test_settings_uses_v2_and_documented_models_by_default() -> None:
     assert settings.runtime == "v2"
     assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
     assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
-    assert settings.v2_admission_enabled is False
 
 
 def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() -> None:
@@ -107,7 +100,6 @@ def test_v2_settings_use_documented_default_models() -> None:
     assert settings.google_model_context_approved is True
     assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
     assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
-    assert settings.v2_admission_enabled is False
     assert settings.research_enabled is True
 
 
@@ -174,28 +166,23 @@ def test_blank_runtime_defaults_to_v2() -> None:
     assert settings.runtime == "v2"
 
 
-@pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
-def test_admission_environment_override(value: str, expected: bool) -> None:
+def test_removed_admission_environment_is_ignored() -> None:
     settings = Settings.from_env(
         {
             "OPENAI_API_KEY": "openai-secret",
             "GEMINI_API_KEY": "gemini-secret",
-            "SAGE_V2_ADMISSION_ENABLED": value,
+            "SAGE_V2_ADMISSION_ENABLED": "true",
+            "SAGE_V2_ADMISSION_MAX_TURNS": "1",
+            "SAGE_V2_ADMISSION_CONTEXT_CHARS": "8000",
+            "SAGE_MAX_CLARIFICATION_ROUNDS": "1",
         }
     )
 
-    assert settings.v2_admission_enabled is expected
-
-
-def test_invalid_admission_environment_value_is_rejected() -> None:
-    with pytest.raises(ConfigurationError, match="SAGE_V2_ADMISSION_ENABLED"):
-        Settings.from_env(
-            {
-                "OPENAI_API_KEY": "openai-secret",
-                "GEMINI_API_KEY": "gemini-secret",
-                "SAGE_V2_ADMISSION_ENABLED": "sometimes",
-            }
-        )
+    assert settings.runtime == "v2"
+    assert not hasattr(settings, "v2_admission_enabled")
+    assert not hasattr(settings, "v2_admission_max_turns")
+    assert not hasattr(settings, "v2_admission_context_chars")
+    assert not hasattr(settings, "max_clarification_rounds")
 
 
 def test_legacy_openai_model_environment_is_ignored() -> None:

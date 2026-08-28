@@ -71,18 +71,6 @@ async def solve_issue(
             )
         if outcome is SolveOutcome.NO_CHANGE and (diff.strip() or changed_files):
             raise WorkspaceError("V2 no-change result contains repository changes.")
-        pre_mutation_outcomes = {
-            SolveOutcome.NEEDS_HUMAN_INFORMATION,
-            SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION,
-            SolveOutcome.NEEDS_MAINTAINER_REWRITE,
-            SolveOutcome.HUMAN_REQUIRED,
-            SolveOutcome.ENVIRONMENT_BLOCKED,
-            SolveOutcome.UNSUPPORTED,
-        }
-        if outcome in pre_mutation_outcomes and (diff.strip() or changed_files):
-            raise WorkspaceError(
-                "A pre-mutation V2 outcome contains repository changes."
-            )
         result = SolveResult(
             run_id=prepared.run_id,
             base_sha=prepared.base_sha,
@@ -93,7 +81,6 @@ async def solve_issue(
             run_dir=prepared.run_dir,
             workspace_dir=prepared.workspace_dir,
             outcome=outcome,
-            clarification=final_output.clarification,
             provenance=final_output.provenance,
         )
         store.persist_result(final_output=final_output, result=result)

@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelRole(StrEnum):
-    ADMISSION = "admission"
     SOLVER = "solver"
     REVIEWER = "reviewer"
 
@@ -45,6 +44,5 @@ class RunProvenance(BaseModel):
     route: str = "single"
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()
-    admission_sessions: int = Field(default=0, ge=0)
     solver_sessions: int = Field(default=0, ge=0)
     review_cycles: int = Field(default=0, ge=0)

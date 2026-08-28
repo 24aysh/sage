@@ -103,8 +103,6 @@ def build_solver_tools(
         assumptions: list[str],
         risks: list[str],
         status: Literal["implementable", "blocked"],
-        admission_context_digest: str | None = None,
-        admission_evidence_ids: list[str] | None = None,
         research_result_ids: list[str] | None = None,
         blocker: str | None = None,
     ) -> str:
@@ -113,8 +111,6 @@ def build_solver_tools(
         saved = plans.save(
             SolverPlan(
                 issue_summary=issue_summary,
-                admission_context_digest=admission_context_digest,
-                admission_evidence_ids=tuple(admission_evidence_ids or ()),
                 research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
@@ -142,8 +138,6 @@ def build_solver_tools(
         assumptions: list[str],
         risks: list[str],
         status: Literal["implementable", "blocked"],
-        admission_context_digest: str | None = None,
-        admission_evidence_ids: list[str] | None = None,
         research_result_ids: list[str] | None = None,
         blocker: str | None = None,
     ) -> str:
@@ -154,8 +148,6 @@ def build_solver_tools(
             reason=reason,
             plan=SolverPlan(
                 issue_summary=issue_summary,
-                admission_context_digest=admission_context_digest,
-                admission_evidence_ids=tuple(admission_evidence_ids or ()),
                 research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),

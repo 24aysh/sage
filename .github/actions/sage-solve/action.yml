@@ -45,10 +45,6 @@ inputs:
     description: Optional controller-side search provider (currently tavily).
     required: false
     default: ""
-  admission-enabled:
-    description: Run read-only V2 Admission before Solver.
-    required: false
-    default: "false"
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -121,7 +117,6 @@ runs:
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
         SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}
         SAGE_WEB_SEARCH_PROVIDER: ${{ inputs.web-search-provider }}
-        SAGE_V2_ADMISSION_ENABLED: ${{ inputs.admission-enabled }}
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
         SAGE_RUNTIME: ${{ inputs.runtime }}
         SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}

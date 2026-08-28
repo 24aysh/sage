@@ -33,7 +33,6 @@ class ArtifactStore:
             "model": settings.v2_solver_model,
             "runtime": settings.runtime,
             "model_profile": settings.model_profile,
-            "v2_admission_enabled": settings.v2_admission_enabled,
             "research_enabled": settings.research_enabled,
             "web_search_provider": settings.web_search_provider or None,
             "sandbox_image": settings.sandbox_image,

@@ -115,20 +115,9 @@ def test_build_context_renders_explicit_empty_sections() -> None:
     assert context.history_truncated is False
 
 
-def test_context_keeps_newest_clarification_and_subsequent_human_reply() -> None:
-    old_status = (
-        f"{invocation_marker(800)}\n"
-        "<!-- sage-state:needs_human_information -->\n"
-        "<!-- sage-clarification:v1 round=1 disposition=needs_human_information -->\n"
-        "Old question"
-    )
-    new_status = (
-        f"{invocation_marker(900)}\n"
-        "<!-- sage-state:needs_human_design_decision -->\n"
-        "<!-- sage-clarification:v1 round=2 "
-        "disposition=needs_human_design_decision -->\n"
-        "Choose behavior A or B"
-    )
+def test_context_excludes_all_prior_sage_statuses() -> None:
+    old_status = f"{invocation_marker(800)}\nOld status"
+    new_status = f"{invocation_marker(900)}\nNew status"
     client = FakeContextClient(
         issue=_issue(),
         pages={
@@ -151,11 +140,10 @@ def test_context_keeps_newest_clarification_and_subsequent_human_reply() -> None
         max_context_chars=10_000,
     )
 
-    assert context.included_comment_ids == (900, 901)
-    assert "Old question" not in context.markdown
-    assert "Choose behavior A or B" in context.markdown
+    assert context.included_comment_ids == (901,)
+    assert "Old status" not in context.markdown
+    assert "New status" not in context.markdown
     assert "Choose behavior B." in context.markdown
-    assert "&lt;!-- sage-clarification:v1 round=2" in context.markdown
 
 
 def test_build_context_selects_newest_comments_and_discloses_page_limit() -> None:

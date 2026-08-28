@@ -7,16 +7,16 @@ from sage.integrations.github.provenance import (
 )
 
 
-def test_github_diagnostics_copy_safe_admission_summary_not_full_context(
+def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "admission-context-summary.json").write_text(
-        '{"context_digest":"safe"}\n',
+    (run_dir / "solver-final.json").write_text(
+        '{"summary":"safe"}\n',
         encoding="utf-8",
     )
-    (run_dir / "admission-context.json").write_text(
+    (run_dir / "unlisted-context.json").write_text(
         '{"excerpt":"private repository text"}\n',
         encoding="utf-8",
     )
@@ -34,7 +34,7 @@ def test_github_diagnostics_copy_safe_admission_summary_not_full_context(
         base_branch="main",
         original_base_sha="a" * 40,
         branch="sage/issue-2",
-        outcome="needs_human_information",
+        outcome="completed",
     )
 
     persist_github_diagnostics(
@@ -43,8 +43,8 @@ def test_github_diagnostics_copy_safe_admission_summary_not_full_context(
         run_dir=run_dir,
     )
 
-    assert (diagnostics / "admission-context-summary.json").is_file()
-    assert not (diagnostics / "admission-context.json").exists()
+    assert (diagnostics / "solver-final.json").is_file()
+    assert not (diagnostics / "unlisted-context.json").exists()
     assert "private repository text" not in "\n".join(
         path.read_text(encoding="utf-8") for path in diagnostics.iterdir()
     )
