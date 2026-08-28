@@ -2,10 +2,10 @@
 
 The Python package contains the trusted controller, isolated workspace
 preparation, Docker sandbox, provider-neutral repository tools, artifact store,
-and the sequential V2 Admission/Solver/Reviewer runtime. V2 is the only runtime.
-Admission is disabled by default; when enabled, it reuses the Solver model and
-persists read-only evidence for the tool-driven Solver. Gemini remains the
-independent Reviewer.
+and the sequential V2 Solver/Reviewer runtime. V2 is the only runtime. The
+OpenAI-backed Solver works through a bounded tool loop, deterministic checks
+verify its candidate, and the Gemini-backed Reviewer independently evaluates
+the result. Repairable findings return to a fresh Solver session.
 
 Run from the repository root:
 

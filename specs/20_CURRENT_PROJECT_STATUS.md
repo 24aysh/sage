@@ -1,561 +1,286 @@
-# Current Admission, Solver, and Reviewer System
+# Current Solver and Independent Reviewer System
 
 ## Scope
 
-This document describes only the currently implemented multi-agent runtime
-composed of Admission, Solver, deterministic verification, and an
-independent Reviewer. It records only the present code, behavior, boundaries,
-and operational constraints.
+This document describes the behavior and architecture currently implemented in
+Sage. The only model roles in the V2 runtime are the Solver and the independent
+Reviewer.
 
-V2 is the only runtime and is selected by default. The optional explicit
-selector is:
+Sage accepts a local Issue document or an authorized GitHub Issue command,
+prepares an isolated Git worktree, lets the Solver plan and implement a change,
+derives the candidate from Git, runs deterministic verification, and sends the
+bounded result to the Reviewer. A completed GitHub run may publish a branch and
+draft pull request. Sage never merges a pull request.
 
-```dotenv
-SAGE_RUNTIME=v2
-```
+## Runtime roles
 
-Admission is disabled by default. Set `SAGE_V2_ADMISSION_ENABLED=true` to opt
-into the read-only Admission stage.
-
-## Current status
-
-The runtime is implemented as a production-oriented Python backend. It can run
-against a local Issue file or inside the repository's GitHub Actions
-controller. Its successful output is an uncommitted, reviewed Git candidate in
-an isolated workspace. In the GitHub path, the trusted publisher turns that
-candidate into a commit on a deterministic branch and opens a draft pull
-request. Sage does not merge the pull request.
-
-The system currently contains three logical agent roles but two model
-configurations:
-
-| Role | Model/provider | Access | Responsibility |
+| Role | Provider | Access | Responsibility |
 | --- | --- | --- | --- |
-| Admission | The configured OpenAI Solver model | Read-only repository tools, bounded research tools, context-save tool | Determine whether the Issue is ready and persist reusable evidence |
-| Solver | The configured OpenAI Solver model | Repository reads, bounded research, plan tools, structured file edits, diff inspection, verification-only commands | Plan and implement the requested change |
-| Reviewer | The configured Gemini Reviewer model | No repository or mutation tools; receives a controller-built packet | Independently judge the actual candidate, plan, requirements, and verification evidence |
+| Solver | OpenAI, configured by `SAGE_V2_SOLVER_MODEL` | Repository reads, structured file mutations, bounded verification commands, Git diff, and configured research | Inspect the repository, persist a typed plan, implement the Issue, and repair validated failures |
+| Reviewer | Gemini, configured by `SAGE_V2_REVIEWER_MODEL` | No repository mutation tools; receives a controller-built packet and can use bounded official-documentation research | Independently judge the candidate against the Issue, Solver plan, Git diff, and verification evidence |
 
-Admission and Solver are separate sessions and roles even though they use the
-same configured model. The Reviewer is independent at the provider and prompt
-boundary.
+The trusted controller owns orchestration, validation, limits, artifacts,
+verification, terminal mapping, and publication. Neither model controls routing
+or GitHub credentials.
 
-## Implemented architecture
-
-The trusted Python controller owns workspace preparation, role scheduling,
-state validation, deterministic verification, repair routing, artifact
-persistence, deadlines, and terminal outcomes. Models can propose tool calls
-and typed results, but they do not own workflow transitions or publication.
+## System architecture
 
 ```mermaid
 flowchart TD
     Trigger[Local Issue file or authorized GitHub Issue command]
-    Controller[Trusted Sage controller]
-    AdmissionSwitch{Admission enabled?}
-    Workspace[Isolated Git worktree and network-disabled Docker sandbox]
-    Admission[Admission role<br/>OpenAI Solver model<br/>read-only]
-    AdmissionContext[(Validated Admission context<br/>evidence and digest)]
-    Solver[Solver role<br/>OpenAI Solver model<br/>tool-driven]
-    Plan[(Versioned Solver plan)]
-    GitState[(Authoritative Git diff<br/>and changed paths)]
+    Controller[Trusted V2 controller]
+    Worktree[Isolated Git worktree]
+    Solver[OpenAI Solver<br/>tool-driven]
+    Plan[(Versioned typed plan)]
+    Candidate[(Git-derived candidate)]
     Verifier[Deterministic verifier]
-    Reviewer[Independent Reviewer<br/>Gemini<br/>read-only]
-    Repair[Controller-built repair packet]
-    Terminal[(Terminal artifacts and outcome)]
+    ReviewPacket[Bounded review packet]
+    Reviewer[Gemini Reviewer<br/>independent and read-only]
+    RepairPacket[Validated repair packet]
+    Terminal[(Terminal outcome and artifacts)]
     Publisher[Trusted GitHub publisher]
-    DraftPR[Draft pull request]
+    PR[Draft pull request]
 
     Trigger --> Controller
-    Controller --> Workspace
-    Controller --> AdmissionSwitch
-    AdmissionSwitch -->|yes| Admission
-    AdmissionSwitch -->|no| Solver
-    Admission -->|save context| AdmissionContext
-    Admission -->|READY| Solver
-    Admission -->|human input, design decision,<br/>environment blocked, or unsupported| Terminal
-    AdmissionContext --> Solver
-    Solver -->|save or revise| Plan
-    Solver -->|structured edits| Workspace
-    Workspace --> GitState
-    Plan --> GitState
-    GitState --> Verifier
-    Verifier -->|required checks pass| Reviewer
-    Verifier -->|required check fails or times out| Repair
-    Reviewer -->|implementation, planning,<br/>or verification failure| Repair
-    Repair --> Solver
-    Reviewer -->|pass| Terminal
-    Reviewer -->|uncertain or non-repairable failure| Terminal
-    Terminal -->|completed candidate in GitHub run| Publisher
-    Publisher --> DraftPR
+    Controller --> Worktree
+    Controller --> Solver
+    Solver --> Plan
+    Solver --> Worktree
+    Worktree --> Candidate
+    Plan --> Candidate
+    Candidate --> Verifier
+    Verifier -->|pass| ReviewPacket
+    ReviewPacket --> Reviewer
+    Verifier -->|repairable failure| RepairPacket
+    Reviewer -->|repairable finding| RepairPacket
+    RepairPacket -->|fresh session| Solver
+    Reviewer -->|pass or terminal result| Terminal
+    Solver -->|blocked, unresolved, or no change| Terminal
+    Verifier -->|terminal failure| Terminal
+    Terminal -->|completed GitHub candidate| Publisher
+    Publisher --> PR
 ```
 
-### Architectural boundaries
+The outer workflow is deterministic Python orchestration. LangGraph is used
+inside each Solver session as a bounded sequential tool loop.
 
-| Boundary | Current owner |
-| --- | --- |
-| Role prompts and typed model contracts | `sage.runtimes.v2` and `sage.domain` |
-| Role ordering and repair loop | `V2GraphRuntime` in `sage.runtimes.v2.runtime` |
-| Per-role tool loop | Shared compiled LangGraph from `sage.runtimes.tool_loop` |
-| Repository operations | `sage.repository` through thin LangChain tool adapters |
-| Candidate truth | Git status, changed paths, and binary-capable Git diff |
-| Verification | `sage.verification.Verifier` in the sandbox |
-| Reviewer provider boundary | `sage.providers` |
-| Research network boundary | Trusted controller-side `sage.research` service |
-| Run artifacts | `sage.artifacts` outside the candidate repository |
-| GitHub authorization and publication | `sage.integrations.github` and `sage.workflow.github_issue` |
+## Solver LangGraph
 
-The outer optional Admission → Solver → Verifier → Reviewer workflow is
-deterministic Python orchestration. It is not a single compiled LangGraph
-containing all three roles. LangGraph is used for the bounded tool-call loop
-inside Admission when enabled and inside every initial or repair Solver
-session.
-
-## LangGraph role loop
-
-Admission and Solver each receive a fresh, checkpoint-free compiled graph. One
-model decision is allowed per graph turn, and parallel tool calls are disabled.
+Each initial or repair session compiles a fresh, checkpoint-free graph. The
+model must either request exactly one known tool or return the configured
+structured result. Parallel tool calls are disabled.
 
 ```mermaid
 flowchart TD
-    Start([START]) --> Agent[Agent model decision]
-    Agent --> Route{Response shape}
-    Route -->|exactly one known tool call<br/>and turns remain| Tools[ToolNode executes one tool]
+    Start([START]) --> Agent[agent<br/>one Solver model decision]
+    Agent --> Route{response shape}
+    Route -->|exactly one known tool| Tools[tools<br/>execute one tool]
     Tools --> Agent
-    Route -->|typed structured output only| Finalize[Validate project-owned output schema]
-    Route -->|tool call on final allowed turn| TurnLimit[Raise turn-limit error]
-    Route -->|mixed output and tool call,<br/>zero or multiple tool calls,<br/>or unknown tool| Invalid[Raise protocol error]
+    Route -->|structured Solver result| Finalize[finalize<br/>validate schema]
+    Route -->|turn limit reached| TurnLimit[turn_limit<br/>bounded failure]
+    Route -->|invalid or mixed response| Invalid[invalid_response<br/>protocol failure]
     Finalize --> End([END])
     TurnLimit --> End
     Invalid --> End
 ```
 
-Tool results are appended to graph message state before the next model
-decision. Expected repository tool failures are converted into bounded tool
-results so the role can correct its next request. Unexpected failures propagate
-to the controller. The default Solver session limit is 30 model turns; the
-default Admission session limit is 12 model turns.
-
-There is no LangGraph checkpointer in this runtime. Each Admission, Solver, and
-Solver-repair session has fresh in-memory graph state. Durable handoff state is
-stored by the controller as typed artifacts.
+Graph state exists only for that session: accumulated messages, the number of
+model turns, and a pending/final structured output. There is no checkpointer or
+cross-session message history. `SAGE_MAX_TURNS` defaults to 30 model decisions
+per Solver session. The Reviewer is a separate structured model call and does
+not run in this LangGraph.
 
 ## End-to-end behavior
 
-### 1. Preflight and workspace
+### Preparation and preflight
 
-The workflow prepares a run directory and Git worktree at the accepted base
-SHA, starts the Docker sandbox, and constructs repository tools rooted at that
-workspace. The multi-agent runtime rejects an empty Issue, a missing Git
-workspace, a mismatched runtime selection, or a workspace that is already
-dirty.
+The workflow reads the Issue, creates the run directory and isolated worktree,
+starts the network-disabled Docker sandbox, and verifies that the prepared Git
+workspace exists and is clean. The accepted base SHA remains authoritative.
 
-The target repository is mounted into the sandbox at `/workspace`. The sandbox
-runs with networking disabled, a read-only root filesystem, dropped Linux
-capabilities, `no-new-privileges`, bounded processes and memory, and a writable
-workspace mount. Model credentials remain in the trusted host controller and
-are not passed into repository commands.
+### Solver planning and implementation
 
-### 2. Admission
+The Solver receives the Issue and base SHA. It can inspect repository files and
+metadata, search within the repository, use configured bounded research, and
+inspect the current Git diff.
 
-When Admission is enabled, it runs before any mutation. It can:
+Before any mutation, it must call `save_plan` with an Issue summary, approach,
+tasks linked to acceptance criteria, relevant paths, verification commands,
+assumptions, risks, research result IDs, and `implementable` or `blocked`
+status. File mutation and command tools reject calls until an implementable
+plan exists.
 
-- list a bounded repository tree;
-- search for exact literal text;
-- read bounded text-file ranges;
-- search configured public documentation or the web through the controller;
-- read only same-run research result IDs; and
-- save exactly one Admission context snapshot.
+A plan change uses `revise_plan`, supplies the current plan version, and records
+an evidence-based reason. Every revision is immutable and the latest revision
+is stored at `solver-plan.json`.
 
-Admission has no plan, file-write, file-delete, file-move, command, diff, Git
-publication, or credential tools.
+The mutation tools are `replace_text`, `write_file`, `delete_file`, and
+`move_file`. `run_command` accepts only trusted configured checks or built-in
+allowlisted verification commands. Arbitrary shell mutation is not a Solver
+capability.
 
-Before returning, Admission must save a context containing the Issue
-requirements, relevant paths and symbols, repository conventions, candidate
-verification commands, assumptions, open questions, and evidence references.
-The controller resolves repository excerpts, hashes their files, resolves
-same-run research IDs, calculates the context digest, and writes the snapshot
-outside the candidate repository.
+The Solver returns `implemented`, `no_change`, `blocked`, or `unresolved`. Git,
+not the model response, determines changed paths and diff.
 
-The context is revalidated before the Solver receives it. Validation confirms:
+### Candidate derivation and verification
 
-- the workspace HEAD still equals the accepted base SHA;
-- the Issue content digest is unchanged;
-- the context digest matches its complete content;
-- evidence and requirement identifiers are internally consistent; and
-- every repository evidence file still matches its recorded content digest.
+For an implemented result, the controller creates a candidate snapshot binding
+the accepted base SHA, changed files, bounded diff and digest, current plan
+version and digest, and the Solver's summary, claims, and uncertainty.
 
-Admission returns one of these dispositions:
+The deterministic verifier checks Git diff integrity and runs applicable
+discovered/configured commands inside the sandbox. It records bounded results
+and logs for each pass. The controller rejects a candidate that changes during
+verification.
 
-| Disposition | Behavior |
-| --- | --- |
-| `READY` | Continue to the Solver with the validated context |
-| `NEEDS_HUMAN_INFORMATION` | Persist one to three focused questions and stop before mutation |
-| `NEEDS_HUMAN_DESIGN_DECISION` | Persist one to three focused questions and stop before mutation |
-| `ENVIRONMENT_BLOCKED` | Stop with an environment-blocked outcome |
-| `UNSUPPORTED` | Stop with an unsupported outcome |
+A failed required check creates a repair packet containing the Issue, latest
+plan, current candidate diff, and verification findings. A fresh Solver session
+receives that packet.
 
-Clarification is limited to two rounds. The GitHub flow writes the questions
-into the invocation's status comment. Another run occurs only after the Issue
-is updated and a new exact `/sage solve` or `/sage fix` comment is created. If
-the configured rounds are exhausted while required context is still missing,
-the outcome asks for a maintainer rewrite of the Issue.
+### Independent review
 
-If Admission is explicitly disabled, the controller starts directly with the
-Solver and no Admission context is required.
+After required verification passes, the controller sends the Reviewer a
+bounded packet containing the Issue, latest typed plan, changed-file list,
+authoritative Git diff, deterministic verification, Solver summary, and
+upload-safe research provenance.
 
-### 3. Solver
+The Reviewer returns `pass`, `fail`, or `uncertain`. A failure includes a type
+and blocking findings with criterion/evidence links. Controller validation
+rejects malformed findings, unknown criteria, and inconsistent verdicts.
 
-The Solver receives the Issue, accepted base SHA, and the validated Admission
-context when one exists. It starts a new LangGraph tool loop for the initial
-implementation and another fresh loop for every repair attempt.
+A passing review triggers a final Git guard: HEAD must still equal the accepted
+base SHA and the current diff digest must equal the reviewed snapshot.
 
-The Solver must save a complete typed plan before any mutation. The plan holds:
+## Repair and rereview loop
 
-- an Issue summary and implementation approach;
-- versioned tasks and acceptance criteria;
-- relevant paths and verification commands;
-- assumptions and risks;
-- an implementable or blocked status;
-- the Admission context digest and material evidence IDs, when Admission ran;
-- same-run research result IDs used by the plan; and
-- a blocker when the plan is not implementable.
-
-Plan revisions replace the complete plan, increment its version, and require
-the prior version plus an evidence-based reason. Mutation tools reject calls
-until the current saved plan is implementable.
-
-The Solver's current tool surface is:
-
-| Capability | Tools and constraints |
-| --- | --- |
-| Repository inspection | `list_tree`, `search_text`, `read_file` |
-| Research | `search_documentation`, `read_documentation`, `search_web`, `fetch_web_page` when configured |
-| Planning | `save_plan`, `revise_plan` |
-| Mutation | `replace_text`, `write_file`, `delete_file`, `move_file`; all gated by an implementable plan |
-| Candidate inspection | `show_diff` |
-| Commands | `run_command`, restricted to trusted or allowlisted verification commands |
-
-The Solver does not receive a raw patch tool. File changes are made through
-structured repository operations. Its structured final result reports
-`implemented`, `no_change`, `blocked`, or `unresolved`, references the latest
-plan version, and contains a summary and verification claims. It does not
-provide the authoritative patch or changed-file list.
-
-### 4. Candidate derivation
-
-For an implemented result, the controller validates the final Solver result
-against the latest plan and Admission context. It rejects unknown Admission or
-research references. It then derives a `CandidateSnapshot` from Git, not from
-model claims.
-
-The snapshot contains the accepted base SHA, actual changed paths, actual Git
-diff, a SHA-256 diff digest, the current plan version and digest, and the
-Solver's summary and uncertainty. Candidate creation fails if HEAD moved, the
-diff or changed-path list is empty, or the diff exceeds the configured context
-cap.
-
-### 5. Deterministic verification
-
-Verification runs sequentially in the network-disabled sandbox without model
-involvement. Every pass includes required `git diff --check HEAD --`.
-Controller-configured checks are added next, followed by safe Solver plan hints,
-up to four checks in total.
-
-Solver-suggested commands are accepted only from the implemented verification
-prefix set, including Python, pytest, npm test/lint, make test/check, Cargo
-test, and Go test forms. Git commit, push, reset, and clean commands are
-rejected. Configured controller commands can be marked required or optional.
-
-Required failure or timeout makes the pass fail. An unavailable or failed
-optional check is retained as uncertainty but does not fail the pass. Logs are
-bounded, ANSI sequences are removed, token-like values are redacted, and a
-stable failure fingerprint is recorded. The controller also confirms that the
-candidate diff digest did not change during verification.
-
-### 6. Independent review
-
-The Reviewer receives one bounded, controller-built packet containing:
-
-- the complete Issue;
-- the latest saved Solver plan;
-- actual changed files and actual Git diff;
-- deterministic verification results;
-- the Solver summary;
-- a bounded Admission context, when Admission ran; and
-- research provenance metadata.
-
-The Reviewer has no file, shell, mutation, publication, or direct research
-tools. It returns a typed verdict of `pass`, `fail`, or `uncertain`, plus
-criterion results, findings, evidence, confidence, and uncertainty.
-
-A pass is valid only when every plan acceptance criterion appears exactly once
-and is satisfied, there is no blocking failure data, and the Reviewer's schema
-is valid. The Reviewer prompt also requires all explicit Issue requirements,
-required verification, correctness, security, and scope to be checked.
-
-Before accepting a pass, the controller confirms that HEAD and the candidate
-diff digest still match the reviewed snapshot.
-
-## Agent communication
-
-The roles cannot send messages to each other directly. They do not share a
-chat, invoke each other as tools, or hand off control through model-selected
-routes.
-
-Communication is indirect and controller-mediated:
+Solver and Reviewer can exchange feedback over multiple cycles, but they never
+communicate directly. The controller is the only bridge:
 
 ```mermaid
 sequenceDiagram
-    participant A as Admission
-    participant C as Trusted controller
-    participant S as Solver
+    participant S as Solver session
+    participant C as Controller
     participant V as Verifier
     participant R as Reviewer
 
-    A->>C: Typed disposition and saved context digest
-    C->>C: Revalidate base, Issue, evidence, and digest
-    C->>S: Issue plus bounded Admission context
-    S->>C: Versioned plan and typed final result
-    C->>C: Derive actual candidate from Git
-    C->>V: Candidate and verification command set
-    V->>C: Typed check results and diff digest
-    C->>R: Issue, plan, actual diff, checks, and bounded evidence
-    alt Reviewer passes
-        R->>C: Typed pass and criterion coverage
-        C->>C: Final candidate identity guard
-    else Reviewer returns repairable failure
-        R->>C: Typed blocking findings
-        C->>S: Fresh repair packet with findings and current diff
-    else Reviewer is uncertain or failure is not repairable
-        R->>C: Typed terminal review result
-    end
+    C->>S: Issue and base SHA
+    S-->>C: Plan plus implemented result
+    C->>V: Git-derived candidate
+    V-->>C: Passing evidence
+    C->>R: Bounded independent review packet
+    R-->>C: Validated blocking findings
+    C->>S: Fresh repair session with repair packet
+    S-->>C: Revised plan and repaired result
+    C->>V: Re-derived candidate
+    V-->>C: Passing evidence
+    C->>R: Fresh rereview packet
+    R-->>C: Pass or another result
 ```
 
-Admission context is therefore evidence passed forward by the controller, not
-a conversation. Reviewer feedback reaches the Solver only after the controller
-validates it and constructs a new repair prompt.
+Repairable failure types are implementation, planning, and verification. Each
+repair uses a fresh Solver graph and each rereview is a fresh Reviewer call.
+There is no shared transcript, direct handoff API, simultaneous conversation,
+or shared mutable agent memory.
 
-## Agent and repair loops
+The loop is bounded by identical candidate/failure fingerprint detection, the
+per-session turn limit, provider retry limits, input/artifact caps, the overall
+run deadline, and a reserved finalization window. An unchanged candidate with
+the same failure stops instead of looping.
 
-Two different loops exist.
+## Research and provider isolation
 
-### Per-session tool loop
+Research is optional and run-scoped. The Solver may search official
+documentation and the web within configured budgets. The Reviewer may search
+official documentation but has no general web-search budget. Results are
+normalized, public-URL checked, cached, assigned run-local IDs, and treated as
+untrusted evidence. Research does not grant network access to the target
+repository sandbox.
 
-Admission and Solver alternate between one model decision and one tool
-execution until they return typed output or hit a protocol/turn limit. Each
-repair starts a fresh Solver tool loop; prior in-memory messages are not
-continued.
+The Solver uses the configured OpenAI model; the Reviewer uses the configured
+Gemini model. `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true` is required because the
+bounded review packet is sent to Google.
 
-### Controller repair loop
+The model-call manager records role, stage, provider, model, token counts when
+available, latency, retry count, outcome, safe error category, status code, and
+request ID. Reviewer calls are serialized. Solver session and review-cycle
+counts are persisted in `usage.json`.
 
-After an implemented Solver result, the controller repeatedly performs:
+## Terminal outcomes
 
-```text
-validate Solver result
-  -> derive candidate from Git
-  -> run deterministic verification
-  -> if verification fails: send a repair packet to a fresh Solver session
-  -> otherwise run independent review
-  -> if review reports a repairable failure: send a repair packet to a fresh Solver session
-  -> if review passes: complete
-```
-
-The repair loop does not use a fixed review-repair count. It is bounded by the
-run deadline and finalization reserve, per-session model-turn limits, provider
-failure handling, candidate size limits, and no-progress detection.
-
-No-progress detection compares the candidate diff digest with either a stable
-verification-failure fingerprint or a stable blocking-review fingerprint. If
-the same candidate produces the same failure again, the controller stops with
-`verification_failed` or `review_failed`. It also stops rather than beginning
-another model call when only the finalization reserve remains.
-
-## Research behavior
-
-Research is an optional, run-scoped service in the trusted controller. The
-implemented search adapter is Tavily and uses the Python standard library for
-HTTP. No arbitrary model-selected URL fetch tool is exposed: agents search,
-receive normalized result IDs, and can read only those same-run IDs.
-
-Search and content sizes are bounded. Public URL validation rejects private or
-non-public destinations, optional domain allowlists restrict accepted queries
-and results, external text is normalized, and prompt-like lines and secret-like
-values are sanitized. Results are cached within the run and recorded with
-content digests and provenance. If research is disabled or unconfigured, tools
-return a bounded unavailable result rather than opening network access in the
-sandbox.
-
-Admission and Solver can use documentation and web research. The Reviewer does
-not call the research service; it receives research provenance in its review
-packet.
-
-## Provider scheduling and limits
-
-The configured cross-provider profile requires both OpenAI and Gemini
-credentials and explicit approval to send the review packet to the Google
-model. Admission and Solver calls use the configured OpenAI Solver model.
-Reviewer calls use the configured Gemini Reviewer model with provider-native
-retries disabled.
-
-The `ModelCallManager` serializes Reviewer calls, records every Admission,
-Solver, and Reviewer attempt, enforces the run deadline and finalization
-reserve, and opens a per-provider circuit after two consecutive recorded
-failures. Reviewer rate-limit or server failures can receive at most one
-controller-managed retry when the error is retryable, unambiguous, within the
-retry-after cap, and leaves finalization time. A Reviewer schema failure gets
-one schema-repair attempt.
-
-Default operational limits include:
-
-| Setting | Default |
-| --- | ---: |
-| Admission model turns per session | 12 |
-| Solver model turns per session | 30 |
-| Clarification rounds | 2 |
-| Model request timeout | 600 seconds |
-| Run deadline | 4,800 seconds |
-| Finalization reserve | 300 seconds |
-| Solver input | 96,000 characters |
-| Reviewer input | 48,000 characters |
-| Repair input | 48,000 characters |
-| Candidate diff | 96,000 characters |
-| Verification log | 24,000 characters |
-
-## Terminal behavior
-
-The runtime can finish with these current outcome categories:
-
-| Category | Causes |
+| Outcome | Current meaning |
 | --- | --- |
-| Completed | Required verification passes, Reviewer passes, and final candidate identity is unchanged |
-| No change | Solver reports no change and Git contains no changed paths |
-| Human required before mutation | Admission needs information or a design decision |
-| Maintainer rewrite required | Clarification rounds are exhausted |
-| Human required after start | Solver is blocked, Reviewer is uncertain, or review finds requirement ambiguity |
-| Environment blocked or unsupported | Admission or Reviewer classifies the task accordingly |
-| Verification failed | Required deterministic checks cannot make progress |
-| Review failed | Blocking review findings cannot make progress or are not repairable by the implemented routes |
-| Invalid model output | A typed or cross-field role contract is violated |
-| Provider unavailable or rate limited | A required provider cannot serve the run under retry policy |
-| Budget exhausted | The run reaches its finalization reserve |
-| Unresolved | The controller cannot establish a stable authoritative candidate |
+| `completed` | Candidate passed deterministic verification and independent review |
+| `no_change` | Solver found no repository change was required |
+| `human_required_after_start` | Solver was blocked or Reviewer could not resolve requirements safely |
+| `environment_blocked` | Reviewer identified an environment constraint |
+| `unresolved` | Solver or runtime could not produce a stable candidate |
+| `provider_unavailable` | A required provider could not serve the role |
+| `rate_limited` | A required provider remained rate-limited |
+| `budget_exhausted` | The run reached its deadline reserve |
+| `verification_failed` | Required deterministic checks failed without progress |
+| `review_failed` | Independent review remained blocking without progress |
+| `invalid_model_output` | A role violated its structured contract |
 
-Only `completed` with a non-empty authoritative diff can reach GitHub
-publication. Human-required, failure, unsupported, no-change, and other
-terminal outcomes update status and diagnostics without creating a branch or
-pull request.
+Only a completed candidate is eligible for GitHub publication. A no-change run
+posts a terminal status without a branch. Other outcomes preserve diagnostics
+and do not publish.
 
-## GitHub behavior
+## Artifacts and source of truth
 
-The included workflow listens for newly created Issue comments. It recognizes
-only exact `/sage solve` and `/sage fix` commands on Issues, not pull requests.
-The gate verifies repository permission, rejects duplicate work when the
-deterministic branch or an open matching pull request already exists, captures
-the exact base SHA, and creates or reuses a bot-owned status comment.
-
-The solve job rechecks authorization and duplicates, builds bounded Issue
-context, solves against the accepted SHA, and publishes only the authoritative
-completed candidate. Publication:
-
-- revalidates the workspace, local Git configuration, HEAD, diff, changed
-  paths, and whitespace;
-- uses the deterministic branch `sage/issue-<number>`;
-- creates a commit only in the trusted publisher after review;
-- pushes the branch with creation-only semantics;
-- opens a draft pull request with bounded summary, changed files, uncertainty,
-  and provenance; and
-- warns in the pull request when the default branch advanced without rebasing
-  or altering the reviewed candidate.
-
-A finalizer job preserves or repairs the terminal status comment after an
-interrupted solve job. Uploaded GitHub diagnostics are allowlisted and exclude
-the full Admission context, raw research bodies, Issue document, and repository
-checkout.
-
-## Persisted state and observability
-
-The controller writes atomic run artifacts outside the candidate repository.
-Depending on the route taken, they include:
+Current run artifacts can include:
 
 ```text
 metadata.json
-issue.md
-admission-context.json
-admission-context-summary.json
-admission-final.json
-clarification.json
-research-summary.json
+agent-final.json
 solver-plan.json
-solver-plans/<revision>.json
+solver-plans/NN.json
 solver-final.json
 candidate-snapshot.json
 verification-summary.json
-verification/pass-<number>/summary.json
-verification/pass-<number>/<check>.log
+verification/pass-N/summary.json
+verification/pass-N/<check>.log
 review.json
-reviews/<cycle>.json
+reviews/NN.json
+research-summary.json
 usage.json
 terminal.json
-agent-final.json
 changed-files.json
 diff.patch
+github.json
 ```
 
-Usage provenance records monotonically numbered model calls, role, stage,
-provider, model, attempt kind, token counts when supplied, latency, retry count,
-outcome, bounded error category, and request ID. It also records Admission
-sessions, Solver sessions, and review cycles.
+Artifacts are written atomically. Git-derived `changed-files.json` and
+`diff.patch` are authoritative; model claims are not. GitHub diagnostics copy
+only a fixed allowlist and do not upload the isolated repository.
 
-Structured logs identify workflow and role activity, verification passes,
-research operations, decisions, failures, latency, and terminal outcome.
-Optional LangSmith tracing is supported and disabled by default. When enabled,
-it can send Issue and repository context to the configured LangSmith workspace;
-input and output hiding are separately configurable.
+## GitHub behavior
 
-## Current verification coverage
+The public trigger is an exact `/sage solve` or `/sage fix` Issue comment from
+an actor with current write/admin permission. The gate prevents duplicate open
+pull requests and refuses to overwrite an existing remote branch. The solve job
+uses an exact credential-free checkout and scopes model secrets to that job.
 
-The repository contains deterministic tests for the implemented multi-agent
-behavior, including:
+Publication revalidates the base, applies the authoritative candidate in a
+disposable checkout, creates a commit and branch, and opens a draft pull
+request. Status comments transition from accepted to working to one terminal
+state. Terminal reconciliation is idempotent.
 
-- Admission context persistence, digest validation, evidence revalidation, and
-  clarification routing;
-- Admission stopping before Solver mutation;
-- reuse of Admission context by Solver and Reviewer;
-- plan-before-mutation enforcement and versioned plan revisions;
-- structured repository edits and path/symlink protections;
-- multiple Solver/Reviewer repair cycles;
-- Git-derived candidate identity and stable no-progress fingerprints;
-- required and optional verification behavior;
-- complete Reviewer acceptance-criterion coverage;
-- provider retry, schema-repair, deadline, circuit, and usage accounting;
-- research budgets, caching, domain restrictions, normalization, and
-  provenance;
-- terminal outcome safety checks in the solve workflow;
-- GitHub authorization, deduplication, status transitions, exact-SHA handling,
-  draft pull-request publication, and finalization; and
-- composite Action and workflow security invariants.
+## Current configuration
 
-The repository's focused offline check for this runtime is `make v2-check`. A
-strict live local run is exposed as `make first-run`; `make v2-first-run` is a
-compatibility alias. Offline publication behavior can be exercised with
-`make v2-github-smoke`.
+V2 is selected when `SAGE_RUNTIME` is omitted or set to `v2`. Live execution
+requires `OPENAI_API_KEY`, `GEMINI_API_KEY`, and
+`SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true`.
 
-## Present constraints
+| Setting | Default |
+| --- | ---: |
+| `SAGE_MAX_TURNS` | 30 per Solver session |
+| `SAGE_MODEL_REQUEST_TIMEOUT_SECONDS` | 600 seconds |
+| `SAGE_RUN_DEADLINE_SECONDS` | 4800 seconds |
+| `SAGE_FINALIZATION_RESERVE_SECONDS` | 300 seconds |
+| `SAGE_SOLVER_INPUT_CHARS` | 96000 |
+| `SAGE_REPAIR_INPUT_CHARS` | 48000 |
+| `SAGE_REVIEWER_INPUT_CHARS` | 48000 |
+| `SAGE_MAX_CANDIDATE_DIFF_CHARS` | 96000 |
+| `SAGE_MAX_VERIFICATION_LOG_CHARS` | 24000 |
 
-- V2 is the only supported runtime. `SAGE_RUNTIME` may be omitted or set to
-  `v2`; other values fail configuration.
-- Admission is disabled by default and is enabled with
-  `SAGE_V2_ADMISSION_ENABLED=true`. When disabled, no read-only readiness gate
-  or Admission context is produced.
-- Admission and Solver share one model configuration; they are role-separated
-  sessions, not independently configured model providers.
-- The Reviewer is read-only and has no direct tools.
-- Roles communicate only through controller-validated packets and artifacts.
-- Top-level orchestration is Python control flow; only the per-session role
-  loops are compiled LangGraph graphs.
-- Graph sessions have no checkpoint persistence or resume mechanism.
-- Repository commands and verification execute without network access.
-- Controller-side research supports the configured Tavily adapter or an
-  unavailable no-op provider.
-- A candidate larger than the configured diff cap is rejected rather than
-  partially reviewed.
-- Sage creates draft pull requests only and never merges them.
+LangSmith tracing is optional and configured at the controller boundary.
