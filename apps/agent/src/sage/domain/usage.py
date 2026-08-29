@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ModelRole(StrEnum):
     SOLVER = "solver"
     REVIEWER = "reviewer"
+    MEMORY_SUMMARIZER = "memory_summarizer"
 
 
 class AttemptKind(StrEnum):

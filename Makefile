@@ -23,7 +23,7 @@ DEBUG_FLAG :=
 .PHONY: help env setup bootstrap first-run v2-first-run v2-github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
-	run-status run-test
+	run-status run-test memory-doctor memory-migrate memory-test memory-postgres-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -51,6 +51,10 @@ help: ## Show the available commands and variables.
 		'  make actions-check     Validate action/workflow syntax and policy.' \
 		'  make v2-test           Run focused offline V2 tests.' \
 		'  make v2-check          Run V2, Actions, and compile checks.' \
+		'  make memory-test       Run the offline SMRT memory suite.' \
+		'  make memory-doctor     Check memory dependencies and optional database.' \
+		'  make memory-migrate    Apply memory migrations using the direct DSN.' \
+		'  make memory-postgres-test  Run opt-in tests against a dedicated test DSN.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
 		'  make v2-graph         Print/check the sequential V2 graph.' \
@@ -330,6 +334,33 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 test: ## Run deterministic unit tests (no API call required).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml"
+
+memory-test: ## Run deterministic memory tests without network or paid model calls.
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" "$(AGENT_PROJECT)/tests/memory"
+
+memory-doctor: ## Check memory capabilities without printing secrets or calling a model.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
+	uv run --project "$(AGENT_PROJECT)" sage memory doctor
+
+memory-migrate: ## Apply canonical-store migrations with the direct migration DSN.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
+	uv run --project "$(AGENT_PROJECT)" sage memory migrate
+
+memory-postgres-test: ## Run opt-in memory integration tests on a dedicated database.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
+	if [[ -z "$${SAGE_MEMORY_TEST_DATABASE_URL:-}" ]]; then \
+		echo "ERROR: SAGE_MEMORY_TEST_DATABASE_URL must name a disposable test database." >&2; exit 1; \
+	fi; \
+	LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -m memory_postgres \
+		"$(AGENT_PROJECT)/tests/memory"
 
 github-test: ## Run deterministic GitHub integration tests (no live API/model call).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \

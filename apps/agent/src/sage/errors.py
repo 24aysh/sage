@@ -49,6 +49,26 @@ class ArtifactError(SageError):
     """Raised when run artifacts cannot be persisted."""
 
 
+class MemoryError(SageError):
+    """Base class for expected SMRT memory failures."""
+
+
+class MemoryConfigurationError(MemoryError):
+    """Raised when memory-only configuration is unusable."""
+
+
+class MemoryStorageError(MemoryError):
+    """Raised when canonical memory storage is unavailable."""
+
+
+class MemoryIntegrityError(MemoryError):
+    """Raised when content-addressed memory fails an integrity check."""
+
+
+class MemoryPolicyError(MemoryError):
+    """Raised when a healthy session rejects repository access."""
+
+
 class GitHubIntegrationError(SageError):
     """Base class for expected GitHub integration failures."""
 
