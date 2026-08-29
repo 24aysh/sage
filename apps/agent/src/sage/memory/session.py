@@ -41,7 +41,7 @@ from sage.repository import RepositoryTools
 from sage.repository.paths import resolve_workspace_path, workspace_relative_path
 
 logger = logging.getLogger(__name__)
-_SEARCH_PATH = re.compile(r"^([^:\n]+):\d+:", re.MULTILINE)
+_SEARCH_MATCH = re.compile(r"^([^:\n]+):(\d+):", re.MULTILINE)
 
 
 @dataclass(slots=True)
@@ -240,8 +240,10 @@ class ActiveMemorySession(DisabledMemorySession):
     ) -> str:
         if self._mode is MemoryMode.HEALTHY:
             try:
-                self._context.require_dependency_provenance(request.reason)
                 normalized = workspace_relative_path(self._workspace, request.path)
+                self._context.require_dependency_provenance(
+                    normalized, request.reason
+                )
                 if normalized not in self._current_files:
                     raise MemoryPolicyError(
                         "The dependency is not a file in the accepted target commit."
@@ -269,14 +271,33 @@ class ActiveMemorySession(DisabledMemorySession):
             except Exception as error:
                 self._transition("context", "dependency", error)
         result = self._repository.read_file(path=request.path)
-        self._context.record_source_read(request.path, start_line=1, end_line=None)
+        self._record_source_read(
+            request.path,
+            start_line=1,
+            end_line=None,
+            access="materialize_dependency",
+        )
         return result
 
     async def list_tree(self, *, path: str, max_depth: int) -> str:
         normalized = workspace_relative_path(self._workspace, path)
         if self._mode is MemoryMode.HEALTHY:
             self._context.authorize_tree(normalized, max_depth=max_depth)
-        return self._repository.list_tree(path=path, max_depth=max_depth)
+        result = self._repository.list_tree(path=path, max_depth=max_depth)
+        if self._mode is MemoryMode.HEALTHY:
+            self._context.record_tree_listing(
+                normalized,
+                max_depth=max_depth,
+                repository_files=tuple(self._current_files),
+                truncated="[tree truncated" in result,
+            )
+            logger.debug(
+                "memory tree accessed path=%r max_depth=%d truncated=%s",
+                normalized,
+                max_depth,
+                "[tree truncated" in result,
+            )
+        return result
 
     async def search_text(
         self, *, query: str, path: str, max_results: int
@@ -287,9 +308,16 @@ class ActiveMemorySession(DisabledMemorySession):
             query=query, path=path, max_results=max_results
         )
         if self._mode is MemoryMode.HEALTHY:
-            for matched_path in _SEARCH_PATH.findall(result):
+            matches = _SEARCH_MATCH.findall(result)
+            for matched_path, _line in matches:
                 normalized = workspace_relative_path(self._workspace, matched_path)
                 self._context.authorize_parent(normalized)
+            logger.debug(
+                "memory text search accessed scope=%r query_chars=%d matches=%r",
+                workspace_relative_path(self._workspace, path),
+                len(query),
+                [(matched_path, int(line)) for matched_path, line in matches],
+            )
         return result
 
     async def read_file(
@@ -308,8 +336,11 @@ class ActiveMemorySession(DisabledMemorySession):
         result = self._repository.read_file(
             path=path, start_line=start_line, end_line=end_line
         )
-        self._context.record_source_read(
-            path, start_line=start_line, end_line=end_line
+        self._record_source_read(
+            path,
+            start_line=start_line,
+            end_line=end_line,
+            access="read_file",
         )
         return result
 
@@ -469,8 +500,38 @@ class ActiveMemorySession(DisabledMemorySession):
             complete_source_digest=text_digest(source),
         )
         self._stats.materialization_count += 1
+        logger.debug(
+            "memory context materialized path=%r added_by=%s evidence_tier=%s "
+            "materialization=%s lines=%s chars=%d",
+            entry.path,
+            entry.added_by,
+            entry.evidence_tier,
+            entry.materialization,
+            _format_ranges(entry.included_line_ranges),
+            len(entry.source or ""),
+        )
         await self._learn_file(
             candidate.path, source=base_source, source_oid=blob_oid
+        )
+
+    def _record_source_read(
+        self,
+        path: str,
+        *,
+        start_line: int,
+        end_line: int | None,
+        access: str,
+    ) -> None:
+        normalized, actual_start, actual_end = self._context.record_source_read(
+            path, start_line=start_line, end_line=end_line
+        )
+        logger.debug(
+            "memory source read access=%s mode=%s path=%r lines=%d-%d",
+            access,
+            self._mode.value,
+            normalized,
+            actual_start,
+            actual_end,
         )
 
     async def _learn_file(
@@ -532,14 +593,12 @@ class ActiveMemorySession(DisabledMemorySession):
             target_commit=self._target_commit,
         )
         logger.warning(
-            "memory session entered fallback",
-            extra={
-                "component": component,
-                "stage": stage,
-                "error_code": type(error).__name__[:100],
-            },
+            "memory access failed component=%s stage=%s error_code=%s "
+            "mode=fallback",
+            component,
+            stage,
+            type(error).__name__[:100],
         )
-        logger.debug("memory session failure detail", exc_info=True)
         self._prior_documents = []
         self._index.close()
 
@@ -592,6 +651,10 @@ def _merge_candidates(
         if current is None or item.score > current.score:
             merged[item.path] = item
     return list(merged.values())
+
+
+def _format_ranges(ranges: tuple[tuple[int, int], ...]) -> str:
+    return ",".join(f"{start}-{end}" for start, end in ranges) or "none"
 
 
 def _mark_stale_hints(

@@ -1,6 +1,11 @@
 import asyncio
+import logging
 
-from sage.memory.engine import FailedMemoryEngine
+from sage.config import Settings
+from sage.memory.engine import (
+    FailedMemoryEngine,
+    build_memory_engine,
+)
 from sage.memory.models import MemoryMode, MemoryRunRequest, RepositoryIdentity
 
 
@@ -14,6 +19,24 @@ class _Repository:
 
 def test_composition_failure_becomes_solve_local_fallback(tmp_path) -> None:
     asyncio.run(_exercise_composition_failure(tmp_path))
+
+
+def test_composition_failure_log_is_explicit_and_secret_safe(caplog) -> None:
+    caplog.set_level(logging.DEBUG, logger="sage.memory.engine")
+    settings = Settings(
+        openai_api_key="openai-test",
+        memory_enabled=True,
+        memory_database_url="postgresql://memory-secret@example.invalid/db",
+    )
+
+    engine = build_memory_engine(settings, _Repository())
+
+    assert isinstance(engine, FailedMemoryEngine)
+    assert (
+        "memory unavailable stage=build error_code=ValueError mode=fallback"
+        in caplog.text
+    )
+    assert "memory-secret" not in caplog.text
 
 
 async def _exercise_composition_failure(tmp_path) -> None:

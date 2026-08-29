@@ -22,6 +22,32 @@ def test_exact_evidence_outranks_lexical_evidence() -> None:
     assert candidates[0].evidence_tier == "exact_path"
 
 
+def test_exact_evidence_matches_specific_directory_identifier() -> None:
+    documents = [
+        SearchDocument(
+            path="project/src/factorial/main.py",
+            node_type=NodeType.FILE,
+        ),
+        SearchDocument(
+            path="project/src/hello-world/main.py",
+            node_type=NodeType.FILE,
+        ),
+        SearchDocument(
+            path="project/tests/test_calculator.py",
+            node_type=NodeType.FILE,
+        ),
+    ]
+
+    candidates = exact_candidates(
+        "The factorial file is missing in src and needs tests.", documents
+    )
+
+    assert [item.path for item in candidates] == [
+        "project/src/factorial/main.py"
+    ]
+    assert candidates[0].evidence_tier == "exact_path_identifier"
+
+
 def test_sqlite_fts_escapes_query_syntax_and_excludes_negative_scope() -> None:
     index = SQLiteSparseIndex()
     index.rebuild(

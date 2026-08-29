@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.tools import BaseTool, tool
 
 from sage.artifacts.v2 import V2ArtifactStore
@@ -11,6 +13,8 @@ from sage.memory.models import (
     DirectMaterializationRequest,
     MemoryMode,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def build_repository_read_tools(context: RuntimeContext) -> list[BaseTool]:
@@ -75,6 +79,18 @@ def build_repository_read_tools(context: RuntimeContext) -> list[BaseTool]:
             )
             if context.memory_session.mode is MemoryMode.FALLBACK:
                 return "Memory entered fallback; use ordinary repository exploration."
+            logger.debug(
+                "memory expansion supplied to agent files=%d coverage=%r",
+                len(forest.entries),
+                [
+                    {
+                        "path": entry.path,
+                        "lines": entry.included_line_ranges,
+                        "chars": len(entry.source or ""),
+                    }
+                    for entry in forest.entries
+                ],
+            )
             expansion_sequence += 1
             V2ArtifactStore(
                 context.prepared_run.run_dir

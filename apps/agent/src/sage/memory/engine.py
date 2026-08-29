@@ -122,12 +122,12 @@ class PostgresMemoryEngine:
             index = SQLiteSparseIndex()
             index.rebuild(prior_documents)
             logger.info(
-                "memory session started",
-                extra={
-                    "repository_identity": canonical_digest(request.identity)[:12],
-                    "input_snapshot_id": str(latest.snapshot_id) if latest else None,
-                    "target_commit": request.target_commit,
-                },
+                "memory PostgreSQL accessible repository_identity=%s "
+                "target_commit=%s input_snapshot_id=%s prior_documents=%d",
+                canonical_digest(request.identity)[:12],
+                request.target_commit[:12],
+                str(latest.snapshot_id) if latest else "none",
+                len(prior_documents),
             )
             return ActiveMemorySession(
                 repository=self._repository,
@@ -160,11 +160,12 @@ class PostgresMemoryEngine:
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            error_code = type(error).__name__[:100]
             logger.warning(
-                "memory startup entered fallback",
-                extra={"stage": "begin", "error_code": type(error).__name__[:100]},
+                "memory PostgreSQL unavailable stage=begin error_code=%s "
+                "mode=fallback",
+                error_code,
             )
-            logger.debug("memory startup failure detail", exc_info=True)
             return FallbackMemorySession(
                 self._repository,
                 identity=request.identity,
@@ -172,7 +173,7 @@ class PostgresMemoryEngine:
                 failure=MemoryFailure(
                     component="engine",
                     stage="begin",
-                    error_code=type(error).__name__[:100],
+                    error_code=error_code,
                     safe_message="SMRT could not start safely for this solve.",
                     snapshot_id=snapshot_id,
                     target_commit=request.target_commit,
@@ -184,9 +185,11 @@ class PostgresMemoryEngine:
             return
         try:
             await self._connections.close()
-        except Exception:
-            logger.warning("memory connection pool did not close cleanly")
-            logger.debug("memory pool close failure detail", exc_info=True)
+        except Exception as error:
+            logger.warning(
+                "memory connection pool close failed error_code=%s",
+                type(error).__name__[:100],
+            )
 
 
 def build_memory_engine(
@@ -199,9 +202,9 @@ def build_memory_engine(
     try:
         return PostgresMemoryEngine(settings=settings, repository=repository)
     except Exception as error:
+        error_code = type(error).__name__[:100]
         logger.warning(
-            "memory composition entered fallback",
-            extra={"stage": "build", "error_code": type(error).__name__[:100]},
+            "memory unavailable stage=build error_code=%s mode=fallback",
+            error_code,
         )
-        logger.debug("memory composition failure detail", exc_info=True)
         return FailedMemoryEngine(repository, error)

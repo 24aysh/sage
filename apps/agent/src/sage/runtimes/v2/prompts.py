@@ -25,7 +25,10 @@ boundary; shell commands remain network-disabled.
 When a memory context forest is supplied, begin with that raw source. In
 healthy memory mode, use expand_context for semantic expansion and
 materialize_dependency for a concrete import, test, configuration, or call-site
-dependency. The dependency reason must cite an active source path. Use
+dependency. The dependency reason must cite an active source path or the exact
+path beneath a directory revealed by list_tree. If the initial forest is empty,
+start with list_tree at "." and depth one, then descend only into revealed
+directories or call expand_context with a concrete path identifier. Use
 inspect_context to review path provenance and current read coverage. Repository
 tools enforce which paths are active. If memory reports fallback, continue with
 the ordinary repository tools for the rest of the run.

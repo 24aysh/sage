@@ -9,6 +9,7 @@ from sage.errors import MemoryPolicyError
 from sage.memory.canonical import text_digest
 from sage.memory.models import ContextEntry, MutationAuthorization, SourceReadEvent
 from sage.repository.paths import resolve_workspace_path, workspace_relative_path
+from sage.repository.selection import IGNORED_NAMES
 
 
 class ActiveContext:
@@ -19,6 +20,7 @@ class ActiveContext:
         self._entries: dict[str, ContextEntry] = {}
         self._coverage: dict[str, list[tuple[int, int, str]]] = {}
         self._authorized_directories: set[str] = {"."}
+        self._listed_directories: set[str] = set()
 
     @property
     def entries(self) -> tuple[ContextEntry, ...]:
@@ -50,7 +52,7 @@ class ActiveContext:
 
     def record_source_read(
         self, path: str, *, start_line: int, end_line: int | None
-    ) -> None:
+    ) -> tuple[str, int, int]:
         normalized = workspace_relative_path(self._workspace, path)
         source = _read_workspace_text(
             resolve_workspace_path(self._workspace, normalized)
@@ -61,6 +63,7 @@ class ActiveContext:
             (start_line, actual_end, text_digest(source))
         )
         self.authorize_parent(normalized)
+        return normalized, start_line, actual_end
 
     def record_event(self, event: SourceReadEvent) -> None:
         self._coverage.setdefault(event.path, []).append(
@@ -85,20 +88,31 @@ class ActiveContext:
 
     def authorize_search(self, path: str) -> str:
         normalized = workspace_relative_path(self._workspace, path)
-        active = normalized in self._entries or any(
-            entry.startswith(f"{normalized}/") for entry in self._entries
+        active = (
+            normalized in self._authorized_directories
+            or normalized in self._entries
+            or any(entry.startswith(f"{normalized}/") for entry in self._entries)
         )
         if normalized == "." or not active:
             raise MemoryPolicyError(
-                "Healthy memory limits text search to an active file or directory."
+                "Healthy memory limits text search to an active or listed directory."
             )
         return normalized
 
-    def require_dependency_provenance(self, reason: str) -> None:
-        if not any(path in reason for path in self._entries):
-            raise MemoryPolicyError(
-                "Dependency materialization reason must reference an active source path."
-            )
+    def require_dependency_provenance(self, path: str, reason: str) -> None:
+        if any(active_path in reason for active_path in self._entries):
+            return
+        normalized = workspace_relative_path(self._workspace, path)
+        parent = str(PurePosixPath(normalized).parent) or "."
+        listed_path_named = normalized in reason or (
+            parent != "." and parent in reason
+        )
+        if parent in self._listed_directories and listed_path_named:
+            return
+        raise MemoryPolicyError(
+            "Dependency materialization reason must reference an active source "
+            "path or a concrete path beneath a listed directory."
+        )
 
     def describe(self) -> str:
         payload = [
@@ -136,6 +150,47 @@ class ActiveContext:
             )
         self._authorized_directories.add(normalized)
         return normalized
+
+    def record_tree_listing(
+        self,
+        path: str,
+        *,
+        max_depth: int,
+        repository_files: tuple[str, ...],
+        truncated: bool = False,
+    ) -> None:
+        """Authorize only directory branches exposed by a bounded tree listing."""
+
+        normalized = workspace_relative_path(self._workspace, path)
+        self._listed_directories.add(normalized)
+        if truncated:
+            return
+        root = PurePosixPath(normalized)
+        for repository_file in repository_files:
+            candidate = PurePosixPath(
+                workspace_relative_path(self._workspace, repository_file)
+            )
+            if any(part in IGNORED_NAMES for part in candidate.parts):
+                continue
+            try:
+                relative = (
+                    candidate
+                    if normalized == "."
+                    else candidate.relative_to(root)
+                )
+            except ValueError:
+                continue
+            directory_parts = relative.parent.parts
+            if directory_parts == (".",):
+                continue
+            visible_depth = min(len(directory_parts), max_depth + 1)
+            for part_count in range(1, visible_depth + 1):
+                discovered = PurePosixPath(*directory_parts[:part_count])
+                if normalized != ".":
+                    discovered = root / discovered
+                discovered_path = str(discovered)
+                self._authorized_directories.add(discovered_path)
+                self._listed_directories.add(discovered_path)
 
     def authorize_mutation(self, request: MutationAuthorization) -> None:
         path = workspace_relative_path(self._workspace, request.path)

@@ -102,6 +102,10 @@ class V2GraphRuntime:
 
         async def workflow(_: dict[str, object]) -> AgentFinalOutput:
             if not self._settings.memory_enabled:
+                logger.info(
+                    "memory disabled run=%s",
+                    context.prepared_run.run_id,
+                )
                 return await self._solve(
                     issue_text=issue_text,
                     context=context,
@@ -120,8 +124,33 @@ class V2GraphRuntime:
                     workspace_path=context.prepared_run.workspace_dir,
                 )
             )
+            logger.info(
+                "memory startup completed run=%s mode=%s",
+                context.prepared_run.run_id,
+                session.mode.value,
+            )
             effective_context = replace(context, memory_session=session)
             forest = await session.initial_context(issue_text)
+            logger.info(
+                "memory context supplied to solver run=%s mode=%s files=%d "
+                "candidates=%d paths=%r",
+                context.prepared_run.run_id,
+                session.mode.value,
+                len(forest.entries),
+                forest.candidate_count,
+                [entry.path for entry in forest.entries],
+            )
+            logger.debug(
+                "memory initial source supplied to solver coverage=%r",
+                [
+                    {
+                        "path": entry.path,
+                        "lines": entry.included_line_ranges,
+                        "chars": len(entry.source or ""),
+                    }
+                    for entry in forest.entries
+                ],
+            )
             artifacts = V2ArtifactStore(context.prepared_run.run_dir)
             artifacts.write_context_forest(forest)
             try:
@@ -164,6 +193,27 @@ class V2GraphRuntime:
                         ),
                     )
                 updated = final.model_copy(update={"memory": report})
+                logger.info(
+                    "memory finalized run=%s mode=%s input_snapshot_id=%s "
+                    "output_snapshot_id=%s snapshot_published=%s files=%d "
+                    "reused_cards=%d created_cards=%d",
+                    context.prepared_run.run_id,
+                    report.mode.value,
+                    (
+                        str(report.input_snapshot_id)
+                        if report.input_snapshot_id
+                        else "none"
+                    ),
+                    (
+                        str(report.output_snapshot_id)
+                        if report.output_snapshot_id
+                        else "none"
+                    ),
+                    report.snapshot_published,
+                    report.final_file_count,
+                    report.reused_cards,
+                    report.created_cards,
+                )
                 artifacts.write_memory_summary(report)
                 artifacts.write_terminal(updated)
                 return updated

@@ -229,6 +229,7 @@ def test_v2_solver_and_reviewer_complete_two_feedback_repairs(
     assert not any(path.name.startswith("admission") for path in prepared.run_dir.iterdir())
     assert "Solver: activity" in caplog.text
     assert "Reviewer: activity" in caplog.text
+    assert "memory disabled run=v2-test" in caplog.text
     assert "Admission:" not in caplog.text
 
 

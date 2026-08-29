@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from sage.errors import MemoryPolicyError
 from sage.memory.models import (
     ContextExpansionRequest,
     DirectMaterializationRequest,
+    FileSemanticPayload,
     MutationAuthorization,
     RepositoryIdentity,
 )
@@ -35,22 +37,25 @@ class _Repository:
 class _Git:
     def __init__(self, sources: dict[str, str]) -> None:
         self.sources = sources
+        self.oids = {
+            path: f"{index:040x}"
+            for index, path in enumerate(sources, start=1)
+        }
 
     def list_files(self, commit):
-        return [
-            (path, character * 40)
-            for path, character in zip(self.sources, "bcd", strict=True)
-        ]
+        return list(self.oids.items())
 
     def read_blob(self, commit, path):
-        character = {name: value for name, value in zip(self.sources, "bcd", strict=True)}[
-            path
-        ]
-        return character * 40, self.sources[path]
+        return self.oids[path], self.sources[path]
 
 
 class _Store:
-    async def find_semantic_by_source(self, repository_id, *, source_oid):
+    async def find_semantic_by_source(
+        self, repository_id, *, source_oid, **semantic_identity
+    ):
+        return None
+
+    async def insert_semantic_object(self, repository_id, semantic):
         return None
 
 
@@ -58,9 +63,28 @@ class _Summarizer:
     provider_name = "fake"
     model_name = "fake"
 
+    async def summarize_file(self, *, path, source, structure):
+        return FileSemanticPayload(summary=f"Semantic card for {path}")
 
-def test_healthy_mutation_policy_requires_current_read_coverage(tmp_path) -> None:
+
+def test_healthy_mutation_policy_requires_current_read_coverage(
+    tmp_path, caplog
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="sage.memory.session")
     asyncio.run(_exercise_mutation_policy(tmp_path))
+
+    assert "memory context materialized path='notes.txt'" in caplog.text
+    assert (
+        "memory source read access=materialize_dependency mode=healthy "
+        "path='dependency.md' lines=1-1"
+    ) in caplog.text
+    assert "memory tree accessed path='.' max_depth=1" in caplog.text
+    assert "memory text search accessed scope='project/tests'" in caplog.text
+    assert (
+        "memory source read access=read_file mode=healthy path='notes.txt' "
+        "lines=1-10"
+    ) in caplog.text
+    assert "def factorial(): ..." not in caplog.text
 
 
 async def _exercise_mutation_policy(tmp_path) -> None:
@@ -68,10 +92,20 @@ async def _exercise_mutation_policy(tmp_path) -> None:
     (tmp_path / "notes.txt").write_text(source)
     (tmp_path / "dependency.md").write_text("dependency\n")
     (tmp_path / "extra.md").write_text("extra\n")
+    (tmp_path / "project/src/factorial").mkdir(parents=True)
+    (tmp_path / "project/tests").mkdir(parents=True)
+    (tmp_path / "project/src/factorial/main.py").write_text(
+        "def factorial(): ...\n"
+    )
+    (tmp_path / "project/tests/test_existing.py").write_text(
+        "def test_existing(): ...\n"
+    )
     sources = {
         "notes.txt": source,
         "dependency.md": "dependency\n",
         "extra.md": "extra\n",
+        "project/src/factorial/main.py": "def factorial(): ...\n",
+        "project/tests/test_existing.py": "def test_existing(): ...\n",
     }
     index = SQLiteSparseIndex()
     session = ActiveMemorySession(
@@ -119,7 +153,7 @@ async def _exercise_mutation_policy(tmp_path) -> None:
             )
             == "dependency"
         )
-        with pytest.raises(MemoryPolicyError, match="active file or directory"):
+        with pytest.raises(MemoryPolicyError, match="active or listed directory"):
             await session.search_text(query="line", path=".", max_results=10)
         assert await session.search_text(
             query="line", path="notes.txt", max_results=10
@@ -157,6 +191,29 @@ async def _exercise_mutation_policy(tmp_path) -> None:
             )
         with pytest.raises(MemoryPolicyError, match="depth one"):
             await session.list_tree(path=".", max_depth=2)
+        assert await session.list_tree(path=".", max_depth=1) == ".:1"
+        with pytest.raises(MemoryPolicyError, match="active context"):
+            await session.list_tree(
+                path="project/src/factorial", max_depth=1
+            )
+        assert await session.search_text(
+            query="test", path="project/tests", max_results=10
+        ) == ""
+        assert await session.list_tree(
+            path="project/src", max_depth=1
+        ) == "project/src:1"
+        assert (
+            await session.materialize_dependency(
+                DirectMaterializationRequest(
+                    path="project/src/factorial/main.py",
+                    reason=(
+                        "Inspect project/src/factorial/main.py found beneath "
+                        "the listed project/src/factorial directory"
+                    ),
+                )
+            )
+            == "def factorial(): ..."
+        )
         session.record_mutation("notes.txt")
         with pytest.raises(MemoryPolicyError, match="current file source"):
             session.authorize_mutation(

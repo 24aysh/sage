@@ -65,8 +65,8 @@ class MemoryIntegrityError(MemoryError):
     """Raised when content-addressed memory fails an integrity check."""
 
 
-class MemoryPolicyError(MemoryError):
-    """Raised when a healthy session rejects repository access."""
+class MemoryPolicyError(RepositoryError, MemoryError):
+    """Raised when healthy memory rejects an expected repository request."""
 
 
 class GitHubIntegrationError(SageError):
