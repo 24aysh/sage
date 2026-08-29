@@ -51,16 +51,19 @@ docker compose -p sage-memory-test \
   -f apps/agent/tests/memory/docker-compose.yml ps
 ```
 
-### C. Create a protected local environment file
+### C. Create base and memory environment files
 
-The repository ignores `.env.*` except `.env.example`. Create a private copy:
+Keep normal model/runtime configuration in `.env` and memory/PostgreSQL
+configuration in a separate overlay:
 
 ```bash
-cp .env.example .env.memory.local
+make env
+cp .env.memory.local.example .env.memory.local
+chmod 600 .env
 chmod 600 .env.memory.local
 ```
 
-Open `.env.memory.local` in an editor and set at least:
+Open `.env` and configure the normal Sage settings, including:
 
 ```dotenv
 OPENAI_API_KEY=<your Solver API key>
@@ -72,15 +75,20 @@ SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true
 SAGE_V2_SOLVER_MODEL=gpt-5.4-mini
 SAGE_V2_REVIEWER_MODEL=gemini-3.5-flash
 
+SAGE_RESEARCH_ENABLED=false
+LANGSMITH_TRACING=false
+```
+
+Then open `.env.memory.local`. It already contains the disposable local Docker
+DSNs and the remaining memory defaults:
+
+```dotenv
 SAGE_MEMORY_ENABLED=true
 SAGE_MEMORY_DATABASE_URL=postgresql://sage_test:sage_test@127.0.0.1:55432/sage_memory_test
 SAGE_MEMORY_MIGRATION_DATABASE_URL=postgresql://sage_test:sage_test@127.0.0.1:55432/sage_memory_test
 SAGE_MEMORY_REPOSITORY_KEY=local-demo-repository-v1
 SAGE_MEMORY_SUMMARIZER_PROVIDER=google
 SAGE_MEMORY_SUMMARIZER_MODEL=gemini-3.5-flash
-
-SAGE_RESEARCH_ENABLED=false
-LANGSMITH_TRACING=false
 ```
 
 The PostgreSQL credentials above are only for the disposable local Docker
@@ -91,10 +99,12 @@ warm runs. Do not use the same key for unrelated repositories.
 Confirm the file is ignored:
 
 ```bash
+git check-ignore -v .env
 git check-ignore -v .env.memory.local
 ```
 
-Pass: Git prints the `.env.*` ignore rule.
+Pass: Git reports an ignore rule for both private files. The tracked
+`.env.memory.local.example` must not be ignored.
 
 ### D. Migrate and diagnose memory
 
@@ -143,8 +153,11 @@ part of the candidate checkout.
 ### F. Run the Issue through the Makefile
 
 ```bash
+set -a
+source .env.memory.local
+set +a
 make solve \
-  ENV_FILE=.env.memory.local \
+  ENV_FILE=.env \
   REPO=/absolute/path/to/target-git-repository \
   ISSUE=/tmp/sage-local-issue.md \
   BASE_REF=HEAD
@@ -158,14 +171,47 @@ as a warning by Make rather than a Make failure.
 For detailed local logs:
 
 ```bash
+set -a
+source .env.memory.local
+set +a
 make solve-debug \
-  ENV_FILE=.env.memory.local \
+  ENV_FILE=.env \
   REPO=/absolute/path/to/target-git-repository \
   ISSUE=/tmp/sage-local-issue.md \
   BASE_REF=HEAD
 ```
 
 Do not share debug logs until they have been reviewed for repository content.
+
+Memory lifecycle is visible at `INFO` level. An enabled healthy run reports
+that PostgreSQL is accessible, the input snapshot (or `none` on a cold start),
+the number of prior documents loaded, the active mode, the paths supplied to
+the Solver, and the snapshot publication result. Disabled and fallback modes
+are logged explicitly. For example:
+
+```text
+memory PostgreSQL accessible ... input_snapshot_id=<uuid> prior_documents=9
+memory startup completed ... mode=healthy
+memory context supplied to solver ... files=5 ... paths=[...]
+memory finalized ... snapshot_published=True ... reused_cards=7 created_cards=3
+```
+
+`make solve-debug` additionally reports bounded access details:
+
+```text
+memory initial source supplied to solver coverage=[{'path': 'src/example.py', 'lines': ((1, 80),), 'chars': 2400}]
+memory context materialized path='src/example.py' ... lines=1-80 chars=2400
+memory expansion supplied to agent files=1 coverage=[...]
+memory source read access=read_file mode=healthy path='src/example.py' lines=1-40
+memory tree accessed path='src' max_depth=1 truncated=False
+memory text search accessed scope='tests' query_chars=12 matches=[('tests/test_example.py', 8)]
+```
+
+These messages identify repository paths and line ranges supplied through the
+context or returned by repository tools. They deliberately do not print source
+text, search text, Issue text, semantic payloads, database URLs, credentials,
+or raw exception messages. "Supplied to solver" records the controller/model
+boundary; it cannot prove which tokens the model internally attended to.
 
 ### G. Locate and validate the run
 
@@ -381,16 +427,15 @@ be resolved before continuing.
 
 ## 2. Protect local memory configuration
 
-Create a non-tracked, owner-only file:
+Create a non-tracked, owner-only memory overlay from the tracked template:
 
 ```bash
-umask 077
-touch .env.memory.local
+cp .env.memory.local.example .env.memory.local
 chmod 600 .env.memory.local
 ```
 
-Populate it through an approved secret manager or editor. Do not paste a real
-DSN or token into the terminal. The required names are:
+Edit it through an approved secret manager or editor. Do not paste a real DSN
+or token into the terminal. The important names are:
 
 ```dotenv
 SAGE_MEMORY_ENABLED=true
@@ -401,9 +446,10 @@ SAGE_MEMORY_SUMMARIZER_PROVIDER=google
 SAGE_MEMORY_SUMMARIZER_MODEL=gemini-3.5-flash
 ```
 
-For live solves, the normal V2 provider variables are also required. The
-example values above are labels, not usable secrets. Confirm that the local
-file is ignored before putting any real value in it:
+For live solves, keep the normal V2 provider variables and API keys in `.env`,
+created from `.env.example`. The angle-bracket values above are labels, not
+usable secrets. Confirm that the local overlay is ignored before putting any
+real value in it:
 
 ```bash
 git check-ignore -v .env.memory.local
@@ -412,10 +458,11 @@ git check-ignore -v .env.memory.local
 Pass: Git reports an ignore rule. Fail: if it is not ignored, stop and add an
 appropriate local-only ignore rule without committing the secret file.
 
-Load configuration without printing it:
+Load base configuration followed by the memory overlay without printing either:
 
 ```bash
 set -a
+source .env
 source .env.memory.local
 set +a
 ```
@@ -562,6 +609,7 @@ With protected configuration loaded, run:
 
 ```bash
 LANGSMITH_TRACING=false make solve \
+  ENV_FILE=.env \
   REPO=/absolute/path/to/test-repository \
   ISSUE=/absolute/path/to/test-issue.md \
   BASE_REF=HEAD
@@ -668,10 +716,21 @@ summary.
 During a healthy interactive solve, `inspect_context` exposes the same active
 path/provenance/read-coverage metadata without returning canonical semantic
 cards. `read_file` and `search_text` must reject paths outside that active
-forest. `materialize_dependency` must require a reason naming an active source
-path, while `expand_context` returns only newly admitted files. Once fallback
-occurs, ordinary repository exploration becomes available for the remainder of
-that solve.
+forest or a branch exposed by bounded tree navigation.
+`materialize_dependency` must require a reason naming an active source path or
+a concrete path beneath a directory exposed by bounded tree navigation, while
+`expand_context` returns only newly admitted files. Once fallback occurs,
+ordinary repository exploration becomes available for the remainder of that
+solve.
+
+For a cold repository with no prior snapshot, also verify that an Issue naming
+a specific path component (for example, `factorial`) admits the matching Git
+inventory path even when its filename is generic (for example,
+`project/src/factorial/main.py`). If no initial candidate matches, the Solver
+may list `.` only at depth one. That listing authorizes only the directory
+branches it reveals; Sage may then descend one bounded listing at a time,
+search a revealed directory, and materialize a concrete revealed file. It must
+still reject a skipped directory level and a repository-wide text search.
 
 ## 13. Verify five-snapshot retention
 
