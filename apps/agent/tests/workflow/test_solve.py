@@ -33,6 +33,14 @@ class FakeRepository:
         return ["app.py"]
 
 
+class EmptyRepository:
+    def get_complete_diff(self) -> str:
+        return ""
+
+    def get_changed_files(self) -> list[str]:
+        return []
+
+
 class FakeStore:
     def __init__(self) -> None:
         self.initialized = False
@@ -56,11 +64,19 @@ class FailingRuntime:
         raise AgentRuntimeError("model failed")
 
 
-class InconsistentV2Runtime:
+class EnvironmentBlockedRuntime:
     async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
         return AgentFinalOutput(
-            summary="Human approval is required.",
-            outcome=SolveOutcome.HUMAN_REQUIRED,
+            summary="The reviewer found an environment blocker.",
+            outcome=SolveOutcome.ENVIRONMENT_BLOCKED,
+        )
+
+
+class NoChangeRuntime:
+    async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
+        return AgentFinalOutput(
+            summary="No change is required.",
+            outcome=SolveOutcome.NO_CHANGE,
         )
 
 
@@ -111,14 +127,14 @@ def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch
     assert sandbox.stopped is True
 
 
-def test_solve_issue_rejects_pre_mutation_terminal_with_diff(
+def test_solve_issue_preserves_nonpublishable_candidate_for_diagnostics(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
     settings = settings.model_copy(
         update={
-            "runtime": "v2-prototype",
+            "runtime": "v2",
             "gemini_api_key": "gemini-test",
             "google_model_context_approved": True,
         }
@@ -126,11 +142,59 @@ def test_solve_issue_rejects_pre_mutation_terminal_with_diff(
     monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
 
-    with pytest.raises(WorkspaceError, match="pre-mutation"):
+    result = asyncio.run(
+        solve_issue(
+            request,
+            EnvironmentBlockedRuntime(),
+            settings,
+            sandbox_factory=lambda *_: sandbox,
+            repository_factory=lambda *_: FakeRepository(),
+            artifact_store=FakeStore(),
+        )
+    )
+
+    assert result.outcome is SolveOutcome.ENVIRONMENT_BLOCKED
+    assert result.changed_files == ["app.py"]
+    assert result.diff.startswith("diff --git")
+    assert sandbox.stopped is True
+
+
+def test_solve_issue_rejects_completed_result_without_candidate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request, prepared, settings = _run_values(tmp_path)
+    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    sandbox = FakeSandbox()
+
+    with pytest.raises(WorkspaceError, match="authoritative candidate"):
         asyncio.run(
             solve_issue(
                 request,
-                InconsistentV2Runtime(),
+                SuccessfulRuntime(),
+                settings,
+                sandbox_factory=lambda *_: sandbox,
+                repository_factory=lambda *_: EmptyRepository(),
+                artifact_store=FakeStore(),
+            )
+        )
+
+    assert sandbox.stopped is True
+
+
+def test_solve_issue_rejects_no_change_result_with_candidate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request, prepared, settings = _run_values(tmp_path)
+    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    sandbox = FakeSandbox()
+
+    with pytest.raises(WorkspaceError, match="no-change"):
+        asyncio.run(
+            solve_issue(
+                request,
+                NoChangeRuntime(),
                 settings,
                 sandbox_factory=lambda *_: sandbox,
                 repository_factory=lambda *_: FakeRepository(),

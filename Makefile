@@ -21,7 +21,7 @@ REQUIRE_COMPLETED ?= false
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run v2-first-run v2-github-smoke doctor github-doctor sandbox-build \
-	sandbox-smoke test github-test github-event-check actions-check v1-check \
+	sandbox-smoke test github-test github-event-check actions-check \
 	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
 	run-status run-test
 
@@ -31,9 +31,9 @@ help: ## Show the available commands and variables.
 		'' \
 		'Getting started:' \
 		'  make first-run REPO=... ISSUE=...' \
-		'                        Configure, set up, verify, and solve in one command.' \
+		'                        Configure, verify, and run a live V2 solve.' \
 		'  make v2-first-run REPO=... ISSUE=...' \
-		'                        Run a strict live V2 solve against explicit inputs.' \
+		'                        Compatibility alias for make first-run.' \
 		'  make v2-github-smoke   Test branch/commit/draft-PR publication with no APIs.' \
 		'  make v2-github-smoke REPO=... PATCH=... BASE_REF=...' \
 		'                        Test a saved patch against a local clone and Git remote.' \
@@ -46,11 +46,10 @@ help: ## Show the available commands and variables.
 		'  make sandbox-build    Build the Docker sandbox image.' \
 		'  make sandbox-smoke    Verify tools inside the network-disabled sandbox.' \
 		'  make check            Run unit tests and compile the Python package.' \
-		'  make github-test      Run the offline V1.0 GitHub gate checks.' \
+		'  make github-test      Run the offline GitHub integration checks.' \
 		'  make github-event-check EVENT=...  Classify an event fixture offline.' \
-		'  make actions-check     Validate V1.0 action/workflow syntax and policy.' \
-		'  make v1-check          Run all deterministic V1.0 checks.' \
-		'  make v2-test           Run focused offline V2 prototype tests.' \
+		'  make actions-check     Validate action/workflow syntax and policy.' \
+		'  make v2-test           Run focused offline V2 tests.' \
 		'  make v2-check          Run V2, Actions, and compile checks.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
@@ -70,9 +69,7 @@ help: ## Show the available commands and variables.
 		'  LANGSMITH_TRACING=true         Enable named hosted traces (requires API key).' \
 		'  LANGSMITH_PROJECT=sage-v2       Select the LangSmith project.' \
 		'' \
-		'See specs/06_V0.1_testing.md for the complete V0.1 walkthrough.' \
-		'See specs/10_V1.0_testing.md for current GitHub migration checks.' \
-		'See specs/19_SAGE_V2_ADMISSION_AND_RESEARCH_TESTING.md for current V2 checks.'
+		'See specs/22_V2_DEFAULT_RUNTIME_TESTING.md for the current V2 walkthrough.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -83,7 +80,7 @@ env: ## Create a local configuration file without overwriting an existing one.
 	else \
 		cp .env.example "$(ENV_PATH)"; \
 		echo "Created $(ENV_PATH)"; \
-		echo "Next: add OPENAI_API_KEY, then run 'make bootstrap'."; \
+		echo "Next: add OPENAI_API_KEY and GEMINI_API_KEY, then run 'make bootstrap'."; \
 	fi
 
 setup: ## Install the locked backend environment.
@@ -98,67 +95,14 @@ bootstrap: ## Perform the complete one-time setup in order.
 	@$(MAKE) --no-print-directory sandbox-smoke
 	@$(MAKE) --no-print-directory doctor
 
-first-run: ## Configure, install, build, verify, and solve with one command.
-	@set -euo pipefail; \
-	cd "$(ROOT_DIR)"; \
-	if [[ -z "$(REPO)" ]]; then \
-		echo "ERROR: REPO is required. Use: make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
-		exit 1; \
-	fi; \
-	if [[ -z "$(ISSUE)" ]]; then \
-		echo "ERROR: ISSUE is required. Use: make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
-		exit 1; \
-	fi; \
-	inherited_api_key="$${OPENAI_API_KEY:-}"; \
-	if [[ -f "$(ENV_PATH)" ]]; then \
-		echo "Loading configuration from $(ENV_PATH)"; \
-		set -a; source "$(ENV_PATH)"; set +a; \
-	fi; \
-	if [[ -n "$$inherited_api_key" ]]; then export OPENAI_API_KEY="$$inherited_api_key"; fi; \
-	if [[ -z "$${OPENAI_API_KEY:-}" ]]; then \
-		if [[ ! -t 0 ]]; then \
-			echo "ERROR: OPENAI_API_KEY is not configured and no interactive terminal is available." >&2; \
-			echo "Set it in $(ENV_FILE) or export it before running make." >&2; \
-			exit 1; \
-		fi; \
-		read -r -s -p "OpenAI API key (input hidden; used only for this run): " OPENAI_API_KEY; \
-		echo; \
-		if [[ -z "$$OPENAI_API_KEY" ]]; then \
-			echo "ERROR: OPENAI_API_KEY cannot be empty." >&2; \
-			exit 1; \
-		fi; \
-		export OPENAI_API_KEY; \
-	fi; \
-	: "$${OPENAI_MODEL:=gpt-5.4-mini}"; export OPENAI_MODEL; \
-	: "$${OPENAI_MAX_RETRIES:=2}"; export OPENAI_MAX_RETRIES; \
-	: "$${SAGE_MAX_TURNS:=30}"; export SAGE_MAX_TURNS; \
-	: "$${SAGE_RUNS_DIR:=.sage/runs}"; export SAGE_RUNS_DIR; \
-	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
-	: "$${SAGE_COMMAND_TIMEOUT_SECONDS:=60}"; export SAGE_COMMAND_TIMEOUT_SECONDS; \
-	: "$${SAGE_MAX_TOOL_OUTPUT_CHARS:=12000}"; export SAGE_MAX_TOOL_OUTPUT_CHARS; \
-	echo "Step 1/6: syncing the Python environment"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
-	echo "Step 2/6: building the Docker sandbox"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-build; \
-	echo "Step 3/6: smoke-testing the Docker sandbox"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-smoke; \
-	echo "Step 4/6: checking prerequisites"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null doctor; \
-	echo "Step 5/6: running deterministic checks"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null check; \
-	echo "Step 6/6: solving the issue"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null solve \
-		REPO="$(REPO)" ISSUE="$(ISSUE)" BASE_REF="$(BASE_REF)" \
-		SANDBOX_IMAGE="$(SANDBOX_IMAGE)"
-
-v2-first-run: ## Configure, verify, and run a strict live V2 solve.
+first-run: ## Configure, verify, and run a live V2 solve.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
 	requested_repo="$(REPO)"; \
 	requested_issue="$(ISSUE)"; \
 	if [[ -z "$$requested_repo" || -z "$$requested_issue" ]]; then \
 		echo "ERROR: REPO and ISSUE must be provided together." >&2; \
-		echo "Use: make v2-first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
+		echo "Use: make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
 		exit 1; \
 	fi; \
 	[[ -d "$$requested_repo" ]] || { echo "ERROR: repository path does not exist: $$requested_repo" >&2; exit 1; }; \
@@ -214,7 +158,7 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 				*) echo "ERROR: Google model context use was not approved." >&2; exit 1 ;; \
 			esac ;; \
 	esac; \
-	export SAGE_RUNTIME=v2-prototype; \
+	export SAGE_RUNTIME=v2; \
 	export SAGE_MODEL_PROFILE=constrained-cross-provider; \
 	: "$${LANGSMITH_TRACING:=false}"; export LANGSMITH_TRACING; \
 	: "$${LANGSMITH_PROJECT:=sage-v2}"; export LANGSMITH_PROJECT; \
@@ -243,6 +187,8 @@ v2-first-run: ## Configure, verify, and run a strict live V2 solve.
 	echo; \
 	echo "V2 local workflow succeeded."; \
 	echo "Inspect the candidate and artifacts at: $$run_dir"
+
+v2-first-run: first-run ## Compatibility alias for the default V2 first-run target.
 
 v2-github-smoke: ## Exercise production publication locally without model or network calls.
 	@set -euo pipefail; \
@@ -319,30 +265,28 @@ doctor: ## Check all prerequisites needed for a live solve.
 		0|false|no|off|'') echo "OK: LangSmith tracing is disabled." ;; \
 		*) echo "ERROR: LANGSMITH_TRACING must be true or false." >&2; status=1 ;; \
 	esac; \
-	if [[ "$${SAGE_RUNTIME:-v1}" == "v2-prototype" ]]; then \
-		for key_name in GEMINI_API_KEY; do \
-			if [[ -n "$${!key_name:-}" ]]; then \
-				echo "OK: $$key_name is configured (value hidden)."; \
-			else \
-				echo "ERROR: $$key_name is required for V2." >&2; status=1; \
-			fi; \
-		done; \
-		if [[ "$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true}" == "true" ]]; then \
-			echo "OK: Google model context use is explicitly acknowledged."; \
+	for key_name in GEMINI_API_KEY; do \
+		if [[ -n "$${!key_name:-}" ]]; then \
+			echo "OK: $$key_name is configured (value hidden)."; \
 		else \
-			echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; status=1; \
+			echo "ERROR: $$key_name is required for V2." >&2; status=1; \
 		fi; \
-		if [[ -n "$${SAGE_WEB_SEARCH_PROVIDER:-}" ]]; then \
-			if [[ "$${SAGE_WEB_SEARCH_PROVIDER}" != "tavily" ]]; then \
-				echo "ERROR: SAGE_WEB_SEARCH_PROVIDER must be empty or tavily." >&2; status=1; \
-			elif [[ -n "$${SAGE_WEB_SEARCH_API_KEY:-}" ]]; then \
-				echo "OK: controller-side Tavily research is configured (API key hidden)."; \
-			else \
-				echo "ERROR: SAGE_WEB_SEARCH_API_KEY is required for Tavily research." >&2; status=1; \
-			fi; \
+	done; \
+	if [[ "$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true}" == "true" ]]; then \
+		echo "OK: Google model context use is explicitly acknowledged."; \
+	else \
+		echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; status=1; \
+	fi; \
+	if [[ -n "$${SAGE_WEB_SEARCH_PROVIDER:-}" ]]; then \
+		if [[ "$${SAGE_WEB_SEARCH_PROVIDER}" != "tavily" ]]; then \
+			echo "ERROR: SAGE_WEB_SEARCH_PROVIDER must be empty or tavily." >&2; status=1; \
+		elif [[ -n "$${SAGE_WEB_SEARCH_API_KEY:-}" ]]; then \
+			echo "OK: controller-side Tavily research is configured (API key hidden)."; \
 		else \
-			echo "OK: external research is unconfigured; repository-local V2 remains available."; \
+			echo "ERROR: SAGE_WEB_SEARCH_API_KEY is required for Tavily research." >&2; status=1; \
 		fi; \
+	else \
+		echo "OK: external research is unconfigured; repository-local V2 remains available."; \
 	fi; \
 	if [[ -x "$(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python" ]]; then \
 		python_version="$$($(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python --version 2>&1)"; \
@@ -408,11 +352,6 @@ actions-check: ## Validate composite action/workflow syntax and security invaria
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
 		"$(AGENT_PROJECT)/tests/actions"
 
-v1-check: ## Run complete deterministic backend, GitHub, and Actions checks.
-	@$(MAKE) --no-print-directory check
-	@$(MAKE) --no-print-directory github-test
-	@$(MAKE) --no-print-directory actions-check
-
 v2-test: ## Run focused deterministic V2 tests without live provider calls.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
@@ -429,7 +368,7 @@ v2-test: ## Run focused deterministic V2 tests without live provider calls.
 		"$(AGENT_PROJECT)/tests/workflow/test_solve.py" \
 		"$(AGENT_PROJECT)/tests/workflow/test_github_issue.py"
 
-v2-check: ## Run all offline V2 prototype, Actions, and compile checks.
+v2-check: ## Run all offline V2, Actions, and compile checks.
 	@$(MAKE) --no-print-directory v2-test
 	@$(MAKE) --no-print-directory actions-check
 	@$(MAKE) --no-print-directory compile
@@ -445,12 +384,12 @@ check: ## Run all deterministic backend checks.
 	@$(MAKE) --no-print-directory test
 	@$(MAKE) --no-print-directory compile
 
-graph: ## Print Mermaid generated from the compiled V0.1 LangGraph.
+graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
-		"$(AGENT_PROJECT)/tests/runtimes/test_langgraph_graph.py::test_compiled_graph_renders_expected_mermaid"
+		"$(AGENT_PROJECT)/tests/runtimes/test_tool_loop.py::test_compiled_graph_renders_expected_mermaid"
 
-v2-graph: ## Validate V2 Admission/Solver routing and candidate helpers.
+v2-graph: ## Validate V2 Solver/Reviewer routing and candidate helpers.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py"
@@ -524,11 +463,6 @@ run-status: ## Validate and summarize a completed run directory.
 	for artifact in request.json metadata.json issue.md agent-final.json changed-files.json diff.patch; do \
 		[[ -f "$$run_dir/$$artifact" ]] || { echo "ERROR: missing run artifact: $$run_dir/$$artifact" >&2; exit 1; }; \
 	done; \
-	if rg -q '"v2_admission_enabled": true' "$$run_dir/metadata.json"; then \
-		for artifact in admission-context.json admission-context-summary.json admission-final.json; do \
-			[[ -f "$$run_dir/$$artifact" ]] || { echo "ERROR: missing Admission artifact: $$run_dir/$$artifact" >&2; exit 1; }; \
-		done; \
-	fi; \
 	[[ -d "$$run_dir/repo/.git" ]] || { echo "ERROR: candidate Git checkout is missing: $$run_dir/repo" >&2; exit 1; }; \
 	echo "Run metadata:"; \
 	sed -n '1,160p' "$$run_dir/metadata.json"; \

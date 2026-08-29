@@ -72,7 +72,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     solve_parser = subparsers.add_parser(
         "solve",
-        help="Run the V0 single-agent issue solver.",
+        help="Run the V2 issue solver.",
     )
     solve_parser.add_argument("--repo", required=True, type=Path)
     solve_parser.add_argument("--issue-file", required=True, type=Path)
@@ -158,7 +158,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_local_solve(arguments: argparse.Namespace) -> int:
-    """Run the compatible local V0.1 solve path."""
+    """Run one local V2 solve."""
 
     settings = Settings.from_env()
     request = SolveRequest(
@@ -173,7 +173,7 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
     result = asyncio.run(solve_issue(request, runtime, settings))
     _render_result(
         result,
-        model=(settings.model_profile if settings.runtime == "v2-prototype" else settings.openai_model),
+        model=settings.v2_solver_model,
     )
     return (
         0
@@ -377,7 +377,7 @@ def _check_docker_command(command: list[str], *, failure_message: str) -> None:
 
 
 def _render_result(result: SolveResult, *, model: str) -> None:
-    print("Sage V0")
+    print("Sage V2")
     print()
     print(f"Run: {result.run_id}")
     print(f"Base: {result.base_sha[:12]}")

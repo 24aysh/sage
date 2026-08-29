@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ResearchRole(StrEnum):
-    ADMISSION = "admission"
     SOLVER = "solver"
     REVIEWER = "reviewer"
 

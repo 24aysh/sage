@@ -24,7 +24,6 @@ from sage.integrations.github.context_rendering import render_context_document
 from sage.integrations.github.models import GitHubInvocation
 from sage.integrations.github.status import (
     STATUS_BOT_LOGIN,
-    has_sage_clarification_marker,
     has_sage_status_marker,
 )
 
@@ -175,23 +174,6 @@ def _collect_comments(
             break
 
     selected.sort(key=lambda item: (item.created_at, item.comment_id))
-    clarification_comments = [
-        comment
-        for comment in selected
-        if comment.author_login == STATUS_BOT_LOGIN
-        and has_sage_clarification_marker(comment.body)
-    ]
-    if len(clarification_comments) > 1:
-        latest_id = clarification_comments[-1].comment_id
-        selected = [
-            comment
-            for comment in selected
-            if not (
-                comment.author_login == STATUS_BOT_LOGIN
-                and has_sage_clarification_marker(comment.body)
-                and comment.comment_id != latest_id
-            )
-        ]
     return _CommentCollection(
         comments=tuple(selected),
         truncated=page_limit_reached or comment_limit_reached,
@@ -210,9 +192,7 @@ def _is_eligible_comment(
         return False
     if comment.author_login != STATUS_BOT_LOGIN:
         return True
-    if not has_sage_status_marker(comment.body):
-        return True
-    return has_sage_clarification_marker(comment.body)
+    return not has_sage_status_marker(comment.body)
 
 
 def _validate_current_issue(

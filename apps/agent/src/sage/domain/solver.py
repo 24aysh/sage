@@ -37,11 +37,6 @@ class SolverPlan(BaseModel):
 
     schema_version: Literal["1"] = "1"
     issue_summary: str = Field(min_length=1, max_length=2_000)
-    admission_context_digest: str | None = Field(
-        default=None,
-        pattern=r"^[0-9a-f]{64}$",
-    )
-    admission_evidence_ids: tuple[str, ...] = Field(default=(), max_length=40)
     research_result_ids: tuple[str, ...] = Field(default=(), max_length=20)
     approach: str = Field(min_length=1, max_length=4_000)
     tasks: tuple[SolverPlanTask, ...] = Field(min_length=1, max_length=30)

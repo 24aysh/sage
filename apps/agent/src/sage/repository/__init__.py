@@ -27,7 +27,6 @@ from sage.repository.git import (
     show_diff as render_diff,
 )
 from sage.repository.output import truncate_text
-from sage.repository.patch import apply_patch as apply_repository_patch
 from sage.repository.search import search_text as search_repository_text
 from sage.repository.tree import list_tree as render_tree
 from sage.sandbox.base import CommandResult, Sandbox
@@ -88,16 +87,6 @@ class RepositoryTools:
                 start_line=start_line,
                 end_line=end_line,
                 max_output_chars=self._settings.max_tool_output_chars,
-            )
-
-    def apply_patch(self, *, patch: str) -> str:
-        with _tool_call("apply_patch"):
-            return apply_repository_patch(
-                self._workspace_root,
-                self._sandbox,
-                patch=patch,
-                max_output_chars=self._settings.max_tool_output_chars,
-                timeout_seconds=self._settings.command_timeout_seconds,
             )
 
     def replace_text(

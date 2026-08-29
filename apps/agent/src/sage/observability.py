@@ -10,7 +10,6 @@ from langchain_core.runnables import RunnableConfig
 from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole
 
 _STAGE_ACTIVITIES = {
-    "admission": "Assess autonomous readiness and collect reusable context",
     "solver": "Plan, implement, and verify the Issue through repository tools",
     "solver-repair": "Repair the actual candidate from Reviewer findings",
     "review": "Review the actual candidate against the Issue and saved plan",
@@ -32,7 +31,7 @@ def workflow_trace_config(
         "metadata": {
             "sage_run_id": run_id,
             "sage_graph": graph_name,
-            "sage_runtime": "v2-prototype",
+            "sage_runtime": "v2",
             "sage_model_profile": model_profile,
         },
         "recursion_limit": 80,

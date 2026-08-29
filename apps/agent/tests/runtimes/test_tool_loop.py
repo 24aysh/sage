@@ -8,23 +8,29 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool, tool
+from pydantic import BaseModel
 
-from sage.config import Settings
-from sage.domain.requests import PreparedRun
-from sage.domain.results import AgentFinalOutput
-from sage.domain.runtime import RuntimeContext
 from sage.errors import AgentRuntimeError, RepositoryError
-from sage.runtimes.langgraph.graph import (
+from sage.runtimes.tool_loop import (
     AgentState,
     build_agent_node,
+    build_finalize_node,
     build_graph,
     build_invalid_response_node,
     build_turn_limit_node,
-    finalize,
+    recursion_limit,
     route_after_agent,
 )
-from sage.runtimes.langgraph.prompt import CODING_AGENT_INSTRUCTIONS
-from sage.runtimes.langgraph.tools import build_tools
+
+TEST_INSTRUCTIONS = "Use the provided tools and return a structured result."
+
+
+class LoopResult(BaseModel):
+    summary: str
+
+
+finalize = build_finalize_node(LoopResult)
 
 
 class ScriptedModel(Runnable[Any, AIMessage]):
@@ -66,9 +72,9 @@ class RecordingRepository:
             raise self.read_error
         return "1 | content"
 
-    def apply_patch(self, **kwargs) -> str:
-        self.calls.append("apply_patch")
-        return "Patch applied successfully."
+    def replace_text(self, **kwargs) -> str:
+        self.calls.append("replace_text")
+        return "Text replaced."
 
     def show_diff(self) -> str:
         self.calls.append("show_diff")
@@ -118,7 +124,12 @@ def test_route_after_agent(
 def test_agent_node_prepends_system_prompt_and_uses_ainvoke() -> None:
     response = _final_message("done")
     model = ScriptedModel([response])
-    node = build_agent_node(model=model, max_turns=3)
+    node = build_agent_node(
+        model=model,
+        max_turns=3,
+        instructions=TEST_INSTRUCTIONS,
+        role_name="Test",
+    )
     human = HumanMessage(content="issue")
 
     update = asyncio.run(node({"messages": [human], "model_turns": 0}))
@@ -126,21 +137,21 @@ def test_agent_node_prepends_system_prompt_and_uses_ainvoke() -> None:
     assert model.invoke_called is False
     assert len(model.inputs) == 1
     assert isinstance(model.inputs[0][0], SystemMessage)
-    assert model.inputs[0][0].content == CODING_AGENT_INSTRUCTIONS
+    assert model.inputs[0][0].content == TEST_INSTRUCTIONS
     assert model.inputs[0][1] == human
     assert update["messages"] == [response]
     assert update["model_turns"] == 1
     assert update["pending_output"] == response.additional_kwargs["parsed"]
 
 
-def test_agent_prompt_requires_candidate_hygiene_validation() -> None:
-    assert "git diff --check HEAD --" in CODING_AGENT_INSTRUCTIONS
-    assert "remove transient caches and build outputs" in CODING_AGENT_INSTRUCTIONS
-
-
 def test_agent_node_refuses_an_extra_model_turn() -> None:
     model = ScriptedModel([_final_message("unused")])
-    node = build_agent_node(model=model, max_turns=2)
+    node = build_agent_node(
+        model=model,
+        max_turns=2,
+        instructions=TEST_INSTRUCTIONS,
+        role_name="Test",
+    )
 
     with pytest.raises(AgentRuntimeError, match=r"turn limit \(2\)"):
         asyncio.run(node({"messages": [], "model_turns": 2}))
@@ -158,14 +169,14 @@ def test_finalize_validates_dict_and_model_values() -> None:
             }
         )
     )
-    model_value = AgentFinalOutput(summary="model")
+    model_value = LoopResult(summary="model")
     from_model = asyncio.run(
         finalize(
             {"messages": [], "model_turns": 1, "pending_output": model_value}
         )
     )
 
-    assert from_dict["final_output"] == AgentFinalOutput(summary="dict")
+    assert from_dict["final_output"] == LoopResult(summary="dict")
     assert from_model["final_output"] == model_value
 
 
@@ -227,7 +238,7 @@ def test_graph_finalizes_on_first_model_turn(tmp_path: Path) -> None:
 
     result = asyncio.run(graph.ainvoke(_initial_state()))
 
-    assert result == {"final_output": AgentFinalOutput(summary="done")}
+    assert result == {"final_output": LoopResult(summary="done")}
     assert len(model.inputs) == 1
     assert repository.calls == []
 
@@ -269,7 +280,11 @@ def test_graph_orders_mutation_then_diff(tmp_path: Path) -> None:
     graph, _model, repository = _graph(
         tmp_path,
         [
-            _tool_message("apply_patch", {"patch": "diff --git ..."}, "1"),
+            _tool_message(
+                "replace_text",
+                {"path": "app.py", "old_text": "old", "new_text": "new"},
+                "1",
+            ),
             _tool_message("show_diff", {}, "2"),
             _final_message("changed"),
         ],
@@ -278,7 +293,7 @@ def test_graph_orders_mutation_then_diff(tmp_path: Path) -> None:
     result = asyncio.run(graph.ainvoke(_initial_state()))
 
     assert result["final_output"].summary == "changed"
-    assert repository.calls == ["apply_patch", "show_diff"]
+    assert repository.calls == ["replace_text", "show_diff"]
 
 
 @pytest.mark.parametrize(
@@ -366,25 +381,47 @@ def _graph(
 ):
     model = ScriptedModel(responses)
     repository = repository or RecordingRepository()
-    context = _context(tmp_path, repository)
-    tools = build_tools(context)
-    return build_graph(model=model, tools=tools, max_turns=max_turns), model, repository
-
-
-def _context(tmp_path: Path, repository: RecordingRepository) -> RuntimeContext:
-    return RuntimeContext(
-        prepared_run=PreparedRun(
-            run_id="run-id",
-            source_repo=tmp_path,
-            run_dir=tmp_path,
-            workspace_dir=tmp_path,
-            base_ref="HEAD",
-            base_sha="a" * 40,
+    del tmp_path
+    tools = _tools(repository)
+    return (
+        build_graph(
+            model=model,
+            tools=tools,
+            max_turns=max_turns,
+            instructions=TEST_INSTRUCTIONS,
+            output_schema=LoopResult,
+            graph_name="test_tool_loop",
+            role_name="Test",
         ),
-        sandbox=object(),
-        repository=repository,  # type: ignore[arg-type]
-        settings=Settings(openai_api_key="test"),
+        model,
+        repository,
     )
+
+
+def _tools(repository: RecordingRepository) -> list[BaseTool]:
+    @tool
+    async def read_file(path: str) -> str:
+        """Read one test file."""
+
+        return repository.read_file(path=path)
+
+    @tool
+    async def replace_text(path: str, old_text: str, new_text: str) -> str:
+        """Replace text in one test file."""
+
+        return repository.replace_text(
+            path=path,
+            old_text=old_text,
+            new_text=new_text,
+        )
+
+    @tool
+    async def show_diff() -> str:
+        """Show the test diff."""
+
+        return repository.show_diff()
+
+    return [read_file, replace_text, show_diff]
 
 
 def _initial_state() -> dict[str, object]:
@@ -427,3 +464,11 @@ def _final_message(summary: str) -> AIMessage:
         content="",
         additional_kwargs={"parsed": {"summary": summary}},
     )
+
+
+@pytest.mark.parametrize(("turns", "expected"), [(1, 6), (7, 18), (30, 64)])
+def test_recursion_limit_is_distinct_from_model_turns(
+    turns: int,
+    expected: int,
+) -> None:
+    assert recursion_limit(turns) == expected

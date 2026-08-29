@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelRole(StrEnum):
-    ADMISSION = "admission"
     SOLVER = "solver"
     REVIEWER = "reviewer"
 
@@ -41,10 +40,9 @@ class ModelCallRecord(BaseModel):
 class RunProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    graph_version: str = "sage_v2_prototype"
+    graph_version: str = "v2"
     route: str = "single"
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()
-    admission_sessions: int = Field(default=0, ge=0)
     solver_sessions: int = Field(default=0, ge=0)
     review_cycles: int = Field(default=0, ge=0)

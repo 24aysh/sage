@@ -138,7 +138,7 @@ def parse_issue_comment_event(
 
     server_url = _required_environment(environ, "GITHUB_SERVER_URL").rstrip("/")
     if server_url != GITHUB_WEB_URL:
-        raise GitHubEventError("Sage V1.0 supports GitHub.com events only.")
+        raise GitHubEventError("Sage supports GitHub.com events only.")
 
     try:
         parsed = _IssueCommentPayload.model_validate(payload)

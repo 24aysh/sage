@@ -8,7 +8,7 @@ from sage.providers.factory import build_constrained_provider_set
 def test_factory_builds_only_configurable_reviewer_provider() -> None:
     providers = build_constrained_provider_set(
         Settings(
-            runtime="v2-prototype",
+            runtime="v2",
             openai_api_key="openai-test",
             gemini_api_key="gemini-test",
             google_model_context_approved=True,
@@ -28,7 +28,7 @@ def test_factory_refuses_explicitly_rejected_google_context_use() -> None:
     with pytest.raises(ConfigurationError, match="not acknowledged"):
         build_constrained_provider_set(
             Settings(
-                runtime="v2-prototype",
+                runtime="v2",
                 openai_api_key="openai-test",
                 gemini_api_key="gemini-test",
                 google_model_context_approved=False,

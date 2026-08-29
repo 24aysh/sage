@@ -41,28 +41,8 @@ class CommandTimeoutError(CommandExecutionError):
     """Raised when a required repository command times out."""
 
 
-class PatchError(RepositoryError):
-    """Raised when a repository patch is unsafe or cannot be applied."""
-
-
 class AgentRuntimeError(SageError):
     """Raised when the configured agent runtime fails."""
-
-
-class ModelAuthenticationError(AgentRuntimeError):
-    """Raised when the model provider rejects configured authentication."""
-
-
-class ModelAPIError(AgentRuntimeError):
-    """Raised when an authenticated model API request is rejected."""
-
-
-class ModelQuotaError(AgentRuntimeError):
-    """Raised when model credits or configured account limits are exhausted."""
-
-
-class ModelRateLimitError(AgentRuntimeError):
-    """Raised when a temporary model rate limit outlives bounded retries."""
 
 
 class ArtifactError(SageError):

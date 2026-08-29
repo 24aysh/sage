@@ -138,7 +138,7 @@ def test_reviewer_has_no_provider_fallback() -> None:
 
 def _settings() -> Settings:
     return Settings(
-        runtime="v2-prototype",
+        runtime="v2",
         openai_api_key="openai",
         gemini_api_key="gemini",
     )

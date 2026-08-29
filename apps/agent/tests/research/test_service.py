@@ -44,7 +44,7 @@ def test_research_is_bounded_cached_and_read_by_same_run_id() -> None:
 
     first = asyncio.run(
         service.search_documentation(
-            role=ResearchRole.ADMISSION,
+            role=ResearchRole.SOLVER,
             query="client API",
             package="example",
             version="2",
@@ -53,7 +53,7 @@ def test_research_is_bounded_cached_and_read_by_same_run_id() -> None:
     )
     second = asyncio.run(
         service.search_documentation(
-            role=ResearchRole.SOLVER,
+            role=ResearchRole.REVIEWER,
             query="client API",
             package="example",
             version="2",
@@ -68,7 +68,7 @@ def test_research_is_bounded_cached_and_read_by_same_run_id() -> None:
     assert second.cache_hit is True
     assert len(provider.requests) == 1
     read = service.read(
-        role=ResearchRole.SOLVER,
+        role=ResearchRole.REVIEWER,
         result_id=first.results[0].result_id,
     )
     assert read.status == "completed"
@@ -114,7 +114,7 @@ def test_research_drops_private_results_and_enforces_reviewer_policy() -> None:
     )
 
     response = asyncio.run(
-        service.search_web(role=ResearchRole.ADMISSION, query="error message")
+        service.search_web(role=ResearchRole.SOLVER, query="error message")
     )
     reviewer = asyncio.run(
         service.search_web(role=ResearchRole.REVIEWER, query="error message")

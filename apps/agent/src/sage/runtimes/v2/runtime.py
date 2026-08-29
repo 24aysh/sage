@@ -1,4 +1,4 @@
-"""Admission, tool-driven Solver, and independent Reviewer V2 runtime."""
+"""Tool-driven Solver and independent Reviewer V2 runtime."""
 
 from __future__ import annotations
 
@@ -20,11 +20,6 @@ from pydantic import BaseModel, ValidationError
 
 from sage.artifacts.v2 import V2ArtifactStore
 from sage.config import Settings
-from sage.domain.admission import (
-    AdmissionContextSnapshot,
-    AdmissionResult,
-    ReadinessDisposition,
-)
 from sage.domain.results import AgentFinalOutput, SolveOutcome
 from sage.domain.review import ReviewFailureType, ReviewResult, ReviewVerdict
 from sage.domain.runtime import RuntimeContext
@@ -36,27 +31,18 @@ from sage.observability import agent_trace_config, log_agent_result, workflow_tr
 from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 from sage.providers.factory import ProviderSet, build_constrained_provider_set
 from sage.providers.manager import FinalizationReserveError, ModelCallManager
+from sage.providers.openai import is_openai_quota_error
 from sage.research import ResearchService, build_research_service
-from sage.runtimes.v2.admission import (
-    AdmissionContextSession,
-    build_admission_tools,
-    clarification_limit_reached,
-    next_clarification_round,
-    render_admission_context,
-    validate_admission_result,
-)
-from sage.runtimes.langgraph.graph import build_graph as build_tool_graph
-from sage.runtimes.langgraph.runtime import is_openai_quota_error, recursion_limit
+from sage.runtimes.tool_loop import build_graph as build_tool_graph
+from sage.runtimes.tool_loop import recursion_limit
 from sage.runtimes.v2.graph import (
     GRAPH_NAME,
     create_candidate_snapshot,
     review_fingerprint,
 )
 from sage.runtimes.v2.prompts import (
-    ADMISSION_INSTRUCTIONS,
     REVIEWER_INSTRUCTIONS,
     SOLVER_INSTRUCTIONS,
-    build_admission_message,
     build_repair_message,
     build_review_message,
     build_solver_message,
@@ -66,7 +52,6 @@ from sage.runtimes.v2.validation import (
     InvalidModelContractError,
     validate_review,
     validate_solver_final,
-    validate_solver_plan_context,
 )
 from sage.verification import Verifier, discover_solver_verification_commands
 
@@ -75,7 +60,7 @@ OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
 
 class V2GraphRuntime:
-    """Persist read-only context, solve through tools, and review independently."""
+    """Solve through tools, verify deterministically, and review independently."""
 
     def __init__(
         self,
@@ -138,82 +123,18 @@ class V2GraphRuntime:
         self._preflight(issue_text=issue_text, context=context)
         logger.info(
             "V2 workflow: started run=%s graph=%s profile=%s "
-            "nodes=admission,solver,reviewer models=solver,reviewer",
+            "nodes=solver,reviewer models=solver,reviewer",
             context.prepared_run.run_id,
             GRAPH_NAME,
             self._settings.model_profile,
         )
 
         try:
-            admission_context: AdmissionContextSnapshot | None = None
-            admission_context_json: str | None = None
-            review_admission_context_json: str | None = None
-            if self._settings.v2_admission_enabled:
-                admission_session = AdmissionContextSession(
-                    context=context,
-                    issue_text=issue_text,
-                    artifacts=artifacts,
-                    research=research,
-                )
-                clarification_round = next_clarification_round(
-                    issue_text,
-                    maximum=self._settings.max_clarification_rounds,
-                )
-                admission = await self._run_admission(
-                    message=build_admission_message(
-                        base_sha=context.prepared_run.base_sha,
-                        issue_text=issue_text,
-                        clarification_round=clarification_round,
-                    ),
-                    context=context,
-                    session=admission_session,
-                    research=research,
-                    calls=calls,
-                )
-                admission_context = validate_admission_result(
-                    admission,
-                    session=admission_session,
-                    issue_text=issue_text,
-                )
-                artifacts.write_admission_final(admission)
-                log_agent_result(
-                    logger,
-                    role=ModelRole.ADMISSION,
-                    details=(
-                        ("Decision", admission.disposition.value),
-                        ("Evidence", len(admission_context.evidence)),
-                        (
-                            "Questions",
-                            len(admission.clarification.questions)
-                            if admission.clarification
-                            else 0,
-                        ),
-                        ("Context", admission_context.digest[:12]),
-                    ),
-                )
-                terminal = _admission_terminal(
-                    admission,
-                    issue_text=issue_text,
-                    settings=self._settings,
-                    artifacts=artifacts,
-                    calls=calls,
-                )
-                if terminal is not None:
-                    return self._persist_terminal(terminal, artifacts, calls, research)
-                admission_context_json = render_admission_context(
-                    admission_context,
-                    max_chars=self._settings.v2_admission_context_chars,
-                )
-                review_admission_context_json = render_admission_context(
-                    admission_context,
-                    max_chars=min(12_000, self._settings.reviewer_input_chars // 4),
-                )
             solver_result = await self._run_solver(
                 stage="solver",
                 message=build_solver_message(
                     base_sha=context.prepared_run.base_sha,
                     issue_text=issue_text,
-                    admission_context_json=admission_context_json,
                 ),
                 context=context,
                 plans=plans,
@@ -227,7 +148,6 @@ class V2GraphRuntime:
             while True:
                 validate_solver_final(solver_result, plan=plans.saved)
                 assert plans.saved is not None
-                validate_solver_plan_context(plans.saved, admission=admission_context)
                 unknown_research = [
                     result_id
                     for result_id in plans.saved.plan.research_result_ids
@@ -284,7 +204,6 @@ class V2GraphRuntime:
                             plan_json=plans.saved.model_dump_json(indent=2),
                             candidate_diff=snapshot.diff,
                             findings_json=verification.model_dump_json(indent=2),
-                            admission_context_json=admission_context_json,
                         ),
                         context=context,
                         plans=plans,
@@ -301,7 +220,6 @@ class V2GraphRuntime:
                     plan_json=plans.saved.model_dump_json(indent=2),
                     calls=calls,
                     rereview=review_version > 1,
-                    admission_context_json=review_admission_context_json,
                     research_summary_json=research.summary().model_dump_json(indent=2),
                 )
                 validate_review(review, plan=plans.saved)
@@ -366,7 +284,6 @@ class V2GraphRuntime:
                             ],
                             indent=2,
                         ),
-                        admission_context_json=admission_context_json,
                     ),
                     context=context,
                     plans=plans,
@@ -450,8 +367,7 @@ class V2GraphRuntime:
         )
         if len(message) > input_cap:
             raise AgentRuntimeError("Solver context exceeds the configured safe input cap.")
-        parsed = await self._run_coding_graph(
-            role=ModelRole.SOLVER,
+        parsed = await self._run_solver_graph(
             stage=stage,
             message=message,
             context=context,
@@ -472,33 +388,9 @@ class V2GraphRuntime:
         )
         return parsed
 
-    async def _run_admission(
+    async def _run_solver_graph(
         self,
         *,
-        message: str,
-        context: RuntimeContext,
-        session: AdmissionContextSession,
-        research: ResearchService,
-        calls: ModelCallManager,
-    ) -> AdmissionResult:
-        if len(message) > self._settings.solver_input_chars:
-            raise AgentRuntimeError("Admission input exceeds the configured safe cap.")
-        return await self._run_coding_graph(
-            role=ModelRole.ADMISSION,
-            stage="admission",
-            message=message,
-            context=context,
-            calls=calls,
-            tools=build_admission_tools(context, session, research),
-            instructions=ADMISSION_INSTRUCTIONS,
-            output_schema=AdmissionResult,
-            max_turns=self._settings.v2_admission_max_turns,
-        )
-
-    async def _run_coding_graph(
-        self,
-        *,
-        role: ModelRole,
         stage: str,
         message: str,
         context: RuntimeContext,
@@ -508,9 +400,9 @@ class V2GraphRuntime:
         output_schema: type[OutputModel],
         max_turns: int,
     ) -> OutputModel:
-        """Run the shared sequential OpenAI tool loop for Admission or Solver."""
+        """Run one sequential OpenAI Solver tool loop."""
 
-        calls.start_coding_session(role=role)
+        calls.start_solver_session()
         model = self._solver_model.bind_tools(
             tools,
             response_format=output_schema,
@@ -519,11 +411,11 @@ class V2GraphRuntime:
         )
 
         def start(_: int) -> object:
-            return calls.start_coding_call(role=role, stage=stage)
+            return calls.start_coding_call(role=ModelRole.SOLVER, stage=stage)
 
         def finish(token: object, response, duration_ms: float) -> None:
             calls.finish_coding_call(
-                role=role,
+                role=ModelRole.SOLVER,
                 stage=stage,
                 call_number=int(token),
                 message=response,
@@ -532,7 +424,7 @@ class V2GraphRuntime:
 
         def fail(token: object, error: BaseException, duration_ms: float) -> None:
             calls.fail_coding_call(
-                role=role,
+                role=ModelRole.SOLVER,
                 stage=stage,
                 call_number=int(token),
                 error=error,
@@ -546,7 +438,7 @@ class V2GraphRuntime:
             instructions=instructions,
             output_schema=output_schema,
             graph_name=f"{GRAPH_NAME}_{stage.replace('-', '_')}",
-            role_name=role.value.capitalize(),
+            role_name=ModelRole.SOLVER.value.capitalize(),
             on_model_start=start,
             on_model_finish=finish,
             on_model_error=fail,
@@ -556,7 +448,7 @@ class V2GraphRuntime:
             config={
                 **agent_trace_config(
                     run_id=context.prepared_run.run_id,
-                    role=role,
+                    role=ModelRole.SOLVER,
                     stage=stage,
                     attempt=AttemptKind.PRIMARY,
                     provider="openai",
@@ -577,7 +469,6 @@ class V2GraphRuntime:
         plan_json: str,
         calls: ModelCallManager,
         rereview: bool,
-        admission_context_json: str | None,
         research_summary_json: str,
     ) -> ReviewResult:
         packet = build_review_message(
@@ -587,7 +478,6 @@ class V2GraphRuntime:
             candidate_diff=snapshot.diff,
             verification_json=verification.model_dump_json(indent=2),
             solver_summary=snapshot.solver_summary,
-            admission_context_json=admission_context_json,
             research_summary_json=research_summary_json,
         )
         if len(packet) > self._settings.reviewer_input_chars:
@@ -644,7 +534,7 @@ class V2GraphRuntime:
     def _preflight(self, *, issue_text: str, context: RuntimeContext) -> None:
         if not issue_text.strip():
             raise AgentRuntimeError("V2 Issue context is empty.")
-        if self._settings.runtime != "v2-prototype":
+        if self._settings.runtime != "v2":
             raise AgentRuntimeError("V2 runtime was selected with invalid settings.")
         workspace = context.prepared_run.workspace_dir
         if not workspace.is_dir() or not (workspace / ".git").is_dir():
@@ -671,62 +561,6 @@ class V2GraphRuntime:
             len(calls.records),
         )
         return updated
-
-
-def _admission_terminal(
-    result: AdmissionResult,
-    *,
-    issue_text: str,
-    settings: Settings,
-    artifacts: V2ArtifactStore,
-    calls: ModelCallManager,
-) -> AgentFinalOutput | None:
-    if result.disposition is ReadinessDisposition.READY:
-        return None
-    if result.disposition is ReadinessDisposition.ENVIRONMENT_BLOCKED:
-        return _terminal(SolveOutcome.ENVIRONMENT_BLOCKED, result.summary, calls)
-    if result.disposition is ReadinessDisposition.UNSUPPORTED:
-        return _terminal(SolveOutcome.UNSUPPORTED, result.summary, calls)
-    if clarification_limit_reached(
-        issue_text,
-        maximum=settings.max_clarification_rounds,
-    ):
-        return _terminal(
-            SolveOutcome.NEEDS_MAINTAINER_REWRITE,
-            "The Issue still lacks required context after the configured "
-            "clarification rounds; rewrite the Issue with the requested "
-            "contract before retrying.",
-            calls,
-        )
-    packet = result.clarification
-    if packet is None:
-        raise InvalidModelContractError("Human-required Admission omitted clarification.")
-    round_number = next_clarification_round(
-        issue_text,
-        maximum=settings.max_clarification_rounds,
-    )
-    instruction = (
-        "Rewrite the Issue with the requested contract, then create one new "
-        "exact `/sage solve` or `/sage fix` comment."
-        if round_number == settings.max_clarification_rounds
-        else "Reply with the requested information, then create one new exact "
-        "`/sage solve` or `/sage fix` comment."
-    )
-    packet = packet.model_copy(
-        update={"round": round_number, "rerun_instruction": instruction}
-    )
-    artifacts.write_clarification(packet)
-    outcome = (
-        SolveOutcome.NEEDS_HUMAN_INFORMATION
-        if result.disposition is ReadinessDisposition.NEEDS_HUMAN_INFORMATION
-        else SolveOutcome.NEEDS_HUMAN_DESIGN_DECISION
-    )
-    return AgentFinalOutput(
-        summary=result.summary,
-        outcome=outcome,
-        clarification=packet,
-        provenance=calls.provenance(),
-    )
 
 
 def _solver_terminal(

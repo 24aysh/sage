@@ -1,4 +1,4 @@
-"""Trusted GitHub.com controller integration for Sage V1.0."""
+"""Trusted GitHub.com controller integration for Sage."""
 
 from sage.integrations.github.commands import SageCommand, parse_command
 from sage.integrations.github.config import GitHubSettings

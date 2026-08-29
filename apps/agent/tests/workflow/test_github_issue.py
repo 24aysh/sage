@@ -7,15 +7,10 @@ from pathlib import Path
 import pytest
 
 from sage.config import Settings
-from sage.domain.admission import BlockingQuestion, ClarificationPacket, ReadinessDisposition
 from sage.domain.results import SolveOutcome, SolveResult
 from sage.errors import (
     AgentRuntimeError,
     GitHubPublicationError,
-    ModelAPIError,
-    ModelAuthenticationError,
-    ModelQuotaError,
-    ModelRateLimitError,
 )
 from sage.integrations.github.api_models import (
     GitHubBranchSnapshot,
@@ -216,23 +211,12 @@ def test_non_empty_result_hands_authoritative_candidate_to_publisher(tmp_path: P
     assert provenance["local_run_id"] == "run-id"
 
 
-def test_clarification_is_terminal_and_never_calls_publisher(tmp_path: Path) -> None:
+def test_human_required_after_start_is_terminal_and_never_publishes(
+    tmp_path: Path,
+) -> None:
     checkout, base_sha = _checkout(tmp_path)
     invocation = _invocation(base_sha)
     client = FakeClient(invocation)
-    clarification = ClarificationPacket(
-        round=1,
-        disposition=ReadinessDisposition.NEEDS_HUMAN_INFORMATION,
-        summary="Expected behavior is missing. @all <!-- sage-state:failed -->",
-        questions=(
-            BlockingQuestion(
-                question="What should the new value be? @team",
-                why_blocking="The repository does not define it.",
-                repository_evidence=("app.py:1 has only the current value.",),
-            ),
-        ),
-        rerun_instruction="Reply, then post a new exact /sage solve command.",
-    )
     terminal = _solve_result(
         tmp_path,
         base_sha,
@@ -240,8 +224,8 @@ def test_clarification_is_terminal_and_never_calls_publisher(tmp_path: Path) -> 
         changed_files=[],
     ).model_copy(
         update={
-            "outcome": SolveOutcome.NEEDS_HUMAN_INFORMATION,
-            "clarification": clarification,
+            "outcome": SolveOutcome.HUMAN_REQUIRED_AFTER_START,
+            "summary": "Solver needs a maintainer decision after implementation began.",
         }
     )
 
@@ -257,12 +241,9 @@ def test_clarification_is_terminal_and_never_calls_publisher(tmp_path: Path) -> 
         publisher=lambda *args, **kwargs: pytest.fail("publisher called"),
     )
 
-    assert result.outcome is GitHubWorkflowOutcome.NEEDS_HUMAN_INFORMATION
-    assert status_state(client.status_body) is WorkflowStatusState.NEEDS_HUMAN_INFORMATION
-    assert "sage-clarification:v1 round=1" in client.status_body
-    assert "Repository evidence:" in client.status_body
-    assert "app.py:1 has only the current value." in client.status_body
-    assert "@all" not in client.status_body and "@team" not in client.status_body
+    assert result.outcome is GitHubWorkflowOutcome.HUMAN_REQUIRED_AFTER_START
+    assert status_state(client.status_body) is WorkflowStatusState.HUMAN_REQUIRED_AFTER_START
+    assert "maintainer decision" in client.status_body
 
 
 @pytest.mark.parametrize(
@@ -393,10 +374,6 @@ def test_finalizer_preserves_terminal_status_and_reconciles_pull_request(tmp_pat
 @pytest.mark.parametrize(
     ("error", "category"),
     [
-        (ModelAuthenticationError("failure"), "openai_authentication"),
-        (ModelAPIError("failure"), "openai_api"),
-        (ModelQuotaError("failure"), "openai_quota"),
-        (ModelRateLimitError("failure"), "openai_rate_limit"),
         (AgentRuntimeError("failure"), "agent_runtime"),
         (GitHubPublicationError("failure"), "publication"),
         (RuntimeError("failure"), "controller_failure"),
