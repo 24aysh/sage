@@ -6,17 +6,6 @@ name: Sage Issue Solver
 
 permissions: {}
 
-concurrency:
-  group: >-
-    ${{
-      (github.event.issue.pull_request == null &&
-       (github.event.comment.body == '/sage solve' ||
-        github.event.comment.body == '/sage fix'))
-      && format('sage-{0}-issue-{1}', github.event.repository.id, github.event.issue.number)
-      || format('sage-{0}-comment-{1}', github.event.repository.id, github.event.comment.id)
-    }}
-  cancel-in-progress: false
-
 jobs:
   gate:
     name: Authorize Sage request
@@ -50,6 +39,10 @@ jobs:
     if: needs.gate.outputs.should-run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    concurrency:
+      group: sage-${{ github.event.repository.id }}-solve
+      queue: max
+      cancel-in-progress: false
     env:
       SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v2' }}
       LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
@@ -62,6 +55,9 @@ jobs:
       SAGE_RESEARCH_MAX_RESULT_CHARS: ${{ vars.SAGE_RESEARCH_MAX_RESULT_CHARS || '12000' }}
       SAGE_RESEARCH_ALLOWED_DOMAINS: ${{ vars.SAGE_RESEARCH_ALLOWED_DOMAINS }}
       SAGE_OFFICIAL_DOCUMENTATION_DOMAINS: ${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}
+      SAGE_MEMORY_ENABLED: ${{ vars.SAGE_MEMORY_ENABLED || 'false' }}
+      SAGE_MEMORY_SUMMARIZER_PROVIDER: ${{ vars.SAGE_MEMORY_SUMMARIZER_PROVIDER || 'google' }}
+      SAGE_MEMORY_SUMMARIZER_MODEL: ${{ vars.SAGE_MEMORY_SUMMARIZER_MODEL || 'gemini-3.5-flash' }}
     permissions:
       contents: write
       issues: write
@@ -84,7 +80,12 @@ jobs:
           v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
           google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
+          base-branch: ${{ needs.gate.outputs.base-branch }}
           status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
+          memory-enabled: ${{ vars.SAGE_MEMORY_ENABLED || 'false' }}
+          memory-database-url: ${{ secrets.SAGE_MEMORY_DATABASE_URL }}
+          memory-summarizer-provider: ${{ vars.SAGE_MEMORY_SUMMARIZER_PROVIDER || 'google' }}
+          memory-summarizer-model: ${{ vars.SAGE_MEMORY_SUMMARIZER_MODEL || 'gemini-3.5-flash' }}
 
       - name: Upload allowlisted Sage diagnostics
         if: always() && steps.solve.outputs.diagnostics-path != ''
@@ -96,6 +97,7 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/github.json
             ${{ steps.solve.outputs.diagnostics-path }}/agent-final.json
             ${{ steps.solve.outputs.diagnostics-path }}/research-summary.json
+            ${{ steps.solve.outputs.diagnostics-path }}/memory-summary.json
             ${{ steps.solve.outputs.diagnostics-path }}/solver-plan.json
             ${{ steps.solve.outputs.diagnostics-path }}/solver-final.json
             ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json
