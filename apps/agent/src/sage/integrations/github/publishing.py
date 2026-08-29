@@ -27,6 +27,7 @@ from sage.integrations.github.models import (
     GitHubRepository,
     validate_github_url,
 )
+from sage.memory.models import MemoryMode
 from sage.repository.host_git import run_git
 from sage.repository.output import truncate_text
 from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
@@ -109,8 +110,8 @@ def publish_solve_result(
         return PublicationResult(
             outcome=PublicationOutcome.NO_CHANGES,
             branch_name=branch_name,
-            original_base_sha=invocation.base_sha,
-            current_base_sha=invocation.base_sha,
+            original_base_sha=invocation.accepted_base_sha,
+            current_base_sha=invocation.accepted_base_sha,
             base_movement=BaseMovement.UNCHANGED,
         )
     if not github_token:
@@ -188,7 +189,7 @@ def publish_solve_result(
     return PublicationResult(
         outcome=PublicationOutcome.PULL_REQUEST_CREATED,
         branch_name=branch_name,
-        original_base_sha=invocation.base_sha,
+        original_base_sha=invocation.accepted_base_sha,
         current_base_sha=current_base_sha,
         base_movement=base_movement,
         pull_request_number=pull_request.number,
@@ -251,6 +252,7 @@ def render_pull_request_body(
             "rebase or alter the reviewed candidate; resolve conflicts and run "
             "current CI before merging."
         )
+    memory = _render_memory_fallback(result)
 
     return (
         f"{_PULL_REQUEST_MARKER_PREFIX}{invocation.issue.number} -->\n"
@@ -262,13 +264,38 @@ def render_pull_request_body(
         "## Changed files\n\n"
         f"{file_lines}\n\n"
         "## Remaining uncertainty\n\n"
-        f"{uncertainty_lines}\n\n"
+        f"{uncertainty_lines}{memory}\n\n"
         "## Provenance\n\n"
         f"- Branch: `{_safe_code(branch_name, 255)}`\n"
-        f"- Original base: `{invocation.base_sha}`\n"
+        f"- Accepted solve base: `{invocation.accepted_base_sha}`\n"
+        f"- Command-event base: `{invocation.base_sha}`\n"
         f"- Current default-branch base: `{current_base_sha}`\n"
         f"- [Actions run]({invocation.actions_run.html_url})"
         f"{warning}"
+    )
+
+
+def _render_memory_fallback(result: SolveResult) -> str:
+    report = result.memory
+    if report is None or report.mode is not MemoryMode.FALLBACK:
+        return ""
+    failure = report.failure
+    if failure is None:
+        return (
+            "\n\n## Sage Memory\n\nStatus: fallback\n\n"
+            "SMRT could not be used for the remainder of this solve."
+        )
+    snapshot = str(failure.snapshot_id) if failure.snapshot_id else "unavailable"
+    return (
+        "\n\n## Sage Memory\n\nStatus: fallback\n\n"
+        "SMRT could not be used for the remainder of this solve.\n\n"
+        f"- Component: `{_safe_code(failure.component, 80)}`\n"
+        f"- Stage: `{_safe_code(failure.stage, 80)}`\n"
+        f"- Error: `{_safe_code(failure.error_code, 100)}` — "
+        f"{_safe_markdown(failure.safe_message, 500)}\n"
+        f"- Snapshot: `{_safe_code(snapshot, 100)}`\n"
+        f"- Target commit: `{failure.target_commit}`\n"
+        f"- Fallback: {failure.fallback_action}"
     )
 
 
@@ -397,10 +424,10 @@ def _fetch_and_classify_base(
         raise GitHubPublicationError(
             "The current GitHub default-branch commit is invalid."
         )
-    if current == invocation.base_sha:
+    if current == invocation.accepted_base_sha:
         return current, BaseMovement.UNCHANGED
     ancestry = _git(
-        ["merge-base", "--is-ancestor", invocation.base_sha, current],
+        ["merge-base", "--is-ancestor", invocation.accepted_base_sha, current],
         repository=workspace,
         timeout_seconds=timeout_seconds,
     )
@@ -436,7 +463,7 @@ def _create_commit(
             timeout_seconds=timeout_seconds,
         )
     _required_git(
-        ["checkout", "-b", branch_name, invocation.base_sha],
+        ["checkout", "-b", branch_name, invocation.accepted_base_sha],
         repository=workspace,
         timeout_seconds=timeout_seconds,
         failure="Unable to create the deterministic local publication branch.",
