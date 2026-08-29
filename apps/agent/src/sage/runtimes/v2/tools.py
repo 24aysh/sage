@@ -15,6 +15,7 @@ from sage.domain.solver import (
     SolverPlanTask,
 )
 from sage.errors import RepositoryError
+from sage.memory.models import MutationAuthorization
 from sage.research.models import ResearchRole
 from sage.research.service import ResearchService
 from sage.research.tools import build_research_tools
@@ -172,12 +173,23 @@ def build_solver_tools(
         """Replace exact UTF-8 text after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        return context.repository.replace_text(
+        if context.memory_session is not None:
+            context.memory_session.authorize_mutation(
+                MutationAuthorization(
+                    operation="replace",
+                    path=path,
+                    old_text=old_text,
+                )
+            )
+        result = context.repository.replace_text(
             path=path,
             old_text=old_text,
             new_text=new_text,
             expected_occurrences=expected_occurrences,
         )
+        if context.memory_session is not None:
+            context.memory_session.record_mutation(path)
+        return result
 
     @tool
     async def write_file(
@@ -188,28 +200,57 @@ def build_solver_tools(
         """Create or replace one UTF-8 file after enforcing the plan gate."""
 
         plans.require_implementable()
-        return context.repository.write_file(
+        if context.memory_session is not None:
+            context.memory_session.authorize_mutation(
+                MutationAuthorization(
+                    operation="write",
+                    path=path,
+                    replacing_entire_file=mode != "create",
+                )
+            )
+        result = context.repository.write_file(
             path=path,
             content=content,
             mode=WriteMode(mode),
         )
+        if context.memory_session is not None:
+            context.memory_session.record_mutation(path)
+        return result
 
     @tool
     async def delete_file(path: str) -> str:
         """Delete one regular file after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        return context.repository.delete_file(path=path)
+        if context.memory_session is not None:
+            context.memory_session.authorize_mutation(
+                MutationAuthorization(operation="delete", path=path)
+            )
+        result = context.repository.delete_file(path=path)
+        if context.memory_session is not None:
+            context.memory_session.record_mutation(path)
+        return result
 
     @tool
     async def move_file(source_path: str, destination_path: str) -> str:
         """Move one file without overwrite after enforcing the plan gate."""
 
         plans.require_implementable()
-        return context.repository.move_file(
+        if context.memory_session is not None:
+            context.memory_session.authorize_mutation(
+                MutationAuthorization(
+                    operation="move",
+                    path=source_path,
+                    destination_path=destination_path,
+                )
+            )
+        result = context.repository.move_file(
             source_path=source_path,
             destination_path=destination_path,
         )
+        if context.memory_session is not None:
+            context.memory_session.record_mutation(source_path, destination_path)
+        return result
 
     @tool
     async def run_command(command: str, timeout_seconds: int | None = None) -> str:
@@ -231,6 +272,10 @@ def build_solver_tools(
             command=command,
             timeout_seconds=timeout_seconds,
         )
+        if context.memory_session is not None:
+            context.memory_session.record_mutation(
+                *context.repository.get_changed_files()
+            )
         return context.repository.format_command_result(result)
 
     research_tools = (

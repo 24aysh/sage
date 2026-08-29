@@ -22,6 +22,14 @@ Fetch additional repository or research evidence when a concrete
 implementation gap requires it. Research tools are the only permitted network
 boundary; shell commands remain network-disabled.
 
+When a memory context forest is supplied, begin with that raw source. In
+healthy memory mode, use expand_context for semantic expansion and
+materialize_dependency for a concrete import, test, configuration, or call-site
+dependency. The dependency reason must cite an active source path. Use
+inspect_context to review path provenance and current read coverage. Repository
+tools enforce which paths are active. If memory reports fallback, continue with
+the ordinary repository tools for the rest of the run.
+
 When done, return only the required SolverFinalResult. Its plan_version must
 match the latest saved plan. Return blocked/no_change/unresolved when that is
 the truthful safe result.
@@ -46,14 +54,16 @@ def build_solver_message(
     *,
     base_sha: str,
     issue_text: str,
+    memory_context: str = "",
 ) -> str:
     """Build the initial untrusted Issue envelope for a Solver session."""
 
+    memory = f"\n\n{memory_context}" if memory_context else ""
     return (
         f"Accepted base SHA: {base_sha}\n\n"
         "<untrusted-issue>\n"
         f"{issue_text}\n"
-        "</untrusted-issue>"
+        f"</untrusted-issue>{memory}"
     )
 
 

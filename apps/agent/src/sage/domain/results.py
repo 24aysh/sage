@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from sage.domain.usage import RunProvenance
+from sage.memory.models import MemoryRunReport
 
 
 class SolveOutcome(StrEnum):
@@ -34,6 +35,7 @@ class AgentFinalOutput(BaseModel):
     remaining_uncertainty: list[str] = Field(default_factory=list)
     outcome: SolveOutcome = SolveOutcome.COMPLETED
     provenance: RunProvenance | None = None
+    memory: MemoryRunReport | None = None
 
 
 class SolveResult(BaseModel):
@@ -51,3 +53,4 @@ class SolveResult(BaseModel):
     workspace_dir: Path
     outcome: SolveOutcome = SolveOutcome.COMPLETED
     provenance: RunProvenance | None = None
+    memory: MemoryRunReport | None = None

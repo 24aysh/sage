@@ -7,6 +7,8 @@ import hashlib
 import json
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
+from time import monotonic
 from typing import TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -27,6 +29,14 @@ from sage.domain.solver import CandidateSnapshot, SolverFinalResult, SolverOutco
 from sage.domain.usage import AttemptKind, ModelRole
 from sage.domain.verification import VerificationResult, VerificationStatus
 from sage.errors import AgentRuntimeError
+from sage.memory.engine import build_memory_engine
+from sage.memory.canonical import canonical_digest
+from sage.memory.models import (
+    MemoryFailure,
+    MemoryMode,
+    MemoryRunReport,
+    MemoryRunRequest,
+)
 from sage.observability import agent_trace_config, log_agent_result, workflow_trace_config
 from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 from sage.providers.factory import ProviderSet, build_constrained_provider_set
@@ -88,8 +98,77 @@ class V2GraphRuntime:
     ) -> AgentFinalOutput:
         """Run V2 under one parent trace with nested Solver/Reviewer work."""
 
+        workflow_started_at = monotonic()
+
         async def workflow(_: dict[str, object]) -> AgentFinalOutput:
-            return await self._solve(issue_text=issue_text, context=context)
+            if not self._settings.memory_enabled:
+                return await self._solve(
+                    issue_text=issue_text,
+                    context=context,
+                    workflow_started_at=workflow_started_at,
+                )
+            if context.memory_identity is None:
+                raise AgentRuntimeError(
+                    "Memory-enabled runtime requires a stable repository identity."
+                )
+            engine = build_memory_engine(self._settings, context.repository)
+            session = await engine.begin(
+                MemoryRunRequest(
+                    identity=context.memory_identity,
+                    run_id=context.prepared_run.run_id,
+                    target_commit=context.prepared_run.base_sha,
+                    workspace_path=context.prepared_run.workspace_dir,
+                )
+            )
+            effective_context = replace(context, memory_session=session)
+            forest = await session.initial_context(issue_text)
+            artifacts = V2ArtifactStore(context.prepared_run.run_dir)
+            artifacts.write_context_forest(forest)
+            try:
+                final = await self._solve(
+                    issue_text=issue_text,
+                    context=effective_context,
+                    memory_context=forest.render_for_solver(),
+                    workflow_started_at=workflow_started_at,
+                )
+                remaining = max(
+                    0.1,
+                    workflow_started_at
+                    + self._settings.run_deadline_seconds
+                    - monotonic(),
+                )
+                try:
+                    async with asyncio.timeout(
+                        min(
+                            float(self._settings.finalization_reserve_seconds),
+                            remaining,
+                        )
+                    ):
+                        report = await session.finalize(final.outcome)
+                except TimeoutError:
+                    report = MemoryRunReport(
+                        mode=MemoryMode.FALLBACK,
+                        repository_identity_digest=canonical_digest(
+                            context.memory_identity
+                        ),
+                        repository_display_name=context.memory_identity.display_name,
+                        target_commit=context.prepared_run.base_sha,
+                        failure=MemoryFailure(
+                            component="snapshot",
+                            stage="finalize",
+                            error_code="MemoryFinalizationTimeout",
+                            safe_message=(
+                                "SMRT finalization exceeded the solve deadline reserve."
+                            ),
+                            target_commit=context.prepared_run.base_sha,
+                        ),
+                    )
+                updated = final.model_copy(update={"memory": report})
+                artifacts.write_memory_summary(report)
+                artifacts.write_terminal(updated)
+                return updated
+            finally:
+                await engine.close()
 
         return await RunnableLambda(workflow).ainvoke(
             {},
@@ -105,6 +184,8 @@ class V2GraphRuntime:
         *,
         issue_text: str,
         context: RuntimeContext,
+        memory_context: str = "",
+        workflow_started_at: float | None = None,
     ) -> AgentFinalOutput:
         artifacts = V2ArtifactStore(context.prepared_run.run_dir)
         calls = ModelCallManager(
@@ -112,6 +193,7 @@ class V2GraphRuntime:
             providers=self._providers,
             usage_writer=artifacts.write_usage,
             run_id=context.prepared_run.run_id,
+            workflow_started_at=workflow_started_at,
         )
         plans = SolverPlanSession(artifacts)
         research = self._research_service or build_research_service(self._settings)
@@ -135,6 +217,7 @@ class V2GraphRuntime:
                 message=build_solver_message(
                     base_sha=context.prepared_run.base_sha,
                     issue_text=issue_text,
+                    memory_context=memory_context,
                 ),
                 context=context,
                 plans=plans,

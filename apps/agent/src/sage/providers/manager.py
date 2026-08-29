@@ -37,13 +37,16 @@ class ModelCallManager:
         usage_writer: UsageWriter | None = None,
         clock: Callable[[], float] = monotonic,
         run_id: str | None = None,
+        workflow_started_at: float | None = None,
     ) -> None:
         self._settings = settings
         self._reviewer = providers.reviewer
         self._usage_writer = usage_writer
         self._clock = clock
         self._run_id = run_id
-        self._deadline = clock() + settings.run_deadline_seconds
+        self._deadline = (
+            workflow_started_at if workflow_started_at is not None else clock()
+        ) + settings.run_deadline_seconds
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
         self._consecutive_failures: dict[str, int] = {}
