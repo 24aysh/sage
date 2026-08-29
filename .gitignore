@@ -23,8 +23,10 @@ adaptive_multi_agent_coding_assistant_design.md
 
 # Local secrets
 .env
+.env.memory.local
 .env.*
 !.env.example
+!.env.memory.local.example
 
 # Agent runs
 .sage/runs/
