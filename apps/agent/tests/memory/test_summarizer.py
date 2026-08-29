@@ -26,6 +26,7 @@ class _Provider:
                 ProviderErrorCategory.PROVIDER_5XX,
                 provider=self.provider_name,
                 model=self.model_name,
+                retry_after_seconds=0,
                 retryable=True,
             )
         return ProviderResult(

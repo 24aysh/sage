@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -18,6 +20,8 @@ from sage.memory.models import (
 )
 from sage.providers.base import ModelProvider
 from sage.providers.errors import ProviderInvocationError
+
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "smrt-summarizer-v1"
 SEMANTIC_SCHEMA_VERSION = "smrt-semantic-v1"
@@ -115,7 +119,7 @@ class ProviderSemanticSummarizer:
 
     async def _invoke(self, message: str, schema: type[FileSemanticPayload] | type[DirectorySemanticPayload]):
         last_error: ProviderInvocationError | None = None
-        for _ in range(self._max_retries + 1):
+        for attempt in range(self._max_retries + 1):
             try:
                 self.calls += 1
                 result = await self._provider.invoke_structured(
@@ -130,8 +134,25 @@ class ProviderSemanticSummarizer:
                 return result.parsed
             except ProviderInvocationError as error:
                 last_error = error
-                if not error.retryable:
+                will_retry = error.retryable and attempt < self._max_retries
+                logger.warning(
+                    "memory summarizer attempt failed provider=%s model=%s "
+                    "category=%s status_code=%s attempt=%d/%d retry=%s",
+                    error.provider,
+                    error.model,
+                    error.category.value,
+                    error.status_code if error.status_code is not None else "none",
+                    attempt + 1,
+                    self._max_retries + 1,
+                    will_retry,
+                )
+                if not will_retry:
                     break
+                delay = error.retry_after_seconds
+                if delay is None:
+                    delay = min(2**attempt, 10)
+                if delay:
+                    await asyncio.sleep(delay)
         raise MemoryIntegrityError("Semantic summarization failed safely.") from last_error
 
 

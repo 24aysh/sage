@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from sage.domain.usage import ModelRole
 from sage.providers.base import LangChainStructuredProvider
+from sage.providers.errors import ProviderErrorCategory
 
 
 class Result(BaseModel):
@@ -58,3 +60,25 @@ def test_structured_provider_forwards_named_trace_config() -> None:
 
     assert result.parsed == Result(value="done")
     assert runnable.config == trace_config
+
+
+def test_structured_provider_classifies_nested_rate_limit() -> None:
+    provider = LangChainStructuredProvider(
+        model=RecordingModel(RecordingRunnable()),  # type: ignore[arg-type]
+        provider_name="google",
+        model_name="gemini-test",
+    )
+    provider_error = RuntimeError("private provider response")
+    provider_error.code = 429  # type: ignore[attr-defined]
+    provider_error.response = SimpleNamespace(  # type: ignore[attr-defined]
+        headers={"retry-after": "2"}
+    )
+    wrapper = RuntimeError("GoogleRateLimitError")
+    wrapper.__cause__ = provider_error
+
+    classified = provider.classify_error(wrapper)
+
+    assert classified.category is ProviderErrorCategory.RATE_LIMITED
+    assert classified.status_code == 429
+    assert classified.retry_after_seconds == 2
+    assert classified.retryable is True
