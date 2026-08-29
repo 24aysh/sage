@@ -205,6 +205,8 @@ memory expansion supplied to agent files=1 coverage=[...]
 memory source read access=read_file mode=healthy path='src/example.py' lines=1-40
 memory tree accessed path='src' max_depth=1 truncated=False
 memory text search accessed scope='tests' query_chars=12 matches=[('tests/test_example.py', 8)]
+memory summarizer attempt failed provider=google model=<model> category=rate_limited status_code=429 attempt=1/2 retry=True
+memory snapshot aborted snapshot_id=<uuid> failure_code=rate_limited
 ```
 
 These messages identify repository paths and line ranges supplied through the
@@ -331,6 +333,18 @@ docker compose -p sage-memory-test \
   -f apps/agent/tests/memory/docker-compose.yml exec -T postgres \
   psql -U sage_test -d sage_memory_test -c \
   "SELECT r.namespace_key, s.status, left(s.target_commit_oid, 12) AS target, s.created_at, s.ready_at FROM sage_smrt.snapshots s JOIN sage_smrt.repositories r USING (repository_id) ORDER BY s.created_at DESC;"
+```
+
+A failed summarizer/provider attempt leaves a bounded `FAILED` diagnostic row,
+not a stale `BUILDING` snapshot. Its `failure_code` is provider-neutral, such
+as `rate_limited`; semantic and overlay objects that are not reachable from
+any `READY` snapshot are removed during the same abort transaction:
+
+```bash
+docker compose -p sage-memory-test \
+  -f apps/agent/tests/memory/docker-compose.yml exec -T postgres \
+  psql -U sage_test -d sage_memory_test -c \
+  "SELECT r.namespace_key, s.status, s.failure_code, s.created_at FROM sage_smrt.snapshots s JOIN sage_smrt.repositories r USING (repository_id) WHERE s.status <> 'READY' ORDER BY s.created_at DESC;"
 ```
 
 Card counts and refresh modes:
@@ -685,8 +699,9 @@ container after startup, keep memory enabled against only that disposable DSN,
 and start a solve. Do not use this procedure with a live Neon DSN.
 
 Expected: startup transitions once to `fallback`; ordinary tree/search/read
-tools remain available; no later memory adapter operation occurs; the solve is
-not failed merely because memory is unavailable; and `memory-summary.json`
+tools remain available; no later learning operation occurs; the failed
+snapshot is marked `FAILED`; unreachable partial cards are removed; the solve
+is not failed merely because memory is unavailable; and `memory-summary.json`
 contains only a safe component, stage, code/message, target, and fallback action.
 
 FTS5, parser, and summarizer failures are injected with fakes in the offline
