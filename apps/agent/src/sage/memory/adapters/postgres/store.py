@@ -409,13 +409,21 @@ class PostgresMemoryStore:
     async def mark_snapshot_failed(
         self, snapshot_id: UUID, *, failure_code: str
     ) -> None:
+        """Fail one build and atomically collect its unreachable partial objects."""
+
         try:
             async with self._connections.pool.connection() as connection:
-                await connection.execute(
-                    "UPDATE sage_smrt.snapshots SET status = 'FAILED', failure_code = %s "
-                    "WHERE snapshot_id = %s AND status = 'BUILDING'",
-                    (failure_code[:100], snapshot_id),
-                )
+                async with connection.transaction():
+                    async with connection.cursor() as cursor:
+                        await cursor.execute(
+                            "UPDATE sage_smrt.snapshots SET status = 'FAILED', "
+                            "failure_code = %s WHERE snapshot_id = %s "
+                            "AND status = 'BUILDING' RETURNING repository_id",
+                            (failure_code[:100], snapshot_id),
+                        )
+                        failed = await cursor.fetchone()
+                        if failed is not None:
+                            await _collect_unreachable(cursor, failed[0])
         except PsycopgError as error:
             raise MemoryStorageError("Unable to close a failed memory snapshot.") from error
 
@@ -518,58 +526,7 @@ class PostgresMemoryStore:
                                 "AND snapshot_id = ANY(%s)",
                                 (repository_id, obsolete),
                             )
-                        await cursor.execute(
-                            "WITH RECURSIVE reachable(digest) AS ("
-                            " SELECT root_overlay_digest FROM sage_smrt.snapshots"
-                            " WHERE repository_id = %s AND status = 'READY'"
-                            " UNION SELECT edge.child_overlay_digest"
-                            " FROM reachable parent JOIN sage_smrt.overlay_edges edge"
-                            " ON edge.repository_id = %s AND edge.parent_overlay_digest = parent.digest"
-                            ") DELETE FROM sage_smrt.overlay_edges edge WHERE edge.repository_id = %s"
-                            " AND edge.parent_overlay_digest NOT IN (SELECT digest FROM reachable)",
-                            (repository_id, repository_id, repository_id),
-                        )
-                        await cursor.execute(
-                            "WITH RECURSIVE reachable(digest) AS ("
-                            " SELECT root_overlay_digest FROM sage_smrt.snapshots"
-                            " WHERE repository_id = %s AND status = 'READY'"
-                            " UNION SELECT edge.child_overlay_digest"
-                            " FROM reachable parent JOIN sage_smrt.overlay_edges edge"
-                            " ON edge.repository_id = %s AND edge.parent_overlay_digest = parent.digest"
-                            ") DELETE FROM sage_smrt.overlay_nodes node WHERE node.repository_id = %s"
-                            " AND node.overlay_digest NOT IN (SELECT digest FROM reachable)",
-                            (repository_id, repository_id, repository_id),
-                        )
-                        await cursor.execute(
-                            "WITH RECURSIVE reachable(digest) AS ("
-                            " SELECT semantic_digest FROM sage_smrt.overlay_nodes"
-                            " WHERE repository_id = %s AND semantic_digest IS NOT NULL"
-                            " UNION SELECT stale_hint_digest FROM sage_smrt.overlay_nodes"
-                            " WHERE repository_id = %s AND stale_hint_digest IS NOT NULL"
-                            " UNION SELECT dependency.child_digest"
-                            " FROM reachable parent JOIN sage_smrt.semantic_dependencies dependency"
-                            " ON dependency.repository_id = %s"
-                            " AND dependency.parent_digest = parent.digest"
-                            ") DELETE FROM sage_smrt.semantic_dependencies dependency"
-                            " WHERE dependency.repository_id = %s"
-                            " AND dependency.parent_digest NOT IN (SELECT digest FROM reachable)",
-                            (repository_id, repository_id, repository_id, repository_id),
-                        )
-                        await cursor.execute(
-                            "WITH RECURSIVE reachable(digest) AS ("
-                            " SELECT semantic_digest FROM sage_smrt.overlay_nodes"
-                            " WHERE repository_id = %s AND semantic_digest IS NOT NULL"
-                            " UNION SELECT stale_hint_digest FROM sage_smrt.overlay_nodes"
-                            " WHERE repository_id = %s AND stale_hint_digest IS NOT NULL"
-                            " UNION SELECT dependency.child_digest"
-                            " FROM reachable parent JOIN sage_smrt.semantic_dependencies dependency"
-                            " ON dependency.repository_id = %s"
-                            " AND dependency.parent_digest = parent.digest"
-                            ") DELETE FROM sage_smrt.semantic_objects semantic"
-                            " WHERE semantic.repository_id = %s"
-                            " AND semantic.semantic_digest NOT IN (SELECT digest FROM reachable)",
-                            (repository_id, repository_id, repository_id, repository_id),
-                        )
+                        await _collect_unreachable(cursor, repository_id)
             return min(len(ready_ids), 5)
         except PsycopgError as error:
             raise MemoryStorageError("Unable to retain canonical memory snapshots.") from error
@@ -610,6 +567,67 @@ class PostgresMemoryStore:
             }
         except PsycopgError as error:
             raise MemoryStorageError("Unable to inspect canonical memory.") from error
+
+
+async def _collect_unreachable(cursor: Any, repository_id: UUID) -> None:
+    """Delete objects not reachable from any authoritative READY root."""
+
+    await cursor.execute(
+        "WITH RECURSIVE reachable(digest) AS ("
+        " SELECT root_overlay_digest FROM sage_smrt.snapshots"
+        " WHERE repository_id = %s AND status = 'READY'"
+        " UNION SELECT edge.child_overlay_digest"
+        " FROM reachable parent JOIN sage_smrt.overlay_edges edge"
+        " ON edge.repository_id = %s"
+        " AND edge.parent_overlay_digest = parent.digest"
+        ") DELETE FROM sage_smrt.overlay_edges edge"
+        " WHERE edge.repository_id = %s"
+        " AND edge.parent_overlay_digest NOT IN (SELECT digest FROM reachable)",
+        (repository_id, repository_id, repository_id),
+    )
+    await cursor.execute(
+        "WITH RECURSIVE reachable(digest) AS ("
+        " SELECT root_overlay_digest FROM sage_smrt.snapshots"
+        " WHERE repository_id = %s AND status = 'READY'"
+        " UNION SELECT edge.child_overlay_digest"
+        " FROM reachable parent JOIN sage_smrt.overlay_edges edge"
+        " ON edge.repository_id = %s"
+        " AND edge.parent_overlay_digest = parent.digest"
+        ") DELETE FROM sage_smrt.overlay_nodes node"
+        " WHERE node.repository_id = %s"
+        " AND node.overlay_digest NOT IN (SELECT digest FROM reachable)",
+        (repository_id, repository_id, repository_id),
+    )
+    await cursor.execute(
+        "WITH RECURSIVE reachable(digest) AS ("
+        " SELECT semantic_digest FROM sage_smrt.overlay_nodes"
+        " WHERE repository_id = %s AND semantic_digest IS NOT NULL"
+        " UNION SELECT stale_hint_digest FROM sage_smrt.overlay_nodes"
+        " WHERE repository_id = %s AND stale_hint_digest IS NOT NULL"
+        " UNION SELECT dependency.child_digest"
+        " FROM reachable parent JOIN sage_smrt.semantic_dependencies dependency"
+        " ON dependency.repository_id = %s"
+        " AND dependency.parent_digest = parent.digest"
+        ") DELETE FROM sage_smrt.semantic_dependencies dependency"
+        " WHERE dependency.repository_id = %s"
+        " AND dependency.parent_digest NOT IN (SELECT digest FROM reachable)",
+        (repository_id, repository_id, repository_id, repository_id),
+    )
+    await cursor.execute(
+        "WITH RECURSIVE reachable(digest) AS ("
+        " SELECT semantic_digest FROM sage_smrt.overlay_nodes"
+        " WHERE repository_id = %s AND semantic_digest IS NOT NULL"
+        " UNION SELECT stale_hint_digest FROM sage_smrt.overlay_nodes"
+        " WHERE repository_id = %s AND stale_hint_digest IS NOT NULL"
+        " UNION SELECT dependency.child_digest"
+        " FROM reachable parent JOIN sage_smrt.semantic_dependencies dependency"
+        " ON dependency.repository_id = %s"
+        " AND dependency.parent_digest = parent.digest"
+        ") DELETE FROM sage_smrt.semantic_objects semantic"
+        " WHERE semantic.repository_id = %s"
+        " AND semantic.semantic_digest NOT IN (SELECT digest FROM reachable)",
+        (repository_id, repository_id, repository_id, repository_id),
+    )
 
 
 def _snapshot(row: dict[str, object]) -> Snapshot:

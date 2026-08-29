@@ -161,6 +161,21 @@ class PostgresMemoryEngine:
             raise
         except Exception as error:
             error_code = type(error).__name__[:100]
+            if snapshot_id is not None:
+                try:
+                    await self._store.mark_snapshot_failed(
+                        snapshot_id,
+                        failure_code=error_code,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "memory begin snapshot abort failed snapshot_id=%s "
+                        "error_code=%s",
+                        snapshot_id,
+                        type(cleanup_error).__name__[:100],
+                    )
             logger.warning(
                 "memory PostgreSQL unavailable stage=begin error_code=%s "
                 "mode=fallback",

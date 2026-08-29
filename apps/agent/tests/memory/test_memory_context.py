@@ -5,17 +5,19 @@ from uuid import uuid4
 
 import pytest
 
-from sage.errors import MemoryPolicyError
+from sage.errors import MemoryIntegrityError, MemoryPolicyError
 from sage.memory.models import (
     ContextExpansionRequest,
     DirectMaterializationRequest,
     FileSemanticPayload,
+    MemoryMode,
     MutationAuthorization,
     RepositoryIdentity,
 )
 from sage.memory.parsing import TreeSitterExtractor
 from sage.memory.retrieval.sparse import SQLiteSparseIndex
 from sage.memory.session import ActiveMemorySession
+from sage.providers.errors import ProviderErrorCategory, ProviderInvocationError
 
 
 class _Repository:
@@ -50,13 +52,21 @@ class _Git:
 
 
 class _Store:
+    def __init__(self) -> None:
+        self.semantic = []
+        self.failed = []
+
     async def find_semantic_by_source(
         self, repository_id, *, source_oid, **semantic_identity
     ):
         return None
 
     async def insert_semantic_object(self, repository_id, semantic):
-        return None
+        self.semantic.append(semantic)
+
+    async def mark_snapshot_failed(self, snapshot_id, *, failure_code):
+        self.failed.append((snapshot_id, failure_code))
+        self.semantic.clear()
 
 
 class _Summarizer:
@@ -65,6 +75,28 @@ class _Summarizer:
 
     async def summarize_file(self, *, path, source, structure):
         return FileSemanticPayload(summary=f"Semantic card for {path}")
+
+
+class _FailSecondSummarizer(_Summarizer):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def summarize_file(self, *, path, source, structure):
+        self.calls += 1
+        if self.calls == 2:
+            provider_error = ProviderInvocationError(
+                ProviderErrorCategory.RATE_LIMITED,
+                provider="google",
+                model="gemini-test",
+                status_code=429,
+                retryable=True,
+            )
+            raise MemoryIntegrityError(
+                "Semantic summarization failed safely."
+            ) from provider_error
+        return await super().summarize_file(
+            path=path, source=source, structure=structure
+        )
 
 
 def test_healthy_mutation_policy_requires_current_read_coverage(
@@ -85,6 +117,57 @@ def test_healthy_mutation_policy_requires_current_read_coverage(
         "lines=1-10"
     ) in caplog.text
     assert "def factorial(): ..." not in caplog.text
+
+
+def test_learning_failure_aborts_snapshot_and_discards_partial_write(
+    tmp_path,
+) -> None:
+    asyncio.run(_exercise_learning_failure(tmp_path))
+
+
+async def _exercise_learning_failure(tmp_path) -> None:
+    sources = {
+        "src/alpha.py": "def alpha():\n    pass\n",
+        "tests/beta.py": "def beta():\n    pass\n",
+    }
+    for path, source in sources.items():
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source)
+    store = _Store()
+    snapshot_id = uuid4()
+    index = SQLiteSparseIndex()
+    session = ActiveMemorySession(
+        repository=_Repository(tmp_path),
+        identity=RepositoryIdentity(
+            namespace_kind="local", namespace_key="repo", display_name="repo"
+        ),
+        repository_id=uuid4(),
+        target_commit="a" * 40,
+        workspace=tmp_path,
+        git=_Git(sources),
+        store=store,
+        summarizer=_FailSecondSummarizer(),
+        extractor=TreeSitterExtractor(),
+        index=index,
+        prior_documents=[],
+        input_snapshot_id=None,
+        building_snapshot_id=snapshot_id,
+        initial_max_files=8,
+        expansion_max_files=6,
+        context_chars=48_000,
+        max_file_source_chars=120_000,
+        beam_width=4,
+        max_candidates_per_round=16,
+        max_navigation_rounds=6,
+    )
+    try:
+        await session.initial_context("src/alpha.py tests/beta.py")
+        assert session.mode is MemoryMode.FALLBACK
+        assert store.failed == [(snapshot_id, "rate_limited")]
+        assert store.semantic == []
+    finally:
+        index.close()
 
 
 async def _exercise_mutation_policy(tmp_path) -> None:

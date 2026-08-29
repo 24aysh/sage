@@ -175,6 +175,52 @@ async def _exercise_postgres_lifecycle() -> None:
         assert documents[0].semantic_state is SemanticState.MISSING
         inspection = await store.inspect_repository(repository.identity)
         assert inspection["ready_snapshots"] == 5
+
+        orphan = build_file_semantic_object(
+            source_oid="f" * 40,
+            payload=FileSemanticPayload(summary="Unpublished partial memory"),
+            structure=FileStructure(
+                language="python",
+                parser_version="integration-parser",
+                parse_status="parsed",
+            ),
+            provider="fake",
+            model="fake-v1",
+        )
+        await store.insert_semantic_object(repository.repository_id, orphan)
+        failed = await store.start_snapshot(
+            repository_id=repository.repository_id,
+            parent_snapshot_id=latest_id,
+            target_commit_oid="e" * 40,
+            target_root_tree_oid="f" * 40,
+            run_id="failed-integration-run",
+        )
+        await store.mark_snapshot_failed(
+            failed.snapshot_id, failure_code="rate_limited"
+        )
+        with psycopg.connect(dsn) as connection:
+            failed_row = connection.execute(
+                "SELECT status, failure_code FROM sage_smrt.snapshots "
+                "WHERE snapshot_id = %s",
+                (failed.snapshot_id,),
+            ).fetchone()
+            orphan_count = connection.execute(
+                "SELECT count(*) FROM sage_smrt.semantic_objects "
+                "WHERE repository_id = %s AND semantic_digest = %s",
+                (repository.repository_id, orphan.semantic_digest),
+            ).fetchone()
+        assert failed_row == ("FAILED", "rate_limited")
+        assert orphan_count == (0,)
+        latest_after_abort = await store.load_latest_ready_snapshot(
+            repository.repository_id
+        )
+        assert latest_after_abort is not None
+        assert latest_after_abort.snapshot_id == latest_id
+        documents_after_abort = await store.load_search_documents(
+            repository.repository_id,
+            root_overlay_digest=latest_after_abort.root_overlay_digest,
+        )
+        assert documents_after_abort == documents
         isolated = await store.inspect_repository(
             RepositoryIdentity(
                 namespace_kind="local",

@@ -37,6 +37,7 @@ from sage.memory.retrieval.exact import exact_candidates
 from sage.memory.retrieval.sparse import SQLiteSparseIndex
 from sage.memory.snapshots import build_sparse_overlay
 from sage.memory.summarizer import PROMPT_VERSION, build_file_semantic_object
+from sage.providers.errors import ProviderInvocationError
 from sage.repository import RepositoryTools
 from sage.repository.paths import resolve_workspace_path, workspace_relative_path
 
@@ -269,7 +270,7 @@ class ActiveMemorySession(DisabledMemorySession):
             except MemoryPolicyError:
                 raise
             except Exception as error:
-                self._transition("context", "dependency", error)
+                await self._transition("context", "dependency", error)
         result = self._repository.read_file(path=request.path)
         self._record_source_read(
             request.path,
@@ -332,7 +333,7 @@ class ActiveMemorySession(DisabledMemorySession):
             except MemoryPolicyError:
                 raise
             except Exception as error:
-                self._transition("learning", "read", error)
+                await self._transition("learning", "read", error)
         result = self._repository.read_file(
             path=path, start_line=start_line, end_line=end_line
         )
@@ -395,7 +396,7 @@ class ActiveMemorySession(DisabledMemorySession):
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                self._transition("snapshot", "finalize", error)
+                await self._transition("snapshot", "finalize", error)
         self._index.close()
         return self._report()
 
@@ -458,7 +459,7 @@ class ActiveMemorySession(DisabledMemorySession):
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            self._transition("retrieval", "context", error)
+            await self._transition("retrieval", "context", error)
             return ContextForest(entries=self._context.entries)
 
     async def _materialize(
@@ -580,14 +581,17 @@ class ActiveMemorySession(DisabledMemorySession):
         self._learned[normalized] = semantic
         self._stats.created_cards += 1
 
-    def _transition(self, component: str, stage: str, error: Exception) -> None:
+    async def _transition(
+        self, component: str, stage: str, error: Exception
+    ) -> None:
         if self._mode is not MemoryMode.HEALTHY:
             return
+        error_code = _memory_failure_code(error)
         self._mode = MemoryMode.FALLBACK
         self._failure = MemoryFailure(
             component=component,
             stage=stage,
-            error_code=type(error).__name__[:100],
+            error_code=error_code,
             safe_message="SMRT could not continue safely for this solve.",
             snapshot_id=self._building_snapshot_id,
             target_commit=self._target_commit,
@@ -597,10 +601,28 @@ class ActiveMemorySession(DisabledMemorySession):
             "mode=fallback",
             component,
             stage,
-            type(error).__name__[:100],
+            error_code,
         )
         self._prior_documents = []
         self._index.close()
+        try:
+            await self._store.mark_snapshot_failed(
+                self._building_snapshot_id,
+                failure_code=error_code,
+            )
+            logger.info(
+                "memory snapshot aborted snapshot_id=%s failure_code=%s",
+                self._building_snapshot_id,
+                error_code,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as cleanup_error:
+            logger.warning(
+                "memory snapshot abort failed snapshot_id=%s error_code=%s",
+                self._building_snapshot_id,
+                type(cleanup_error).__name__[:100],
+            )
 
     def _report(
         self,
@@ -651,6 +673,17 @@ def _merge_candidates(
         if current is None or item.score > current.score:
             merged[item.path] = item
     return list(merged.values())
+
+
+def _memory_failure_code(error: Exception) -> str:
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ProviderInvocationError):
+            return current.category.value[:100]
+        current = current.__cause__ or current.__context__
+    return type(error).__name__[:100]
 
 
 def _format_ranges(ranges: tuple[tuple[int, int], ...]) -> str:
