@@ -103,6 +103,12 @@ class ModelCallManager:
     ) -> None:
         usage = message.usage_metadata or {}
         input_details = usage.get("input_token_details") or {}
+        parsed = message.additional_kwargs.get("parsed")
+        tool_name = (
+            str(message.tool_calls[0]["name"])[:100]
+            if len(message.tool_calls) == 1
+            else None
+        )
         self._append_record(
             ModelCallRecord(
                 call_number=call_number,
@@ -117,6 +123,9 @@ class ModelCallManager:
                 latency_ms=latency_ms,
                 outcome="success",
                 request_id=_request_id(message),
+                tool_call_count=len(message.tool_calls),
+                tool_name=tool_name,
+                has_structured_output=parsed is not None,
             )
         )
 

@@ -679,6 +679,39 @@ not greater without a source change. Retrieval remains deterministic for tied
 evidence. Fail: unchanged files are summarized again without a version/config
 change or memory crosses repository keys.
 
+Compare exact Solver tool calls as well as memory counters:
+
+```bash
+for run_dir in "$COLD_RUN_DIR" "$WARM_RUN_DIR"; do
+  printf '%s: ' "$run_dir"
+  jq '[.calls[] | select(
+        .role == "solver" and
+        .outcome == "success" and
+        .tool_call_count == 1
+      )] | length' "$run_dir/usage.json"
+done
+```
+
+Each new `usage.json` record includes `tool_call_count`, the bounded
+`tool_name`, and whether that turn returned structured output. It never stores
+tool arguments or repository content.
+
+For comparable Issues against the same commit, the warm run should need fewer
+Solver calls because source already present in `context-forest.json` is treated
+as read. Inspect that context and any expansions:
+
+```bash
+jq -r '.entries[] | [.path, .evidence_tier, .reason] | @tsv' \
+  "$WARM_RUN_DIR/context-forest.json"
+find "$WARM_RUN_DIR/context-expansions" -maxdepth 1 -type f -print 2>/dev/null
+```
+
+Fail the warm-reuse check when a punctuation-only repository root is reported
+as `exact_path`, when the Solver repeatedly rediscovers paths already supplied
+with full source, or when an unchanged comparable run does not reduce calls.
+Call counts can vary by one around optional verification, but repeated broad
+exploration indicates that memory is not guiding the solve.
+
 ## 10. Changed file and rename catch-up
 
 In the disposable target repository:
