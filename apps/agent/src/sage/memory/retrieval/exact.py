@@ -59,7 +59,9 @@ def exact_candidates(
             "symbol": tuple(item.casefold() for item in document.symbols),
             "import": tuple(item.casefold() for item in document.imports),
         }
-        if path in explicit_paths or path.casefold() in normalized:
+        if path in explicit_paths or (
+            path != "." and path.casefold() in normalized
+        ):
             _keep(ranked, document, 100.0, "exact_path", "Issue names this path")
         elif filename and filename in normalized:
             _keep(ranked, document, 90.0, "exact_filename", "Issue names this file")

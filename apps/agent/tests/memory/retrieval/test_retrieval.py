@@ -48,6 +48,25 @@ def test_exact_evidence_matches_specific_directory_identifier() -> None:
     assert candidates[0].evidence_tier == "exact_path_identifier"
 
 
+def test_repository_root_is_not_an_exact_match_for_issue_punctuation() -> None:
+    documents = [
+        SearchDocument(path=".", node_type=NodeType.DIRECTORY),
+        SearchDocument(
+            path="project/src/factorial/main.py",
+            node_type=NodeType.FILE,
+        ),
+    ]
+
+    candidates = exact_candidates(
+        "The factorial file is empty. Implement it recursively.", documents
+    )
+
+    assert [item.path for item in candidates] == [
+        "project/src/factorial/main.py"
+    ]
+    assert candidates[0].evidence_tier == "exact_path_identifier"
+
+
 def test_sqlite_fts_escapes_query_syntax_and_excludes_negative_scope() -> None:
     index = SQLiteSparseIndex()
     index.rebuild(
