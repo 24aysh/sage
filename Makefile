@@ -23,7 +23,8 @@ DEBUG_FLAG :=
 .PHONY: help env setup bootstrap first-run v2-first-run v2-github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
-	run-status run-test memory-doctor memory-migrate memory-test memory-postgres-test
+	run-status run-test memory-doctor memory-migrate memory-test memory-postgres-test \
+	memory-cold-start
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -55,6 +56,7 @@ help: ## Show the available commands and variables.
 		'  make memory-doctor     Check memory dependencies and optional database.' \
 		'  make memory-migrate    Apply memory migrations using the direct DSN.' \
 		'  make memory-postgres-test  Run opt-in tests against a dedicated test DSN.' \
+		'  make memory-cold-start Delete local runs and recreate disposable memory.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
 		'  make v2-graph         Print/check the sequential V2 graph.' \
@@ -361,6 +363,31 @@ memory-postgres-test: ## Run opt-in memory integration tests on a dedicated data
 	LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -m memory_postgres \
 		"$(AGENT_PROJECT)/tests/memory"
+
+memory-cold-start: ENV_FILE = .env.memory.local
+memory-cold-start: ## Delete local run artifacts and recreate disposable PostgreSQL memory.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ ! -f "$(ENV_PATH)" ]]; then \
+		echo "ERROR: local memory configuration is missing: $(ENV_PATH)" >&2; exit 1; \
+	fi; \
+	set -a; source "$(ENV_PATH)"; set +a; \
+	local_dsn_prefix='postgresql://sage_test:sage_test@127.0.0.1:55432/sage_memory_test'; \
+	runtime_dsn="$${SAGE_MEMORY_DATABASE_URL:-}"; runtime_dsn="$${runtime_dsn%%\?*}"; \
+	migration_dsn="$${SAGE_MEMORY_MIGRATION_DATABASE_URL:-}"; migration_dsn="$${migration_dsn%%\?*}"; \
+	if [[ "$$runtime_dsn" != "$$local_dsn_prefix" ]] || \
+	   [[ "$$migration_dsn" != "$$local_dsn_prefix" ]]; then \
+		echo "ERROR: memory-cold-start only accepts the named disposable local PostgreSQL DSNs." >&2; exit 1; \
+	fi; \
+	docker compose version >/dev/null; \
+	mkdir -p "$(ROOT_DIR)/.sage/runs"; \
+	find "$(ROOT_DIR)/.sage/runs" -mindepth 1 -delete; \
+	docker compose -p sage-memory-test \
+		-f apps/agent/tests/memory/docker-compose.yml down -v --remove-orphans; \
+	docker compose -p sage-memory-test \
+		-f apps/agent/tests/memory/docker-compose.yml up -d --wait; \
+	uv run --project "$(AGENT_PROJECT)" sage memory migrate; \
+	echo "Cold-start state ready: local run artifacts removed and disposable memory recreated."
 
 github-test: ## Run deterministic GitHub integration tests (no live API/model call).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \

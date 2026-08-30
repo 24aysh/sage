@@ -38,6 +38,23 @@ network-disabled sandbox smoke test passes.
 
 ### B. Start the disposable local PostgreSQL service
 
+For a guaranteed cold start that also deletes every existing `.sage/runs`
+artifact, recreates only the named disposable PostgreSQL volume, waits for it
+to become healthy, and reapplies the schema, run:
+
+```bash
+make memory-cold-start
+```
+
+This target defaults to `.env.memory.local` and refuses database URLs that do
+not point at the fixed `127.0.0.1:55432/sage_memory_test` service. Both local
+run artifacts and all snapshots/cards in that disposable service are
+irreversibly deleted. Use `ENV_FILE=/absolute/path/to/memory.env` only for an
+equivalent configuration targeting that same disposable service.
+
+Otherwise, start or resume the existing disposable database without deleting
+its named volume:
+
 ```bash
 docker compose -p sage-memory-test \
   -f apps/agent/tests/memory/docker-compose.yml up -d --wait
