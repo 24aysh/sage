@@ -242,6 +242,13 @@ class ResearchService:
     def get_result(self, result_id: str) -> ResearchResult | None:
         return self._results.get(result_id)
 
+    def unknown_result_ids(self, result_ids: Sequence[str]) -> tuple[str, ...]:
+        """Return IDs that were not produced by this run's research tools."""
+
+        return tuple(
+            result_id for result_id in result_ids if result_id not in self._results
+        )
+
     def summary(self) -> ResearchSummary:
         return ResearchSummary(
             provider=self.provider_name,

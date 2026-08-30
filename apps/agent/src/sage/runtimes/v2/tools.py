@@ -109,10 +109,13 @@ def build_solver_tools(
     ) -> str:
         """Validate and persist the complete plan before any file mutation."""
 
+        validated_research_ids = _validate_research_result_ids(
+            research_result_ids or (), research
+        )
         saved = plans.save(
             SolverPlan(
                 issue_summary=issue_summary,
-                research_result_ids=tuple(research_result_ids or ()),
+                research_result_ids=validated_research_ids,
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -144,12 +147,15 @@ def build_solver_tools(
     ) -> str:
         """Persist a complete replacement for the current Solver plan."""
 
+        validated_research_ids = _validate_research_result_ids(
+            research_result_ids or (), research
+        )
         saved = plans.revise(
             prior_version=prior_version,
             reason=reason,
             plan=SolverPlan(
                 issue_summary=issue_summary,
-                research_result_ids=tuple(research_result_ids or ()),
+                research_result_ids=validated_research_ids,
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -299,3 +305,21 @@ def build_solver_tools(
         show_diff,
         run_command,
     ]
+
+
+def _validate_research_result_ids(
+    result_ids: list[str] | tuple[str, ...],
+    research: ResearchService | None,
+) -> tuple[str, ...]:
+    normalized = tuple(result_ids)
+    unknown = (
+        normalized
+        if research is None
+        else research.unknown_result_ids(normalized)
+    )
+    if unknown:
+        raise RepositoryError(
+            "research_result_ids accepts only IDs returned by same-run research "
+            "tools; repository paths and memory paths belong in relevant_paths."
+        )
+    return normalized

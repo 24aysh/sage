@@ -279,19 +279,17 @@ class V2GraphRuntime:
             prior_progress: tuple[str, str] | None = None
 
             while True:
+                artifacts.write_solver_final(solver_result)
                 validate_solver_final(solver_result, plan=plans.saved)
                 assert plans.saved is not None
-                unknown_research = [
-                    result_id
-                    for result_id in plans.saved.plan.research_result_ids
-                    if research.get_result(result_id) is None
-                ]
+                unknown_research = research.unknown_result_ids(
+                    plans.saved.plan.research_result_ids
+                )
                 if unknown_research:
                     raise InvalidModelContractError(
                         "Solver plan references unknown research results: "
                         + ", ".join(sorted(unknown_research))
                     )
-                artifacts.write_solver_final(solver_result)
                 terminal = _solver_terminal(solver_result, calls=calls)
                 if terminal is not None:
                     if (
@@ -456,10 +454,21 @@ class V2GraphRuntime:
                 "Sage reached the V2 run deadline finalization reserve.",
                 calls,
             )
-        except (ValidationError, InvalidModelContractError):
+        except ValidationError:
             final = _terminal(
                 SolveOutcome.INVALID_MODEL_OUTPUT,
                 "A V2 role returned an invalid structured result.",
+                calls,
+            )
+        except InvalidModelContractError as error:
+            logger.warning(
+                "V2 role result contract rejected run=%s reason=%s",
+                context.prepared_run.run_id,
+                error,
+            )
+            final = _terminal(
+                SolveOutcome.INVALID_MODEL_OUTPUT,
+                "A V2 role violated its result contract: " + str(error)[:1_500],
                 calls,
             )
         except GraphRecursionError:
