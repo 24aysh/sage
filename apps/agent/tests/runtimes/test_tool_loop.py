@@ -11,7 +11,7 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel
 
-from sage.errors import AgentRuntimeError, RepositoryError
+from sage.errors import AgentRuntimeError, MemoryPolicyError, RepositoryError
 from sage.runtimes.tool_loop import (
     AgentState,
     build_agent_node,
@@ -355,6 +355,37 @@ def test_graph_returns_repository_failure_before_next_decision(tmp_path: Path) -
     assert len(tool_results) == 1
     assert tool_results[0].status == "error"
     assert tool_results[0].content == "Repository tool failed: read failed"
+
+
+def test_graph_returns_memory_policy_rejection_before_next_decision(
+    tmp_path: Path,
+) -> None:
+    repository = RecordingRepository(
+        read_error=MemoryPolicyError(
+            "Healthy memory limits tree expansion to depth two."
+        )
+    )
+    graph, model, repository = _graph(
+        tmp_path,
+        [
+            _tool_message("read_file", {"path": "app.py"}),
+            _final_message("retried safely"),
+        ],
+        repository=repository,
+    )
+
+    result = asyncio.run(graph.ainvoke(_initial_state()))
+
+    assert result["final_output"].summary == "retried safely"
+    assert repository.calls == ["read_file"]
+    tool_results = [
+        message for message in model.inputs[1] if isinstance(message, ToolMessage)
+    ]
+    assert len(tool_results) == 1
+    assert tool_results[0].status == "error"
+    assert tool_results[0].content == (
+        "Repository tool failed: Healthy memory limits tree expansion to depth two."
+    )
 
 
 def test_graph_propagates_model_and_unexpected_tool_failures(tmp_path: Path) -> None:

@@ -126,7 +126,7 @@ async def run_github_issue(
     solve_runner: SolveRunner = solve_issue,
     publisher: Publisher = publish_solve_result,
 ) -> GitHubWorkflowResult:
-    """Reauthorize, solve at the event SHA, publish, and report one invocation."""
+    """Reauthorize after queueing, solve the accepted target, and publish."""
 
     branch_name = issue_branch_name(invocation.issue.number)
     solve_result: SolveResult | None = None
@@ -158,7 +158,7 @@ async def run_github_issue(
             )
 
         checkout = target_checkout.expanduser().resolve()
-        _validate_exact_target_checkout(checkout, invocation.base_sha)
+        _validate_exact_target_checkout(checkout, invocation.accepted_base_sha)
         _validate_runner_paths(
             checkout,
             context_dir=context_dir,
@@ -187,12 +187,15 @@ async def run_github_issue(
         request = SolveRequest(
             repo_path=checkout,
             issue_path=issue_path,
-            base_ref=invocation.base_sha,
+            base_ref=invocation.accepted_base_sha,
+            memory_repository_kind="github",
+            memory_repository_key=str(invocation.repository.repository_id),
+            memory_repository_display_name=invocation.repository.full_name,
         )
         settings = settings_factory()
         runtime = runtime_factory(settings)
         solve_result = await solve_runner(request, runtime, settings)
-        if solve_result.base_sha != invocation.base_sha:
+        if solve_result.base_sha != invocation.accepted_base_sha:
             raise GitHubPublicationError(
                 "The solve result base does not match the validated event base."
             )
@@ -203,7 +206,7 @@ async def run_github_issue(
                 invocation,
                 branch=branch_name,
                 outcome=workflow_outcome.value,
-                current_base_sha=invocation.base_sha,
+                current_base_sha=invocation.accepted_base_sha,
                 local_run_id=solve_result.run_id,
             )
             persist_github_diagnostics(
@@ -233,7 +236,7 @@ async def run_github_issue(
                 invocation,
                 branch=branch_name,
                 outcome=GitHubWorkflowOutcome.NO_CHANGES.value,
-                current_base_sha=invocation.base_sha,
+                current_base_sha=invocation.accepted_base_sha,
                 local_run_id=solve_result.run_id,
             )
             persist_github_diagnostics(
@@ -317,7 +320,7 @@ async def run_github_issue(
                 branch=branch_name,
                 outcome=f"failed:{category}",
                 current_base_sha=(
-                    invocation.base_sha if solve_result is not None else None
+                    invocation.accepted_base_sha if solve_result is not None else None
                 ),
                 local_run_id=(solve_result.run_id if solve_result is not None else None),
             )

@@ -10,6 +10,8 @@ from sage.domain.results import AgentFinalOutput
 
 if TYPE_CHECKING:
     from sage.config import Settings
+    from sage.memory.api import MemorySession
+    from sage.memory.models import RepositoryIdentity
     from sage.repository import RepositoryTools
     from sage.sandbox.base import Sandbox
 
@@ -22,6 +24,8 @@ class RuntimeContext:
     sandbox: Sandbox
     repository: RepositoryTools
     settings: Settings
+    memory_identity: RepositoryIdentity | None = None
+    memory_session: MemorySession | None = None
 
 
 class AgentRuntime(Protocol):

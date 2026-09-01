@@ -184,31 +184,68 @@ def _request_id(message: AIMessage | None) -> str | None:
 
 
 def _status_code(error: Exception) -> int | None:
-    value = getattr(error, "status_code", None)
-    if value is None:
-        value = getattr(error, "code", None)
-    try:
-        return int(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
+    for candidate in _exception_chain(error):
+        for owner, attribute in (
+            (candidate, "status_code"),
+            (candidate, "code"),
+            (getattr(candidate, "response", None), "status_code"),
+            (getattr(candidate, "response", None), "status"),
+        ):
+            value = getattr(owner, attribute, None) if owner is not None else None
+            parsed = _status_int(value)
+            if parsed is not None:
+                return parsed
+    return None
 
 
 def _retry_after(error: Exception) -> float | None:
-    response = getattr(error, "response", None)
-    headers = getattr(response, "headers", {}) or {}
-    value = headers.get("retry-after") if hasattr(headers, "get") else None
-    if value is None:
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return max(0.0, parsed)
+    for candidate in _exception_chain(error):
+        response = getattr(candidate, "response", None)
+        headers = getattr(response, "headers", {}) or {}
+        if not hasattr(headers, "get"):
+            continue
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        if value is None:
+            continue
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _exception_request_id(error: Exception) -> str | None:
-    value = getattr(error, "request_id", None)
-    return str(value)[:200] if value else None
+    for candidate in _exception_chain(error):
+        value = getattr(candidate, "request_id", None)
+        if value:
+            return str(value)[:200]
+    return None
+
+
+def _exception_chain(error: BaseException):
+    """Yield safe exception objects through integration wrapper layers."""
+
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _status_int(value: object) -> int | None:
+    if callable(value):
+        try:
+            value = value()
+        except Exception:
+            return None
+    enum_value = getattr(value, "value", value)
+    if isinstance(enum_value, tuple) and enum_value:
+        enum_value = enum_value[0]
+    try:
+        return int(enum_value) if enum_value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _validation_issues(error: ValidationError) -> tuple[str, ...]:

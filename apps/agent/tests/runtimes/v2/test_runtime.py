@@ -229,7 +229,79 @@ def test_v2_solver_and_reviewer_complete_two_feedback_repairs(
     assert not any(path.name.startswith("admission") for path in prepared.run_dir.iterdir())
     assert "Solver: activity" in caplog.text
     assert "Reviewer: activity" in caplog.text
+    assert "memory disabled run=v2-test" in caplog.text
     assert "Admission:" not in caplog.text
+
+
+def test_v2_preserves_solver_final_when_cross_field_contract_fails(
+    tmp_path: Path,
+) -> None:
+    workspace, base_sha = _repository(tmp_path)
+    settings = Settings(
+        runtime="v2",
+        openai_api_key="openai-test",
+        gemini_api_key="gemini-test",
+        v2_solver_model="solver-model",
+        v2_reviewer_model="reviewer-model",
+        command_timeout_seconds=10,
+        run_deadline_seconds=600,
+        finalization_reserve_seconds=60,
+    )
+    solver = BindingModel(
+        [
+            [
+                _tool("save_plan", _plan_args(), "plan"),
+                _tool(
+                    "replace_text",
+                    {
+                        "path": "app.py",
+                        "old_text": "value = 1",
+                        "new_text": "value = 2",
+                        "expected_occurrences": 1,
+                    },
+                    "edit",
+                ),
+                _final("implementation", plan_version=2),
+            ]
+        ]
+    )
+    prepared = PreparedRun(
+        run_id="v2-invalid-contract",
+        source_repo=workspace,
+        run_dir=tmp_path / "run",
+        workspace_dir=workspace,
+        base_ref="HEAD",
+        base_sha=base_sha,
+    )
+    prepared.run_dir.mkdir()
+    sandbox = LocalSandbox(workspace)
+    repository = RepositoryTools(
+        workspace_root=workspace,
+        sandbox=sandbox,  # type: ignore[arg-type]
+        settings=settings,
+    )
+    runtime = V2GraphRuntime(
+        settings,
+        providers=ProviderSet(reviewer=ReviewerProvider([])),
+        solver_model=solver,  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        runtime.solve(
+            issue_text="Change app.py.",
+            context=RuntimeContext(
+                prepared_run=prepared,
+                sandbox=sandbox,  # type: ignore[arg-type]
+                repository=repository,
+                settings=settings,
+            ),
+        )
+    )
+
+    assert result.outcome is SolveOutcome.INVALID_MODEL_OUTPUT
+    assert "latest saved plan" in result.summary
+    assert (prepared.run_dir / "solver-final.json").is_file()
+    assert (workspace / "app.py").read_text(encoding="utf-8") == "value = 2\n"
 
 
 def _repository(tmp_path: Path) -> tuple[Path, str]:
@@ -258,11 +330,11 @@ def _tool(name: str, args: dict[str, object], call_id: str) -> AIMessage:
     )
 
 
-def _final(summary: str) -> AIMessage:
+def _final(summary: str, *, plan_version: int = 1) -> AIMessage:
     result = SolverFinalResult(
         outcome=SolverOutcome.IMPLEMENTED,
         summary=summary,
-        plan_version=1,
+        plan_version=plan_version,
         verification_claims=("Inspected the candidate.",),
     )
     return AIMessage(content="", additional_kwargs={"parsed": result.model_dump()})

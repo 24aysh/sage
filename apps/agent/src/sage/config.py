@@ -84,6 +84,32 @@ class Settings(BaseModel):
         default=(),
         max_length=50,
     )
+    memory_enabled: bool = False
+    memory_database_url: str | None = Field(default=None, repr=False)
+    memory_repository_key: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_summarizer_provider: Literal["google"] = "google"
+    memory_summarizer_model: str = Field(
+        default=DEFAULT_V2_REVIEWER_MODEL,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    )
+    memory_summarizer_timeout_seconds: int = Field(default=120, ge=1, le=300)
+    memory_summarizer_max_retries: int = Field(default=1, ge=0, le=2)
+    memory_beam_width: int = Field(default=4, ge=3, le=8)
+    memory_max_candidates_per_round: int = Field(default=16, ge=4, le=64)
+    memory_max_navigation_rounds: int = Field(default=6, ge=1, le=12)
+    memory_initial_max_files: int = Field(default=8, ge=1, le=24)
+    memory_expansion_max_files: int = Field(default=6, ge=1, le=16)
+    memory_context_chars: int = Field(default=48_000, ge=4_000, le=96_000)
+    memory_max_file_source_chars: int = Field(
+        default=120_000,
+        ge=4_000,
+        le=500_000,
+    )
+    memory_parent_delta_limit: int = Field(default=3, ge=0, le=8)
+    memory_parent_changed_child_limit: int = Field(default=4, ge=1, le=16)
+    memory_db_timeout_seconds: int = Field(default=15, ge=1, le=60)
     max_turns: int = Field(default=30, ge=1)
     runs_dir: Path = Path(".sage/runs")
     sandbox_image: str = "sage-sandbox:v0"
@@ -124,6 +150,15 @@ class Settings(BaseModel):
                 "SAGE_WEB_SEARCH_API_KEY is required when a web search provider "
                 "is selected."
             )
+        if self.memory_enabled and self.memory_database_url is None:
+            raise ValueError(
+                "SAGE_MEMORY_DATABASE_URL is required when "
+                "SAGE_MEMORY_ENABLED=true."
+            )
+        if self.memory_context_chars > self.solver_input_chars:
+            raise ValueError(
+                "SAGE_MEMORY_CONTEXT_CHARS cannot exceed SAGE_SOLVER_INPUT_CHARS."
+            )
         for domain in (
             *self.research_allowed_domains,
             *self.official_documentation_domains,
@@ -154,6 +189,9 @@ class Settings(BaseModel):
         langsmith_api_key = values.get("LANGSMITH_API_KEY", "").strip() or None
         web_search_api_key = (
             values.get("SAGE_WEB_SEARCH_API_KEY", "").strip() or None
+        )
+        memory_database_url = (
+            values.get("SAGE_MEMORY_DATABASE_URL", "").strip() or None
         )
         langsmith_tracing = _parse_bool(
             values.get("LANGSMITH_TRACING", "false"),
@@ -239,6 +277,54 @@ class Settings(BaseModel):
                 ),
                 official_documentation_domains=_parse_domains(
                     values.get("SAGE_OFFICIAL_DOCUMENTATION_DOMAINS", "")
+                ),
+                memory_enabled=_parse_bool(
+                    values.get("SAGE_MEMORY_ENABLED", "false"),
+                    name="SAGE_MEMORY_ENABLED",
+                ),
+                memory_database_url=memory_database_url,
+                memory_repository_key=(
+                    values.get("SAGE_MEMORY_REPOSITORY_KEY", "").strip() or None
+                ),
+                memory_summarizer_provider=values.get(
+                    "SAGE_MEMORY_SUMMARIZER_PROVIDER", "google"
+                ).strip().lower(),
+                memory_summarizer_model=values.get(
+                    "SAGE_MEMORY_SUMMARIZER_MODEL", DEFAULT_V2_REVIEWER_MODEL
+                ).strip(),
+                memory_summarizer_timeout_seconds=values.get(
+                    "SAGE_MEMORY_SUMMARIZER_TIMEOUT_SECONDS", "120"
+                ),
+                memory_summarizer_max_retries=values.get(
+                    "SAGE_MEMORY_SUMMARIZER_MAX_RETRIES", "1"
+                ),
+                memory_beam_width=values.get("SAGE_MEMORY_BEAM_WIDTH", "4"),
+                memory_max_candidates_per_round=values.get(
+                    "SAGE_MEMORY_MAX_CANDIDATES_PER_ROUND", "16"
+                ),
+                memory_max_navigation_rounds=values.get(
+                    "SAGE_MEMORY_MAX_NAVIGATION_ROUNDS", "6"
+                ),
+                memory_initial_max_files=values.get(
+                    "SAGE_MEMORY_INITIAL_MAX_FILES", "8"
+                ),
+                memory_expansion_max_files=values.get(
+                    "SAGE_MEMORY_EXPANSION_MAX_FILES", "6"
+                ),
+                memory_context_chars=values.get(
+                    "SAGE_MEMORY_CONTEXT_CHARS", "48000"
+                ),
+                memory_max_file_source_chars=values.get(
+                    "SAGE_MEMORY_MAX_FILE_SOURCE_CHARS", "120000"
+                ),
+                memory_parent_delta_limit=values.get(
+                    "SAGE_MEMORY_PARENT_DELTA_LIMIT", "3"
+                ),
+                memory_parent_changed_child_limit=values.get(
+                    "SAGE_MEMORY_PARENT_CHANGED_CHILD_LIMIT", "4"
+                ),
+                memory_db_timeout_seconds=values.get(
+                    "SAGE_MEMORY_DB_TIMEOUT_SECONDS", "15"
                 ),
                 max_turns=values.get("SAGE_MAX_TURNS", "30"),
                 runs_dir=values.get("SAGE_RUNS_DIR", ".sage/runs"),

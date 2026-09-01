@@ -14,6 +14,7 @@ _DIAGNOSTIC_FILES = (
     "metadata.json",
     "agent-final.json",
     "research-summary.json",
+    "memory-summary.json",
     "solver-plan.json",
     "solver-final.json",
     "changed-files.json",
@@ -41,6 +42,10 @@ class GitHubProvenance(BaseModel):
     command: SageCommand
     base_branch: str = Field(min_length=1, max_length=255)
     original_base_sha: str = Field(pattern=GIT_OBJECT_ID_PATTERN)
+    accepted_target_base_sha: str | None = Field(
+        default=None,
+        pattern=GIT_OBJECT_ID_PATTERN,
+    )
     current_base_sha: str | None = Field(
         default=None,
         pattern=GIT_OBJECT_ID_PATTERN,
@@ -78,6 +83,7 @@ def build_github_provenance(
         command=invocation.command,
         base_branch=invocation.default_branch,
         original_base_sha=invocation.base_sha,
+        accepted_target_base_sha=invocation.target_base_sha,
         current_base_sha=current_base_sha,
         branch=branch,
         outcome=outcome,

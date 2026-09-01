@@ -62,6 +62,48 @@ def test_settings_uses_v2_and_documented_models_by_default() -> None:
     assert settings.runtime == "v2"
     assert settings.v2_solver_model == DEFAULT_V2_SOLVER_MODEL == "gpt-5.4-mini"
     assert settings.v2_reviewer_model == DEFAULT_V2_REVIEWER_MODEL == "gemini-3.5-flash"
+    assert settings.memory_enabled is False
+    assert settings.memory_database_url is None
+
+
+def test_memory_can_be_enabled_with_bounded_secret_safe_settings() -> None:
+    settings = Settings.from_env(
+        {
+            "OPENAI_API_KEY": "openai-secret",
+            "GEMINI_API_KEY": "gemini-secret",
+            "SAGE_MEMORY_ENABLED": "true",
+            "SAGE_MEMORY_DATABASE_URL": "postgresql://memory-secret@example/db",
+            "SAGE_MEMORY_REPOSITORY_KEY": "stable-local-key",
+            "SAGE_MEMORY_BEAM_WIDTH": "3",
+        }
+    )
+
+    assert settings.memory_enabled is True
+    assert settings.memory_beam_width == 3
+    assert "memory-secret" not in repr(settings)
+
+
+def test_memory_enabled_requires_runtime_database_url() -> None:
+    with pytest.raises(ConfigurationError, match="SAGE_MEMORY_DATABASE_URL"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
+                "SAGE_MEMORY_ENABLED": "true",
+            }
+        )
+
+
+def test_memory_context_cannot_exceed_solver_input() -> None:
+    with pytest.raises(ConfigurationError, match="MEMORY_CONTEXT_CHARS"):
+        Settings.from_env(
+            {
+                "OPENAI_API_KEY": "openai-secret",
+                "GEMINI_API_KEY": "gemini-secret",
+                "SAGE_MEMORY_CONTEXT_CHARS": "48000",
+                "SAGE_SOLVER_INPUT_CHARS": "8000",
+            }
+        )
 
 
 def test_v2_settings_require_locked_profile_credentials_and_acknowledgement() -> None:
