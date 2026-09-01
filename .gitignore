@@ -7,9 +7,6 @@ project_research_updated.md
 random.md
 SAGE_V2_PROVISIONAL_DESIGN_SPEC_UPDATED.md
 adaptive_multi_agent_coding_assistant_design.md
-SAGE_AGENT_HARNESS_CONTEXT_MEMORY_RESEARCH.md
-SAGE_SEMANTIC_MERKLE_REPOSITORY_TREE_RESEARCH.md
-SAGE_SMRT_REFINED_OPEN_QUESTIONS_RESEARCH.md
 
 # Python
 **/.venv/
@@ -26,10 +23,8 @@ SAGE_SMRT_REFINED_OPEN_QUESTIONS_RESEARCH.md
 
 # Local secrets
 .env
-.env.memory.local
 .env.*
 !.env.example
-!.env.memory.local.example
 
 # Agent runs
 .sage/runs/

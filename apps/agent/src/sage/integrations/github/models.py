@@ -157,10 +157,6 @@ class GitHubInvocation(BaseModel):
     command: SageCommand | None
     default_branch: str = Field(min_length=1, max_length=255)
     base_sha: str = Field(pattern=GIT_OBJECT_ID_PATTERN)
-    target_base_sha: str | None = Field(
-        default=None,
-        pattern=GIT_OBJECT_ID_PATTERN,
-    )
     actions_run: GitHubActionsRun
 
     @field_validator("default_branch")
@@ -190,12 +186,6 @@ class GitHubInvocation(BaseModel):
         if self.actions_run.html_url.rstrip("/") != expected_run_url:
             raise ValueError("Actions run URL does not match the repository and run.")
         return self
-
-    @property
-    def accepted_base_sha(self) -> str:
-        """Return the default-branch SHA resolved after any queue wait."""
-
-        return self.target_base_sha or self.base_sha
 
 
 def validate_github_url(value: str) -> str:

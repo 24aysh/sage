@@ -32,19 +32,6 @@ class V2ArtifactStore:
     def write_research_summary(self, value: BaseModel) -> Path:
         return self._json("research-summary.json", value)
 
-    def write_memory_summary(self, value: BaseModel) -> Path:
-        return self._json("memory-summary.json", value)
-
-    def write_context_forest(self, value: BaseModel) -> Path:
-        return self._json("context-forest.json", value)
-
-    def write_context_expansion(self, sequence: int, value: BaseModel) -> Path:
-        if sequence < 1:
-            raise ArtifactError("Context expansion sequence must be positive.")
-        return self._json(
-            Path("context-expansions") / f"{sequence:02d}.json", value
-        )
-
     def write_solver_final(self, value: BaseModel) -> Path:
         return self._json("solver-final.json", value)
 
@@ -78,22 +65,13 @@ class V2ArtifactStore:
         return self._json("usage.json", value)
 
     def write_terminal(self, value: BaseModel) -> Path:
-        return self._json("terminal.json", value, exclude_none=True)
+        return self._json("terminal.json", value)
 
-    def _json(
-        self,
-        relative: str | Path,
-        value: BaseModel,
-        *,
-        exclude_none: bool = False,
-    ) -> Path:
+    def _json(self, relative: str | Path, value: BaseModel) -> Path:
         path = self._run_dir / relative
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            write_json_atomic(
-                path,
-                value.model_dump(mode="json", exclude_none=exclude_none),
-            )
+            write_json_atomic(path, value.model_dump(mode="json"))
         except OSError as error:
             raise ArtifactError(f"Unable to persist V2 artifact: {path.name}") from error
         return path

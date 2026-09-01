@@ -15,7 +15,6 @@ from sage.domain.solver import (
     SolverPlanTask,
 )
 from sage.errors import RepositoryError
-from sage.memory.models import MutationAuthorization
 from sage.research.models import ResearchRole
 from sage.research.service import ResearchService
 from sage.research.tools import build_research_tools
@@ -109,13 +108,10 @@ def build_solver_tools(
     ) -> str:
         """Validate and persist the complete plan before any file mutation."""
 
-        validated_research_ids = _validate_research_result_ids(
-            research_result_ids or (), research
-        )
         saved = plans.save(
             SolverPlan(
                 issue_summary=issue_summary,
-                research_result_ids=validated_research_ids,
+                research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -147,15 +143,12 @@ def build_solver_tools(
     ) -> str:
         """Persist a complete replacement for the current Solver plan."""
 
-        validated_research_ids = _validate_research_result_ids(
-            research_result_ids or (), research
-        )
         saved = plans.revise(
             prior_version=prior_version,
             reason=reason,
             plan=SolverPlan(
                 issue_summary=issue_summary,
-                research_result_ids=validated_research_ids,
+                research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -179,23 +172,12 @@ def build_solver_tools(
         """Replace exact UTF-8 text after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        if context.memory_session is not None:
-            context.memory_session.authorize_mutation(
-                MutationAuthorization(
-                    operation="replace",
-                    path=path,
-                    old_text=old_text,
-                )
-            )
-        result = context.repository.replace_text(
+        return context.repository.replace_text(
             path=path,
             old_text=old_text,
             new_text=new_text,
             expected_occurrences=expected_occurrences,
         )
-        if context.memory_session is not None:
-            context.memory_session.record_mutation(path)
-        return result
 
     @tool
     async def write_file(
@@ -206,57 +188,28 @@ def build_solver_tools(
         """Create or replace one UTF-8 file after enforcing the plan gate."""
 
         plans.require_implementable()
-        if context.memory_session is not None:
-            context.memory_session.authorize_mutation(
-                MutationAuthorization(
-                    operation="write",
-                    path=path,
-                    replacing_entire_file=mode != "create",
-                )
-            )
-        result = context.repository.write_file(
+        return context.repository.write_file(
             path=path,
             content=content,
             mode=WriteMode(mode),
         )
-        if context.memory_session is not None:
-            context.memory_session.record_mutation(path)
-        return result
 
     @tool
     async def delete_file(path: str) -> str:
         """Delete one regular file after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        if context.memory_session is not None:
-            context.memory_session.authorize_mutation(
-                MutationAuthorization(operation="delete", path=path)
-            )
-        result = context.repository.delete_file(path=path)
-        if context.memory_session is not None:
-            context.memory_session.record_mutation(path)
-        return result
+        return context.repository.delete_file(path=path)
 
     @tool
     async def move_file(source_path: str, destination_path: str) -> str:
         """Move one file without overwrite after enforcing the plan gate."""
 
         plans.require_implementable()
-        if context.memory_session is not None:
-            context.memory_session.authorize_mutation(
-                MutationAuthorization(
-                    operation="move",
-                    path=source_path,
-                    destination_path=destination_path,
-                )
-            )
-        result = context.repository.move_file(
+        return context.repository.move_file(
             source_path=source_path,
             destination_path=destination_path,
         )
-        if context.memory_session is not None:
-            context.memory_session.record_mutation(source_path, destination_path)
-        return result
 
     @tool
     async def run_command(command: str, timeout_seconds: int | None = None) -> str:
@@ -278,10 +231,6 @@ def build_solver_tools(
             command=command,
             timeout_seconds=timeout_seconds,
         )
-        if context.memory_session is not None:
-            context.memory_session.record_mutation(
-                *context.repository.get_changed_files()
-            )
         return context.repository.format_command_result(result)
 
     research_tools = (
@@ -305,21 +254,3 @@ def build_solver_tools(
         show_diff,
         run_command,
     ]
-
-
-def _validate_research_result_ids(
-    result_ids: list[str] | tuple[str, ...],
-    research: ResearchService | None,
-) -> tuple[str, ...]:
-    normalized = tuple(result_ids)
-    unknown = (
-        normalized
-        if research is None
-        else research.unknown_result_ids(normalized)
-    )
-    if unknown:
-        raise RepositoryError(
-            "research_result_ids accepts only IDs returned by same-run research "
-            "tools; repository paths and memory paths belong in relevant_paths."
-        )
-    return normalized

@@ -46,26 +46,8 @@ inputs:
     required: false
     default: ""
   base-sha:
-    description: Event-time SHA recorded by the gate for provenance.
+    description: Exact SHA accepted by the gate.
     required: true
-  base-branch:
-    description: Validated default branch resolved again after queue wait.
-    required: true
-  memory-enabled:
-    description: Opt in to sparse SMRT repository memory.
-    required: false
-    default: "false"
-  memory-database-url:
-    description: Pooled PostgreSQL runtime DSN, required only when memory is enabled.
-    required: false
-  memory-summarizer-provider:
-    description: Structured semantic summarizer provider.
-    required: false
-    default: google
-  memory-summarizer-model:
-    description: Dedicated semantic summarizer model.
-    required: false
-    default: gemini-3.5-flash
   status-comment-id:
     description: Bot-owned invocation status comment ID.
     required: true
@@ -85,23 +67,15 @@ runs:
         set -euo pipefail
         echo "diagnostics_path=$RUNNER_TEMP/sage-diagnostics" >> "$GITHUB_OUTPUT"
 
-    - name: Check out the current queued target
+    - name: Check out the exact target commit
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: ${{ github.repository }}
-        ref: ${{ inputs.base-branch }}
+        ref: ${{ inputs.base-sha }}
         path: sage-target
         fetch-depth: 0
         persist-credentials: false
         token: ${{ inputs.github-token }}
-
-    - name: Resolve target after queue wait
-      id: target
-      shell: bash
-      run: |
-        set -euo pipefail
-        target_base_sha="$(git -C "$GITHUB_WORKSPACE/sage-target" rev-parse --verify HEAD)"
-        echo "base_sha=$target_base_sha" >> "$GITHUB_OUTPUT"
 
     - name: Set up Python 3.14
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -149,10 +123,6 @@ runs:
         SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}
         SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}
         SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}
-        SAGE_MEMORY_ENABLED: ${{ inputs.memory-enabled }}
-        SAGE_MEMORY_DATABASE_URL: ${{ inputs.memory-database-url }}
-        SAGE_MEMORY_SUMMARIZER_PROVIDER: ${{ inputs.memory-summarizer-provider }}
-        SAGE_MEMORY_SUMMARIZER_MODEL: ${{ inputs.memory-summarizer-model }}
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
@@ -171,5 +141,4 @@ runs:
           --context-dir "$SAGE_CONTEXT_DIR" \
           --diagnostics-dir "$SAGE_DIAGNOSTICS_DIR" \
           --runner-temp "$SAGE_RUNNER_TEMP" \
-          --target-base-sha "${{ steps.target.outputs.base_sha }}" \
           --status-comment-id "$SAGE_STATUS_COMMENT_ID"

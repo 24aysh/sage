@@ -37,16 +37,13 @@ class ModelCallManager:
         usage_writer: UsageWriter | None = None,
         clock: Callable[[], float] = monotonic,
         run_id: str | None = None,
-        workflow_started_at: float | None = None,
     ) -> None:
         self._settings = settings
         self._reviewer = providers.reviewer
         self._usage_writer = usage_writer
         self._clock = clock
         self._run_id = run_id
-        self._deadline = (
-            workflow_started_at if workflow_started_at is not None else clock()
-        ) + settings.run_deadline_seconds
+        self._deadline = clock() + settings.run_deadline_seconds
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
         self._consecutive_failures: dict[str, int] = {}
@@ -103,12 +100,6 @@ class ModelCallManager:
     ) -> None:
         usage = message.usage_metadata or {}
         input_details = usage.get("input_token_details") or {}
-        parsed = message.additional_kwargs.get("parsed")
-        tool_name = (
-            str(message.tool_calls[0]["name"])[:100]
-            if len(message.tool_calls) == 1
-            else None
-        )
         self._append_record(
             ModelCallRecord(
                 call_number=call_number,
@@ -123,9 +114,6 @@ class ModelCallManager:
                 latency_ms=latency_ms,
                 outcome="success",
                 request_id=_request_id(message),
-                tool_call_count=len(message.tool_calls),
-                tool_name=tool_name,
-                has_structured_output=parsed is not None,
             )
         )
 

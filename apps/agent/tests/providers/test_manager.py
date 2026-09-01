@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from sage.config import Settings
@@ -116,36 +116,6 @@ def test_call_accounting_has_no_global_six_call_limit() -> None:
 
     assert len(manager.records) == 8
     assert manager.records[-1].call_number == 8
-
-
-def test_solver_call_accounting_records_tool_decisions() -> None:
-    manager = ModelCallManager(
-        settings=_settings(),
-        providers=ProviderSet(reviewer=Provider([])),
-    )
-
-    manager.finish_coding_call(
-        role=ModelRole.SOLVER,
-        stage="solver",
-        call_number=1,
-        message=AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "read_file",
-                    "args": {"path": "app.py"},
-                    "id": "read",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        latency_ms=1,
-    )
-
-    record = manager.records[0]
-    assert record.tool_call_count == 1
-    assert record.tool_name == "read_file"
-    assert record.has_structured_output is False
 
 
 def test_reviewer_has_no_provider_fallback() -> None:

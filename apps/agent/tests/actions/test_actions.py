@@ -78,9 +78,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "description": "Optional LangSmith API key scoped to the solve controller step.",
         "required": False,
     }
-    assert "ref: ${{ inputs.base-branch }}" in body
-    assert "git -C \"$GITHUB_WORKSPACE/sage-target\" rev-parse --verify HEAD" in body
-    assert '--target-base-sha "${{ steps.target.outputs.base_sha }}"' in body
+    assert "ref: ${{ inputs.base-sha }}" in body
     assert "persist-credentials: false" in body
     assert "fetch-depth: 0" in body
     assert "github.action_path" in body
@@ -102,8 +100,6 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     ) in body
     assert "OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}" in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
-    assert document["inputs"]["memory-enabled"]["default"] == "false"
-    assert "SAGE_MEMORY_DATABASE_URL: ${{ inputs.memory-database-url }}" in body
     assert "docker build" in body
     assert "sage github solve" in body
     assert "upload-artifact" not in body
@@ -129,15 +125,9 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
 
     assert document["on"] == {"issue_comment": {"types": ["created"]}}
     assert document["permissions"] == {}
+    assert document["concurrency"]["cancel-in-progress"] is False
     jobs = document["jobs"]
     assert set(jobs) == {"gate", "solve", "finalize"}
-    assert "concurrency" not in document
-    assert jobs["solve"]["concurrency"] == {
-        "group": "sage-${{ github.event.repository.id }}-solve",
-        "queue": "max",
-        "cancel-in-progress": False,
-    }
-    assert "concurrency" not in jobs["gate"]
     assert jobs["gate"]["permissions"] == {
         "contents": "read",
         "issues": "write",
@@ -167,13 +157,6 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         ),
         "SAGE_OFFICIAL_DOCUMENTATION_DOMAINS": (
             "${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}"
-        ),
-        "SAGE_MEMORY_ENABLED": "${{ vars.SAGE_MEMORY_ENABLED || 'false' }}",
-        "SAGE_MEMORY_SUMMARIZER_PROVIDER": (
-            "${{ vars.SAGE_MEMORY_SUMMARIZER_PROVIDER || 'google' }}"
-        ),
-        "SAGE_MEMORY_SUMMARIZER_MODEL": (
-            "${{ vars.SAGE_MEMORY_SUMMARIZER_MODEL || 'gemini-3.5-flash' }}"
         ),
     }
     assert jobs["finalize"]["permissions"] == {
@@ -211,13 +194,10 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
-    assert "SAGE_MEMORY_DATABASE_URL" not in yaml.safe_dump(jobs["gate"])
-    assert "SAGE_MEMORY_DATABASE_URL" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_WEB_SEARCH_API_KEY" in yaml.safe_dump(jobs["solve"])
-    assert "secrets.SAGE_MEMORY_DATABASE_URL" in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MODEL" not in yaml.safe_dump(jobs["solve"])
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_PLANNER_MODEL" not in yaml.safe_dump(jobs["solve"])
@@ -263,7 +243,6 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "terminal.json",
         "verification-summary.json",
         "review.json",
-        "memory-summary.json",
     }
     uploaded = set(
         re.findall(r"diagnostics-path }}/([^\s]+)", body)

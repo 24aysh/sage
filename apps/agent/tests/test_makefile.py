@@ -50,19 +50,6 @@ def test_run_status_disables_the_git_pager() -> None:
     assert 'git --no-pager -C "$$run_dir/repo" diff --check' in target
 
 
-def test_memory_cold_start_has_bounded_destructive_scope() -> None:
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    target = makefile.split("memory-cold-start:", 2)[2]
-
-    assert 'ENV_FILE = .env.memory.local' in makefile
-    assert 'find "$(ROOT_DIR)/.sage/runs" -mindepth 1 -delete' in target
-    assert "docker compose -p sage-memory-test" in target
-    assert "docker-compose.yml down -v --remove-orphans" in target
-    assert "docker-compose.yml up -d --wait" in target
-    assert 'uv run --project "$(AGENT_PROJECT)" sage memory migrate' in target
-    assert "only accepts the named disposable local PostgreSQL DSNs" in target
-
-
 def test_first_run_validates_inputs_before_credentials(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
