@@ -25,17 +25,11 @@ from sage.integrations.github.events import (
     load_issue_comment_fixture,
 )
 from sage.integrations.github.gate import evaluate_gate
-from sage.integrations.github.models import GitHubInvocation
 from sage.integrations.github.outputs import write_gate_outputs
 from sage.integrations.github.publication_smoke import (
     default_publication_smoke_dir,
     run_publication_smoke,
 )
-from sage.memory.admin import MemoryAdminSettings
-from sage.memory.admin import doctor as memory_doctor
-from sage.memory.admin import inspect as inspect_memory
-from sage.memory.admin import migrate as migrate_memory
-from sage.memory.models import RepositoryIdentity
 from sage.runtimes.factory import build_runtime
 from sage.workflow import solve_issue
 from sage.workflow.github_issue import finalize_github_issue, run_github_issue
@@ -84,40 +78,8 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--issue-file", required=True, type=Path)
     solve_parser.add_argument("--base-ref", default="HEAD")
     solve_parser.add_argument("--sandbox-image")
-    solve_parser.add_argument(
-        "--memory-repository-key",
-        help="Stable opaque identity for an enabled local memory repository.",
-    )
     solve_parser.add_argument("--debug", action="store_true")
     solve_parser.set_defaults(handler=_run_local_solve)
-
-    memory_parser = subparsers.add_parser(
-        "memory",
-        help="Migrate and inspect the optional SMRT memory service.",
-    )
-    memory_subparsers = memory_parser.add_subparsers(
-        dest="memory_command", required=True
-    )
-    memory_migrate_parser = memory_subparsers.add_parser(
-        "migrate", help="Apply packaged canonical-store migrations."
-    )
-    memory_migrate_parser.add_argument("--debug", action="store_true")
-    memory_migrate_parser.set_defaults(handler=_run_memory_migrate)
-    memory_doctor_parser = memory_subparsers.add_parser(
-        "doctor", help="Check PostgreSQL, FTS5, and Tree-sitter without model calls."
-    )
-    memory_doctor_parser.add_argument("--debug", action="store_true")
-    memory_doctor_parser.set_defaults(handler=_run_memory_doctor)
-    memory_inspect_parser = memory_subparsers.add_parser(
-        "inspect", help="Show bounded snapshot counts without semantic payloads."
-    )
-    memory_inspect_parser.add_argument("--repository-key", required=True)
-    memory_inspect_parser.add_argument(
-        "--namespace-kind", choices=("github", "local"), default="local"
-    )
-    memory_inspect_parser.add_argument("--display-name", default="memory-inspection")
-    memory_inspect_parser.add_argument("--debug", action="store_true")
-    memory_inspect_parser.set_defaults(handler=_run_memory_inspect)
 
     github_parser = subparsers.add_parser(
         "github",
@@ -150,7 +112,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     solve_github_parser.add_argument("--event-file", type=Path)
     solve_github_parser.add_argument("--target-checkout", required=True, type=Path)
-    solve_github_parser.add_argument("--target-base-sha")
     solve_github_parser.add_argument("--context-dir", required=True, type=Path)
     solve_github_parser.add_argument("--diagnostics-dir", required=True, type=Path)
     solve_github_parser.add_argument("--runner-temp", required=True, type=Path)
@@ -205,7 +166,6 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
         issue_path=arguments.issue_file.expanduser().resolve(),
         base_ref=arguments.base_ref,
         sandbox_image=arguments.sandbox_image,
-        memory_repository_key=arguments.memory_repository_key,
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
@@ -220,42 +180,6 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
         if result.outcome is SolveOutcome.COMPLETED and result.diff.strip()
         else 2
     )
-
-
-def _run_memory_migrate(arguments: argparse.Namespace) -> int:
-    del arguments
-    version = migrate_memory(MemoryAdminSettings.from_env())
-    print(f"Memory migration ready: {version}")
-    return 0
-
-
-def _run_memory_doctor(arguments: argparse.Namespace) -> int:
-    del arguments
-    result = memory_doctor(MemoryAdminSettings.from_env())
-    print("Memory doctor:")
-    for key, value in sorted(result.items()):
-        print(f"  {key}: {value}")
-    failed = result.get("fts5") != "ok" or result.get("tree_sitter") == "incompatible"
-    if result.get("memory_enabled") and result.get("postgres") != "ok":
-        failed = True
-    return 1 if failed else 0
-
-
-def _run_memory_inspect(arguments: argparse.Namespace) -> int:
-    result = asyncio.run(
-        inspect_memory(
-            MemoryAdminSettings.from_env(),
-            RepositoryIdentity(
-                namespace_kind=arguments.namespace_kind,
-                namespace_key=arguments.repository_key,
-                display_name=arguments.display_name,
-            ),
-        )
-    )
-    print("Memory repository:")
-    for key, value in sorted(result.items()):
-        print(f"  {key}: {value}")
-    return 0
 
 
 def _run_github_gate(arguments: argparse.Namespace) -> int:
@@ -294,11 +218,6 @@ def _run_github_solve(arguments: argparse.Namespace) -> int:
     environment = _github_environment(arguments.event_file)
     github_settings = GitHubSettings.from_env(environment)
     invocation = load_issue_comment_event(environment)
-    if arguments.target_base_sha:
-        invocation = invocation.model_copy(
-            update={"target_base_sha": arguments.target_base_sha}
-        )
-        invocation = GitHubInvocation.model_validate(invocation.model_dump())
     client = RestGitHubClient(github_settings)
     result = asyncio.run(
         run_github_issue(

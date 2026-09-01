@@ -21,7 +21,6 @@ from sage.integrations.github.publishing import (
     render_pull_request_body,
     render_pull_request_title,
 )
-from sage.memory.models import MemoryFailure, MemoryMode, MemoryRunReport
 from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "github"
@@ -460,45 +459,6 @@ def test_pull_request_rendering_is_bounded_and_sanitized(tmp_path: Path) -> None
     assert "@all" not in body and "@team" not in body
     assert "<!-- sage-pull-request:evil -->" not in body
     assert len(body) < 20_000
-
-
-def test_pull_request_renders_only_sanitized_memory_fallback(tmp_path: Path) -> None:
-    invocation = _invocation("a" * 40)
-    result = SolveResult(
-        run_id="run-id",
-        base_sha="a" * 40,
-        summary="Implemented the change.",
-        remaining_uncertainty=[],
-        changed_files=["app.py"],
-        diff="diff",
-        run_dir=tmp_path,
-        workspace_dir=tmp_path,
-        memory=MemoryRunReport(
-            mode=MemoryMode.FALLBACK,
-            target_commit="a" * 40,
-            failure=MemoryFailure(
-                component="database @all",
-                stage="begin",
-                error_code="MemoryStorageError",
-                safe_message="SMRT could not start safely.",
-                target_commit="a" * 40,
-            ),
-        ),
-    )
-
-    body = render_pull_request_body(
-        invocation,
-        result,
-        branch_name="sage/issue-17",
-        current_base_sha="a" * 40,
-        base_movement=BaseMovement.UNCHANGED,
-    )
-
-    assert "## Sage Memory" in body
-    assert "Status: fallback" in body
-    assert "full repository exploration" in body
-    assert "@all" not in body
-    assert "postgresql://" not in body
 
 
 def _repositories(tmp_path: Path) -> tuple[Path, Path, Path, str]:

@@ -10,8 +10,7 @@ from sage.config import Settings
 from sage.domain.requests import PreparedRun, SolveRequest
 from sage.domain.results import SolveOutcome, SolveResult
 from sage.domain.runtime import AgentRuntime, RuntimeContext
-from sage.errors import MemoryConfigurationError, WorkspaceError
-from sage.memory.models import RepositoryIdentity
+from sage.errors import WorkspaceError
 from sage.repository import RepositoryTools
 from sage.repository.workspace import prepare_run
 from sage.sandbox.base import Sandbox
@@ -39,7 +38,6 @@ async def solve_issue(
         effective_settings = settings.model_copy(
             update={"sandbox_image": request.sandbox_image}
         )
-    memory_identity = _memory_identity(request, effective_settings)
 
     issue_text = _read_issue(request)
     prepared = prepare_run(request, effective_settings)
@@ -62,7 +60,6 @@ async def solve_issue(
             sandbox=sandbox,
             repository=repository,
             settings=effective_settings,
-            memory_identity=memory_identity,
         )
         final_output = await runtime.solve(issue_text=issue_text, context=context)
         diff = repository.get_complete_diff()
@@ -85,7 +82,6 @@ async def solve_issue(
             workspace_dir=prepared.workspace_dir,
             outcome=outcome,
             provenance=final_output.provenance,
-            memory=final_output.memory,
         )
         store.persist_result(final_output=final_output, result=result)
         logger.info("agent run completed", extra={"run_id": prepared.run_id})
@@ -114,25 +110,4 @@ def _build_repository_tools(
         workspace_root=prepared.workspace_dir,
         sandbox=sandbox,
         settings=settings,
-    )
-
-
-def _memory_identity(
-    request: SolveRequest, settings: Settings
-) -> RepositoryIdentity | None:
-    if not settings.memory_enabled:
-        return None
-    key = request.memory_repository_key or settings.memory_repository_key
-    if not key:
-        raise MemoryConfigurationError(
-            "Memory-enabled local solves require SAGE_MEMORY_REPOSITORY_KEY or "
-            "an explicit stable repository key."
-        )
-    return RepositoryIdentity(
-        namespace_kind=request.memory_repository_kind,
-        namespace_key=key,
-        display_name=(
-            request.memory_repository_display_name
-            or request.repo_path.expanduser().resolve().name
-        ),
     )

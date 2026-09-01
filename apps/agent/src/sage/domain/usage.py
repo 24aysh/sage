@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 class ModelRole(StrEnum):
     SOLVER = "solver"
     REVIEWER = "reviewer"
-    MEMORY_SUMMARIZER = "memory_summarizer"
 
 
 class AttemptKind(StrEnum):
@@ -36,9 +35,6 @@ class ModelCallRecord(BaseModel):
     error_category: str | None = Field(default=None, max_length=80)
     status_code: int | None = Field(default=None, ge=100, le=599)
     request_id: str | None = Field(default=None, max_length=200)
-    tool_call_count: int = Field(default=0, ge=0)
-    tool_name: str | None = Field(default=None, max_length=100)
-    has_structured_output: bool = False
 
 
 class RunProvenance(BaseModel):

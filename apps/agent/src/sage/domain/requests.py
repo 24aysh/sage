@@ -1,9 +1,8 @@
 """Input and prepared-workspace domain models."""
 
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class SolveRequest(BaseModel):
@@ -15,11 +14,6 @@ class SolveRequest(BaseModel):
     issue_path: Path
     base_ref: str = "HEAD"
     sandbox_image: str | None = None
-    memory_repository_kind: Literal["github", "local"] = Field(
-        default="local", exclude=True
-    )
-    memory_repository_key: str | None = Field(default=None, exclude=True)
-    memory_repository_display_name: str | None = Field(default=None, exclude=True)
 
 
 class PreparedRun(BaseModel):

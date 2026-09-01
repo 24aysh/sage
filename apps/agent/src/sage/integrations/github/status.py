@@ -219,7 +219,7 @@ def render_workflow_status(
         message = (
             "### Sage: solve in progress\n\n"
             f"Sage started an isolated solve for Issue {_code(f'#{invocation.issue.number}')} "
-            f"against {_code(invocation.accepted_base_sha[:12])}."
+            f"against {_code(invocation.base_sha[:12])}."
         )
     elif state is WorkflowStatusState.PULL_REQUEST_CREATED:
         if pull_request_url is None:
