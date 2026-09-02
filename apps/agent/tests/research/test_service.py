@@ -5,11 +5,8 @@ import asyncio
 import pytest
 
 from sage.research.models import ProviderSearchItem, ResearchRole, SearchRequest
-from sage.research.service import (
-    ResearchService,
-    normalize_external_text,
-    validate_public_result_url,
-)
+from sage.research.safety import normalize_external_text, validate_public_result_url
+from sage.research.service import ResearchService
 
 
 class Provider:
