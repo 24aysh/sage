@@ -10,7 +10,6 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from sage.errors import GitHubEventError
-from sage.integrations.github.commands import parse_command
 from sage.integrations.github.models import (
     GITHUB_WEB_URL,
     GitHubActionsRun,
@@ -19,9 +18,20 @@ from sage.integrations.github.models import (
     GitHubInvocation,
     GitHubIssue,
     GitHubRepository,
+    SageCommand,
 )
 
 MAX_EVENT_BYTES = 2_000_000
+_COMMANDS = {
+    "/sage solve": SageCommand.SOLVE,
+    "/sage fix": SageCommand.SOLVE,
+}
+
+
+def parse_command(body: str) -> SageCommand | None:
+    """Return a supported command only when the complete body matches exactly."""
+
+    return _COMMANDS.get(body)
 
 
 class _WebhookUser(BaseModel):

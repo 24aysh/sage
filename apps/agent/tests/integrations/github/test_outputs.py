@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from sage.errors import GitHubConfigurationError
-from sage.integrations.github.gate_models import GateOutcome, GateResult
+from sage.integrations.github.models import GateOutcome, GateResult
 from sage.integrations.github.outputs import write_gate_outputs
 
 

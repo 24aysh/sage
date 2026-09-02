@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from sage.errors import GitHubConfigurationError
-from sage.integrations.github.gate_models import GateResult
+from sage.integrations.github.models import GateResult
 
 _MAX_OUTPUT_VALUE_CHARS = 2_048
 

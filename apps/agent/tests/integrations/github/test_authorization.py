@@ -1,6 +1,6 @@
 import pytest
 
-from sage.integrations.github.authorization import is_authorized_permission
+from sage.integrations.github.gate import is_authorized_permission
 
 
 @pytest.mark.parametrize("permission", ["admin", "write"])

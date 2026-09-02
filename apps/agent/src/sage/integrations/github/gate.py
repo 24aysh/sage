@@ -2,16 +2,26 @@
 
 from sage.errors import GitHubApiError, GitHubGateError
 from sage.integrations.github.api_models import GitHubIssueCommentSnapshot
-from sage.integrations.github.authorization import is_authorized_permission
-from sage.integrations.github.branches import issue_branch_name
 from sage.integrations.github.client import GitHubClient
-from sage.integrations.github.gate_models import GateOutcome, GateResult
-from sage.integrations.github.models import GitHubInvocation
+from sage.integrations.github.models import (
+    GateOutcome,
+    GateResult,
+    GitHubInvocation,
+    issue_branch_name,
+)
 from sage.integrations.github.status import (
     find_invocation_status,
     has_terminal_status,
     render_gate_status,
 )
+
+_AUTHORIZED_PERMISSIONS = frozenset({"admin", "write"})
+
+
+def is_authorized_permission(permission: str) -> bool:
+    """Return whether GitHub's calculated permission may run Sage."""
+
+    return permission in _AUTHORIZED_PERMISSIONS
 
 
 def evaluate_gate(

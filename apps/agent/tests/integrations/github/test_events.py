@@ -4,15 +4,40 @@ from pathlib import Path
 import pytest
 
 from sage.errors import GitHubEventError
-from sage.integrations.github.commands import SageCommand
 from sage.integrations.github.events import (
     MAX_EVENT_BYTES,
     load_issue_comment_event,
+    parse_command,
     parse_issue_comment_event,
 )
+from sage.integrations.github.models import SageCommand
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "github"
 BASE_SHA = "a" * 40
+
+
+@pytest.mark.parametrize("body", ["/sage solve", "/sage fix"])
+def test_parse_command_accepts_exact_supported_aliases(body: str) -> None:
+    assert parse_command(body) is SageCommand.SOLVE
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "",
+        " /sage solve",
+        "/sage solve ",
+        "/SAGE SOLVE",
+        "/sage",
+        "/sage solve now",
+        "please /sage solve",
+        "`/sage solve`",
+        "```\n/sage solve\n```",
+        "/sage\u00a0solve",
+    ],
+)
+def test_parse_command_rejects_non_exact_input(body: str) -> None:
+    assert parse_command(body) is None
 
 
 def test_load_issue_comment_event_normalizes_supported_solve() -> None:
