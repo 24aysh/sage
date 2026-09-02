@@ -6,7 +6,7 @@ import logging
 import subprocess
 
 from sage.config import Settings
-from sage.domain.requests import PreparedRun
+from sage.domain.solve import PreparedRun
 from sage.errors import SandboxError
 from sage.sandbox.base import CommandResult
 
