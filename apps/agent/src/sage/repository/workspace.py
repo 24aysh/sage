@@ -10,7 +10,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 from sage.config import Settings
-from sage.domain.requests import PreparedRun, SolveRequest
+from sage.domain.solve import PreparedRun, SolveRequest
 from sage.errors import HostGitError, HostGitTimeoutError, WorkspaceError
 from sage.repository.host_git import run_git
 
