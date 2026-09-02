@@ -1,27 +1,24 @@
 # Sage backend
 
-The Python package contains the trusted controller, isolated workspace
-preparation, Docker sandbox, provider-neutral repository tools, artifact store,
-and the sequential V2 Solver/Reviewer runtime. V2 is the only runtime. The
-OpenAI-backed Solver works through a bounded tool loop, deterministic checks
-verify its candidate, and the Gemini-backed Reviewer independently evaluates
-the result. Repairable findings return to a fresh Solver session.
+This package is the trusted Python controller for Sage. It owns typed domain
+contracts, explicit Solver and Reviewer roles, deterministic orchestration,
+isolated repository capabilities, verification, providers, run evidence, and
+the GitHub lifecycle.
 
-Run from the repository root:
+From the repository root:
 
 ```bash
-uv sync --project apps/agent
+make setup
 uv run --project apps/agent sage --help
-uv run --project apps/agent pytest
-```
-
-Print the topology of the compiled runtime without an API call:
-
-```bash
+make check
 make graph
-make v2-graph
 ```
 
-See the root `README.md` for setup and
-`specs/22_V2_DEFAULT_RUNTIME_TESTING.md` for current V2 configuration and
-end-to-end testing.
+Production construction starts in `sage/composition.py`; local and GitHub
+resource lifecycles are in `sage/workflows/`; agent behavior is in
+`sage/agents/`; and the trusted outer control loop is
+`sage/orchestration/solve.py`.
+
+See the root [README](../../README.md),
+[architecture guide](../../docs/architecture.md), and
+[testing guide](../../docs/testing.md).

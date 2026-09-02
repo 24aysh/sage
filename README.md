@@ -1,12 +1,48 @@
 # Sage
 
-Sage turns GitHub issues into draft pull requests. It studies the codebase,
-plans the change, writes and tests the code in an isolated workspace, and sends
-the result through an independent review. It never merges code.
+Sage turns an authorized GitHub Issue into a reviewed draft pull request. An
+OpenAI-backed Solver plans and edits through narrow repository tools, ordinary
+Python verifies the Git candidate, and an independent Gemini-backed Reviewer
+judges the actual diff. Repairable findings start a fresh Solver session. Sage
+never merges code.
 
-Sage runs the V2 multi-agent runtime by default: a tool-driven Solver followed
-by deterministic verification and an independent Reviewer. Repairable verifier
-or Reviewer findings are sent to a fresh Solver session and reviewed again.
+There is one supported architecture and one construction path—no runtime
+selector or retained earlier implementation.
 
-See `specs/20_CURRENT_PROJECT_STATUS.md` for the implemented architecture and
-`specs/22_V2_DEFAULT_RUNTIME_TESTING.md` for setup and verification.
+## Start in 60 seconds
+
+Requirements: Python 3.14, `uv`, Git, and Docker.
+
+```bash
+make env
+# Add OPENAI_API_KEY and GEMINI_API_KEY to .env.
+make bootstrap
+make first-run REPO=/absolute/repository ISSUE=/absolute/issue.md
+```
+
+Run the complete model-free development check with:
+
+```bash
+make check
+```
+
+See [architecture](docs/architecture.md) for system ownership and
+[testing](docs/testing.md) for offline, Docker, live-solve, and GitHub checks.
+
+## Change map
+
+| I need to change… | Start here |
+| --- | --- |
+| Solver behavior or tools | `apps/agent/src/sage/agents/solver.py` |
+| Reviewer criteria | `apps/agent/src/sage/agents/reviewer.py` |
+| Solve/repair routing | `apps/agent/src/sage/orchestration/solve.py` |
+| Repository capability | `apps/agent/src/sage/repository/service.py` |
+| Model/provider behavior | `apps/agent/src/sage/providers/` |
+| GitHub trigger/publication | `apps/agent/src/sage/integrations/github/` and `apps/agent/src/sage/workflows/github.py` |
+| Settings | `apps/agent/src/sage/config.py` and `.env.example` |
+| Run evidence | `apps/agent/src/sage/artifacts/store.py` |
+| Web visual design | `apps/web/DESIGN.md` |
+
+The implemented consolidation record is
+[docs/refactor-plan.md](docs/refactor-plan.md). Retained specifications provide
+design archaeology; current guidance lives under `docs/`.

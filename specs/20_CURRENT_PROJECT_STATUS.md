@@ -1,5 +1,11 @@
 # Current Solver and Independent Reviewer System
 
+> **Status:** Historical pre-consolidation snapshot from 2 September 2026. The
+> consolidation in
+> [`24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md`](24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md)
+> is now implemented. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
+
 ## Scope
 
 This document describes the behavior and architecture currently implemented in

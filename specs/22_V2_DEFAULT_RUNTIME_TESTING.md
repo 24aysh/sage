@@ -1,5 +1,9 @@
 # V2 Solver and Reviewer Testing Guide
 
+> **Status:** Historical pre-consolidation testing guide from 2 September 2026.
+> Its version selectors and package paths no longer apply. Use
+> [`../docs/testing.md`](../docs/testing.md) for current commands.
+
 ## Purpose
 
 This guide verifies the implemented V2 runtime: the tool-driven Solver,

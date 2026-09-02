@@ -1,6 +1,8 @@
 # Sage V2.0 — Provisional Design Specification
 
-> **Status:** Draft for design iteration. This is **not** the locked V2.0 design.
+> **Status:** Historical, superseded prototype design. It is not the current
+> architecture and must not be used as an implementation target. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
 >
 > **Research snapshot:** 23 August 2026
 >

@@ -1,5 +1,11 @@
 # Admission Removal and Solver–Reviewer Implementation Plan
 
+> **Status:** Implemented on 28 August 2026 by commit `583c40b`; current system
+> documentation was completed by `09d09b3`. This is a historical migration
+> record, not active work. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for the consolidated
+> current architecture.
+
 ## Objective
 
 Remove the Admission feature and every active Admission-owned surface from the

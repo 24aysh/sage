@@ -1,5 +1,10 @@
 # Sage V2 Tool-Driven Migration Testing Guide
 
+> **Status:** Historical migration guide. Its old runtime selectors and
+> compatibility checks no longer apply. Use
+> [`../docs/testing.md`](../docs/testing.md) for current commands and expected
+> behavior.
+
 This guide validates the architecture implemented from
 [`16_SAGE_V2_ARCHITECTURE_MIGRATION.md`](16_SAGE_V2_ARCHITECTURE_MIGRATION.md):
 

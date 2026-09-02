@@ -1,5 +1,8 @@
 # V0.1 Backend Implementation
 
+> **Status:** Historical implementation record. Retained for design history;
+> use [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
+
 ## Status
 
 V0.1 is implemented as a local, single-agent issue solver. It accepts a local Git

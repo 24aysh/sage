@@ -9,7 +9,7 @@ These instructions apply to AI coding agents working in this repository. Optimiz
 - correctness before speed;
 - reuse before duplication;
 - simple and modular production code;
-- clear ownership between agents, orchestration, tools, state, and integrations;
+- clear ownership between agents, orchestration, tools, artifacts, and integrations;
 - minimal dependency and runtime footprint;
 - focused, reviewable changes;
 - clean Git history with logical commits.
@@ -87,7 +87,7 @@ A healthy separation generally looks like:
 - **orchestration** — routing, handoffs, workflow/graph execution, coordination;
 - **tools** — deterministic capabilities agents may invoke;
 - **models / schemas** — typed request, response, event, state, and domain models;
-- **memory / state** — session state, persistence, checkpoints, long-term memory;
+- **artifacts** — atomic, run-scoped inputs, evidence, and terminal records;
 - **providers / integrations** — model vendors and external service adapters;
 - **config** — settings and configuration loading;
 - **observability** — logging, tracing, metrics, evaluation hooks;
@@ -96,9 +96,33 @@ A healthy separation generally looks like:
 
 Do not force this exact layout onto an established repository if an equivalent structure already exists. Follow the existing architecture unless there is a clear reason to improve it.
 
+### Current Sage module map
+
+Sage has one supported solve architecture. Use the canonical owners below; do
+not add a version selector, runtime factory, dormant implementation package, or
+cross-run state engine.
+
+- `sage/agents/` — Solver and Reviewer roles, prompts, and model-callable tools;
+- `sage/orchestration/` — deterministic solve/verify/review/repair control;
+- `sage/workflows/` — local and GitHub use-case resource lifecycles;
+- `sage/domain/` — provider-neutral typed contracts;
+- `sage/repository/`, `sage/research/`, `sage/verification/` — deterministic capabilities;
+- `sage/providers/`, `sage/integrations/`, `sage/sandbox/` — external adapters;
+- `sage/artifacts/` — atomic evidence for one run;
+- `sage/composition.py` — the only production construction map; and
+- `sage/config.py` — the only environment-loading boundary.
+
+Dependencies point inward: workflows may depend on orchestration and services;
+orchestration may depend on agents and capabilities; agents may depend on typed
+capabilities and providers; domain modules depend only on standard-library,
+Pydantic, and other domain modules. Agents and orchestration must not import
+CLI, GitHub workflow, publication, or concrete Docker implementations.
+
+See `docs/architecture.md` for the complete ownership and extension map.
+
 ## 4. New features
 
-When implementing new features, make sure that after the feature is implemented, you should also create a detailed testing guide that specifally that feature. Keep in mind the guide should be user friendly
+When implementing new features, also update the user-friendly testing guide for that feature.
 
 ### Agent design
 
@@ -218,7 +242,6 @@ src/
     orchestration/
     tools/
     models/
-    memory/
     providers/
     config/
     observability/
@@ -228,7 +251,6 @@ tests/
   agents/
   orchestration/
   tools/
-  memory/
   ...
 ```
 
@@ -356,6 +378,18 @@ Do not claim tests passed unless they were actually run successfully.
 
 If a check cannot be run, state that clearly.
 
+The canonical repository checks are:
+
+```bash
+make check
+make graph
+make github-smoke
+make github-doctor
+```
+
+`make check` is the complete offline gate. See `docs/testing.md` for focused,
+Docker, live-solve, and GitHub canary procedures.
+
 ---
 
 ## 11. Git Safety
@@ -447,7 +481,7 @@ Examples for this repository:
 ```text
 feat(orchestrator): add agent handoff routing
 feat(tools): add reusable tool registry
-fix(memory): preserve session state on retry
+fix(artifacts): preserve run evidence on retry
 refactor(agents): share agent factory logic
 test(orchestrator): cover invalid handoff target
 chore(config): add default workflow limits
@@ -526,6 +560,10 @@ Update documentation when a change affects:
 
 Keep code self-explanatory. Comments should explain **why**, constraints, or non-obvious decisions rather than narrating obvious code.
 
+Update `docs/architecture.md` and `docs/testing.md` as the current sources of
+truth. Keep retained numbered specifications as history; do not create another
+chronological architecture document by default.
+
 ---
 
 ## 15. Completion Checklist
@@ -537,7 +575,7 @@ Before marking a coding task complete, confirm:
 - [ ] Reusable logic is placed behind an appropriate function/module.
 - [ ] The code follows the repository's existing structure and conventions.
 - [ ] I did not add an unnecessary dependency.
-- [ ] Agent, orchestration, tool, provider, and state responsibilities remain clear.
+- [ ] Agent, orchestration, tool, provider, and artifact responsibilities remain clear.
 - [ ] Relevant tests were added or updated.
 - [ ] Relevant tests/checks were actually run, or I clearly stated what could not be run.
 - [ ] I inspected the final diff for accidental/unrelated changes.

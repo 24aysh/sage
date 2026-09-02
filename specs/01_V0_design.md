@@ -6,6 +6,7 @@
 > the V0.1 LangGraph design and implementation specifications in
 > [`04_V0.1_design.md`](04_V0.1_design.md) and
 > [`05_V0.1_langgraph_implementation.md`](05_V0.1_langgraph_implementation.md).
+> Use [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
 > Project identifiers and command examples in this historical document have
 > been updated to the current Sage name; the original V0 design decisions are
 > otherwise unchanged.

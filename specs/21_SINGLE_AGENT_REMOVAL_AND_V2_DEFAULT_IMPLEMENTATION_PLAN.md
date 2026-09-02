@@ -1,5 +1,11 @@
 # Single-Agent Removal and V2 Default Implementation Plan
 
+> **Status:** Implemented on 27 August 2026 by commit `53bdbe1`. This is a
+> historical migration record, not active work. Its optional Admission stage
+> was subsequently removed by the plan in
+> [`23_ADMISSION_REMOVAL_AND_SOLVER_REVIEWER_IMPLEMENTATION_PLAN.md`](23_ADMISSION_REMOVAL_AND_SOLVER_REVIEWER_IMPLEMENTATION_PLAN.md).
+> Use [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
+
 ## 1. Objective
 
 Remove the single-agent runtime and its exclusive code paths from the
