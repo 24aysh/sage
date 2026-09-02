@@ -4,7 +4,7 @@ SHELL := /bin/bash
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 AGENT_PROJECT := apps/agent
-DEFAULT_SANDBOX_IMAGE := sage-sandbox:v0
+DEFAULT_SANDBOX_IMAGE := sage-sandbox:v2
 
 ENV_FILE ?= .env
 ENV_PATH = $(if $(filter /%,$(ENV_FILE)),$(ENV_FILE),$(ROOT_DIR)/$(ENV_FILE))
@@ -20,9 +20,9 @@ TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
 DEBUG_FLAG :=
 
-.PHONY: help env setup bootstrap first-run v2-first-run v2-github-smoke doctor github-doctor sandbox-build \
+.PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
-	v2-test v2-check v2-graph compile check graph new-issue solve solve-debug \
+	compile check graph new-issue solve solve-debug \
 	run-status run-test
 
 help: ## Show the available commands and variables.
@@ -31,11 +31,9 @@ help: ## Show the available commands and variables.
 		'' \
 		'Getting started:' \
 		'  make first-run REPO=... ISSUE=...' \
-		'                        Configure, verify, and run a live V2 solve.' \
-		'  make v2-first-run REPO=... ISSUE=...' \
-		'                        Compatibility alias for make first-run.' \
-		'  make v2-github-smoke   Test branch/commit/draft-PR publication with no APIs.' \
-		'  make v2-github-smoke REPO=... PATCH=... BASE_REF=...' \
+		'                        Configure, verify, and run a live solve.' \
+		'  make github-smoke      Test branch/commit/draft-PR publication with no APIs.' \
+		'  make github-smoke REPO=... PATCH=... BASE_REF=...' \
 		'                        Test a saved patch against a local clone and Git remote.' \
 		'  make env              Create .env from .env.example (never overwrites).' \
 		'  make bootstrap        Install Python deps, build/smoke-test the sandbox, run doctor.' \
@@ -49,11 +47,8 @@ help: ## Show the available commands and variables.
 		'  make github-test      Run the offline GitHub integration checks.' \
 		'  make github-event-check EVENT=...  Classify an event fixture offline.' \
 		'  make actions-check     Validate action/workflow syntax and policy.' \
-		'  make v2-test           Run focused offline V2 tests.' \
-		'  make v2-check          Run V2, Actions, and compile checks.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
-		'  make graph            Print the compiled LangGraph Mermaid diagram.' \
-		'  make v2-graph         Print/check the sequential V2 graph.' \
+		'  make graph             Print the compiled LangGraph Mermaid diagram.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
@@ -64,12 +59,12 @@ help: ## Show the available commands and variables.
 		'' \
 		'Optional variables:' \
 		'  BASE_REF=HEAD                  Commit, branch, or tag to clone.' \
-		'  SANDBOX_IMAGE=custom:v0        Override the configured sandbox image.' \
+		'  SANDBOX_IMAGE=custom:tag       Override the configured sandbox image.' \
 		'  ENV_FILE=.env                  Shell-format configuration file to load.' \
 		'  LANGSMITH_TRACING=true         Enable named hosted traces (requires API key).' \
 		'  LANGSMITH_PROJECT=sage-v2       Select the LangSmith project.' \
 		'' \
-		'See specs/22_V2_DEFAULT_RUNTIME_TESTING.md for the current V2 walkthrough.'
+		'See docs/testing.md for the current testing walkthrough.'
 
 env: ## Create a local configuration file without overwriting an existing one.
 	@set -euo pipefail; \
@@ -85,7 +80,7 @@ env: ## Create a local configuration file without overwriting an existing one.
 
 setup: ## Install the locked backend environment.
 	@set -euo pipefail; \
-	command -v uv >/dev/null 2>&1 || { echo "ERROR: uv is not installed. See specs/03_V0_testing.md." >&2; exit 1; }; \
+	command -v uv >/dev/null 2>&1 || { echo "ERROR: uv is not installed. See docs/testing.md." >&2; exit 1; }; \
 	cd "$(ROOT_DIR)"; \
 	uv sync --project "$(AGENT_PROJECT)"
 
@@ -95,7 +90,7 @@ bootstrap: ## Perform the complete one-time setup in order.
 	@$(MAKE) --no-print-directory sandbox-smoke
 	@$(MAKE) --no-print-directory doctor
 
-first-run: ## Configure, verify, and run a live V2 solve.
+first-run: ## Configure, verify, and run a live solve.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
 	requested_repo="$(REPO)"; \
@@ -149,7 +144,7 @@ first-run: ## Configure, verify, and run a live V2 solve.
 		1|true|yes|on) export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true ;; \
 		*) \
 			if [[ ! -t 0 ]]; then \
-				echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; \
+				echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required." >&2; \
 				exit 1; \
 			fi; \
 			read -r -p "Allow the selected Issue and repository context to be sent to the configured Google model? [y/N] " context_approval; \
@@ -158,8 +153,6 @@ first-run: ## Configure, verify, and run a live V2 solve.
 				*) echo "ERROR: Google model context use was not approved." >&2; exit 1 ;; \
 			esac ;; \
 	esac; \
-	export SAGE_RUNTIME=v2; \
-	export SAGE_MODEL_PROFILE=constrained-cross-provider; \
 	: "$${LANGSMITH_TRACING:=false}"; export LANGSMITH_TRACING; \
 	: "$${LANGSMITH_PROJECT:=sage-v2}"; export LANGSMITH_PROJECT; \
 	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
@@ -169,34 +162,32 @@ first-run: ## Configure, verify, and run a live V2 solve.
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-build; \
 	echo "Step 3/8: smoke-testing the Docker sandbox"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-smoke; \
-	echo "Step 4/8: checking V2 prerequisites"; \
+	echo "Step 4/8: checking solve prerequisites"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null doctor; \
-	echo "Step 5/8: running deterministic V2 checks"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null v2-check; \
+	echo "Step 5/8: running deterministic checks"; \
+	$(MAKE) --no-print-directory ENV_FILE=/dev/null check; \
 	echo "Step 6/8: using the requested repository and Issue"; \
 	mkdir -p "$(ROOT_DIR)/.sage/runs"; \
-	manual_run_root="$$(mktemp -d "$(ROOT_DIR)/.sage/runs/v2-manual.XXXXXX")"; \
+	manual_run_root="$$(mktemp -d "$(ROOT_DIR)/.sage/runs/manual.XXXXXX")"; \
 	export SAGE_RUNS_DIR="$$manual_run_root"; \
-	echo "Step 7/8: solving the Issue with the constrained V2 profile"; \
+	echo "Step 7/8: solving the Issue"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null REQUIRE_COMPLETED=true solve \
 		REPO="$$requested_repo" ISSUE="$$requested_issue" BASE_REF="$(BASE_REF)"; \
 	run_dir="$$(find "$$manual_run_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
-	[[ -n "$$run_dir" ]] || { echo "ERROR: V2 solve did not create a run directory." >&2; exit 1; }; \
+	[[ -n "$$run_dir" ]] || { echo "ERROR: solve did not create a run directory." >&2; exit 1; }; \
 	echo "Step 8/8: validating the completed run artifacts and candidate diff"; \
 	$(MAKE) --no-print-directory ENV_FILE=/dev/null run-status RUN_DIR="$$run_dir"; \
 	echo; \
-	echo "V2 local workflow succeeded."; \
+	echo "Local workflow succeeded."; \
 	echo "Inspect the candidate and artifacts at: $$run_dir"
 
-v2-first-run: first-run ## Compatibility alias for the default V2 first-run target.
-
-v2-github-smoke: ## Exercise production publication locally without model or network calls.
+github-smoke: ## Exercise production publication locally without model or network calls.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
 	if [[ -n "$(REPO)" || -n "$(PATCH)" ]]; then \
 		if [[ -z "$(REPO)" || -z "$(PATCH)" ]]; then \
 			echo "ERROR: REPO and PATCH must be provided together." >&2; \
-			echo "Use: make v2-github-smoke REPO=/absolute/repo PATCH=/absolute/diff.patch BASE_REF=<sha>" >&2; \
+			echo "Use: make github-smoke REPO=/absolute/repo PATCH=/absolute/diff.patch BASE_REF=<sha>" >&2; \
 			exit 1; \
 		fi; \
 		[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
@@ -269,13 +260,13 @@ doctor: ## Check all prerequisites needed for a live solve.
 		if [[ -n "$${!key_name:-}" ]]; then \
 			echo "OK: $$key_name is configured (value hidden)."; \
 		else \
-			echo "ERROR: $$key_name is required for V2." >&2; status=1; \
+		echo "ERROR: $$key_name is required." >&2; status=1; \
 		fi; \
 	done; \
 	if [[ "$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true}" == "true" ]]; then \
 		echo "OK: Google model context use is explicitly acknowledged."; \
 	else \
-		echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required for V2." >&2; status=1; \
+		echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required." >&2; status=1; \
 	fi; \
 	if [[ -n "$${SAGE_WEB_SEARCH_PROVIDER:-}" ]]; then \
 		if [[ "$${SAGE_WEB_SEARCH_PROVIDER}" != "tavily" ]]; then \
@@ -286,7 +277,7 @@ doctor: ## Check all prerequisites needed for a live solve.
 			echo "ERROR: SAGE_WEB_SEARCH_API_KEY is required for Tavily research." >&2; status=1; \
 		fi; \
 	else \
-		echo "OK: external research is unconfigured; repository-local V2 remains available."; \
+		echo "OK: external research is unconfigured; repository-local solving remains available."; \
 	fi; \
 	if [[ -x "$(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python" ]]; then \
 		python_version="$$($(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python --version 2>&1)"; \
@@ -335,7 +326,7 @@ github-test: ## Run deterministic GitHub integration tests (no live API/model ca
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
 		"$(AGENT_PROJECT)/tests/integrations/github" \
-		"$(AGENT_PROJECT)/tests/workflow/test_github_issue.py" \
+		"$(AGENT_PROJECT)/tests/workflows/test_github.py" \
 		"$(AGENT_PROJECT)/tests/test_cli.py"
 
 github-event-check: ## Parse and classify a local event fixture without API/model calls.
@@ -352,27 +343,6 @@ actions-check: ## Validate composite action/workflow syntax and security invaria
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
 		"$(AGENT_PROJECT)/tests/actions"
 
-v2-test: ## Run focused deterministic V2 tests without live provider calls.
-	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
-		"$(AGENT_PROJECT)/tests/providers" \
-		"$(AGENT_PROJECT)/tests/research" \
-		"$(AGENT_PROJECT)/tests/repository" \
-		"$(AGENT_PROJECT)/tests/verification" \
-		"$(AGENT_PROJECT)/tests/artifacts/test_v2_artifacts.py" \
-		"$(AGENT_PROJECT)/tests/test_makefile.py" \
-		"$(AGENT_PROJECT)/tests/runtimes/v2" \
-		"$(AGENT_PROJECT)/tests/test_config.py" \
-		"$(AGENT_PROJECT)/tests/integrations/github/test_context.py" \
-		"$(AGENT_PROJECT)/tests/integrations/github/test_status.py" \
-		"$(AGENT_PROJECT)/tests/workflow/test_solve.py" \
-		"$(AGENT_PROJECT)/tests/workflow/test_github_issue.py"
-
-v2-check: ## Run all offline V2, Actions, and compile checks.
-	@$(MAKE) --no-print-directory v2-test
-	@$(MAKE) --no-print-directory actions-check
-	@$(MAKE) --no-print-directory compile
-
 github-doctor: ## Diagnose the installed GitHub workflow without printing secrets.
 	@cd "$(ROOT_DIR)" && uv run --project "$(AGENT_PROJECT)" \
 		python -m sage.integrations.github.doctor
@@ -387,12 +357,7 @@ check: ## Run all deterministic backend checks.
 graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
-		"$(AGENT_PROJECT)/tests/runtimes/test_tool_loop.py::test_compiled_graph_renders_expected_mermaid"
-
-v2-graph: ## Validate V2 Solver/Reviewer routing and candidate helpers.
-	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
-		"$(AGENT_PROJECT)/tests/runtimes/v2/test_graph.py"
+		"$(AGENT_PROJECT)/tests/agents/test_loop.py::test_compiled_graph_renders_expected_mermaid"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \

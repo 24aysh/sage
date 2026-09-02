@@ -1,4 +1,4 @@
-"""Behavioral checks for the repository's V2 Make targets."""
+"""Behavioral checks for the repository's canonical Make targets."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 def _first_run_target() -> str:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    return makefile.split("first-run:", 1)[1].split("\nv2-first-run:", 1)[0]
+    return makefile.split("first-run:", 1)[1].split("\ngithub-smoke:", 1)[0]
 
 
 def test_first_run_preserves_opt_in_langsmith_tracing() -> None:
@@ -27,19 +27,6 @@ def test_first_run_defaults_google_context_approval_to_true() -> None:
     target = _first_run_target()
 
     assert 'SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true' in target
-
-
-def test_first_run_selects_v2_without_admission_configuration() -> None:
-    target = _first_run_target()
-
-    assert "export SAGE_RUNTIME=v2" in target
-    assert "ADMISSION" not in target
-
-
-def test_v2_first_run_is_a_compatibility_alias() -> None:
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-
-    assert "v2-first-run: first-run" in makefile
 
 
 def test_run_status_disables_the_git_pager() -> None:
