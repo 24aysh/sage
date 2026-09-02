@@ -7,12 +7,12 @@ import pytest
 
 from sage.errors import GitHubApiError
 from sage.integrations.github.api_models import GitHubPermission
-from sage.integrations.github.client import (
+from sage.integrations.github.client import RestGitHubClient
+from sage.integrations.github.transport import (
     GITHUB_API_VERSION,
     MAX_RESPONSE_BYTES,
     HttpResponse,
     HttpTransportError,
-    RestGitHubClient,
 )
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.models import GitHubRepository

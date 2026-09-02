@@ -1,5 +1,10 @@
 # Sage V2 Admission and Research Testing Guide
 
+> **Status:** Historical guide. Admission has been removed and these expected
+> routes and commands are no longer valid. Use
+> [`../docs/testing.md`](../docs/testing.md) for current Solver/Reviewer
+> testing.
+
 ## Purpose
 
 This guide tests the V2 Admission context and controller-side research feature

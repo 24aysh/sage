@@ -2,17 +2,21 @@
 
 ## Document status
 
-> **Status:** Implemented locally on 25 August 2026. Deterministic unit,
-> workflow, Actions-policy, and compilation checks are the release gate; a
-> controlled live provider/GitHub canary remains required after immutable
-> action pins are updated.
+> **Status:** Historical implemented migration record. Admission was later
+> removed and the remaining research responsibilities were consolidated. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
 >
 > **Date:** 25 August 2026
 >
 > **Extends:**
 > [`16_SAGE_V2_ARCHITECTURE_MIGRATION.md`](16_SAGE_V2_ARCHITECTURE_MIGRATION.md),
-> which remains authoritative for the tool-driven Solver, saved Solver plan,
-> independent Reviewer, Git-derived candidate, and draft Pull Request flow.
+> which records the earlier tool-driven Solver and independent Reviewer
+> migration.
+>
+> **Superseded feature notice:** Admission was removed on 28 August 2026 by
+> commit `583c40b`. Research remains active. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for the implemented
+> Solver/Reviewer system; the Admission design below is historical.
 
 This design adds a read-only Admission node before the existing V2 Solver,
 persists the repository context gathered by Admission for reuse by Solver, and

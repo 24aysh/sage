@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from sage.errors import RepositoryError
-from sage.repository.paths import resolve_workspace_path
+from sage.repository.filesystem import resolve_workspace_path
 from sage.repository.selection import IGNORED_NAMES
 
 DEFAULT_SKIPPED_NAMES = IGNORED_NAMES

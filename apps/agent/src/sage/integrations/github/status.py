@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from sage.errors import GitHubStatusError
 from sage.integrations.github.api_models import GitHubIssueCommentSnapshot
-from sage.integrations.github.gate_models import GateOutcome
+from sage.integrations.github.models import GateOutcome
 from sage.integrations.github.models import (
     GitHubInvocation,
     validate_branch_name,

@@ -8,6 +8,12 @@ from sage.research.models import ResearchRole
 from sage.research.service import ResearchService
 
 
+def build_solver_research_tools(service: ResearchService) -> list[BaseTool]:
+    """Build the Solver's bounded documentation and web research tools."""
+
+    return build_research_tools(service, role=ResearchRole.SOLVER, allow_web=True)
+
+
 def build_research_tools(
     service: ResearchService,
     *,

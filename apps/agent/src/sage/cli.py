@@ -15,8 +15,7 @@ from pathlib import Path
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
 from sage.config import Settings
-from sage.domain.requests import SolveRequest
-from sage.domain.results import SolveOutcome, SolveResult
+from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
 from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
@@ -30,9 +29,9 @@ from sage.integrations.github.publication_smoke import (
     default_publication_smoke_dir,
     run_publication_smoke,
 )
-from sage.runtimes.factory import build_runtime
-from sage.workflow import solve_issue
-from sage.workflow.github_issue import finalize_github_issue, run_github_issue
+from sage.composition import build_orchestrator
+from sage.workflows.github import finalize_github_issue, run_github_issue
+from sage.workflows.solve import solve_issue
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     solve_parser = subparsers.add_parser(
         "solve",
-        help="Run the V2 issue solver.",
+        help="Run the issue solver.",
     )
     solve_parser.add_argument("--repo", required=True, type=Path)
     solve_parser.add_argument("--issue-file", required=True, type=Path)
@@ -158,7 +157,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_local_solve(arguments: argparse.Namespace) -> int:
-    """Run one local V2 solve."""
+    """Run one local solve."""
 
     settings = Settings.from_env()
     request = SolveRequest(
@@ -169,11 +168,11 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
-    runtime = build_runtime(settings)
-    result = asyncio.run(solve_issue(request, runtime, settings))
+    orchestrator = build_orchestrator(settings)
+    result = asyncio.run(solve_issue(request, orchestrator, settings))
     _render_result(
         result,
-        model=settings.v2_solver_model,
+        model=settings.solver_model,
     )
     return (
         0
@@ -229,6 +228,7 @@ def _run_github_solve(arguments: argparse.Namespace) -> int:
             diagnostics_dir=arguments.diagnostics_dir,
             runner_temp=arguments.runner_temp,
             status_comment_id=arguments.status_comment_id,
+            orchestrator_factory=build_orchestrator,
             settings_factory=lambda: Settings.from_env(environment),
         )
     )
@@ -377,7 +377,7 @@ def _check_docker_command(command: list[str], *, failure_message: str) -> None:
 
 
 def _render_result(result: SolveResult, *, model: str) -> None:
-    print("Sage V2")
+    print("Sage")
     print()
     print(f"Run: {result.run_id}")
     print(f"Base: {result.base_sha[:12]}")

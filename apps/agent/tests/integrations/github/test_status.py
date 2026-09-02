@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from sage.integrations.github.events import load_issue_comment_event
-from sage.integrations.github.gate_models import GateOutcome
+from sage.integrations.github.models import GateOutcome
 from sage.integrations.github.models import GitHubInvocation
 from sage.integrations.github.status import (
     WorkflowStatusState,

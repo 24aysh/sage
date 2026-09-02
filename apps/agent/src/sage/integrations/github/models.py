@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from enum import StrEnum
 from typing import Self
 from urllib.parse import urlsplit
 
@@ -15,8 +16,6 @@ from pydantic import (
     model_validator,
 )
 
-from sage.integrations.github.commands import SageCommand
-
 GITHUB_WEB_URL = "https://github.com"
 GIT_OBJECT_ID_PATTERN = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
 _INVALID_REF_CHARACTERS = frozenset(" ~^:?*[\\")
@@ -25,6 +24,74 @@ _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _ACTOR_PATTERN = re.compile(
     r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,98}[A-Za-z0-9])?(?:\[bot\])?$"
 )
+
+
+class SageCommand(StrEnum):
+    """Semantic actions accepted from GitHub Issue comments."""
+
+    SOLVE = "solve"
+
+
+class GateOutcome(StrEnum):
+    """Expected decisions made before model configuration is loaded."""
+
+    ACCEPTED = "accepted"
+    EXISTING_PULL_REQUEST = "existing_pull_request"
+    UNAUTHORIZED = "unauthorized"
+    IGNORED = "ignored"
+    BLOCKED_EXISTING_BRANCH = "blocked_existing_branch"
+
+
+def issue_branch_name(issue_number: int) -> str:
+    """Return the single Sage branch allocated to an Issue."""
+
+    if issue_number < 1:
+        raise ValueError("Issue number must be positive.")
+    return f"sage/issue-{issue_number}"
+
+
+class GateResult(BaseModel):
+    """Validated non-secret values shared with the later solve job."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome: GateOutcome
+    should_run: bool
+    base_sha: str = Field(pattern=GIT_OBJECT_ID_PATTERN)
+    base_branch: str = Field(min_length=1, max_length=255)
+    issue_number: int = Field(gt=0)
+    status_comment_id: int | None = Field(default=None, gt=0)
+    existing_pull_request_url: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2_048,
+    )
+
+    @field_validator("base_branch")
+    @classmethod
+    def validate_base_branch(cls, value: str) -> str:
+        return validate_branch_name(value)
+
+    @field_validator("existing_pull_request_url")
+    @classmethod
+    def validate_pull_request_url(cls, value: str | None) -> str | None:
+        return validate_github_url(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_decision(self) -> Self:
+        if self.should_run != (self.outcome is GateOutcome.ACCEPTED):
+            raise ValueError("Only an accepted gate result may run the solver.")
+        if self.outcome is GateOutcome.IGNORED:
+            if self.status_comment_id is not None:
+                raise ValueError("Ignored invocations must not have a status comment.")
+        elif self.status_comment_id is None:
+            raise ValueError("Supported invocations require a status comment.")
+        if self.outcome is GateOutcome.EXISTING_PULL_REQUEST:
+            if self.existing_pull_request_url is None:
+                raise ValueError("Existing Pull Request outcome requires its URL.")
+        elif self.existing_pull_request_url is not None:
+            raise ValueError("Pull Request URL is only valid for a duplicate outcome.")
+        return self
 
 
 def validate_github_timestamp(value: datetime) -> datetime:

@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 from sage.config import Settings
-from sage.domain.requests import PreparedRun
+from sage.domain.solve import PreparedRun
 from sage.sandbox.docker import DockerSandbox
 
 

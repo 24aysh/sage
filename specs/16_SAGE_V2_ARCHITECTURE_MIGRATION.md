@@ -2,8 +2,9 @@
 
 ## Document status
 
-> **Status:** Implemented locally on 25 August 2026. Deterministic and offline
-> integration checks pass; a controlled GitHub canary remains the rollout gate.
+> **Status:** Historical implemented migration record. Its package paths and
+> versioned runtime terminology have since been consolidated. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
 >
 > **Date:** 25 August 2026
 >
@@ -11,6 +12,10 @@
 > [`13_SAGE_V2_PROVISIONAL_DESIGN.md`](13_SAGE_V2_PROVISIONAL_DESIGN.md) and
 > [`14_SAGE_V2_PROTOTYPE_IMPLEMENTATION_PLAN.md`](14_SAGE_V2_PROTOTYPE_IMPLEMENTATION_PLAN.md).
 > Those documents remain historical records of the first prototype.
+>
+> **Current authority:** This is a completed migration record. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for current behavior and
+> [`../docs/testing.md`](../docs/testing.md) for current commands.
 
 This migration returns V2 implementation to the proven V1 tool-driven coding
 loop and adds one independent Reviewer. V2 will have exactly two model roles:

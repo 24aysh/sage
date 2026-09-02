@@ -1,4 +1,4 @@
-"""Provider-neutral contracts for the V2 tool-driven Solver."""
+"""Provider-neutral contracts for the tool-driven Solver."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Deterministic verification contracts for Sage V2."""
+"""Deterministic verification contracts for Sage."""
 
 from enum import StrEnum
 

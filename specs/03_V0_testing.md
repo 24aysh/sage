@@ -1,5 +1,8 @@
 # V0 Manual Setup and Testing Guide
 
+> **Status:** Historical testing guide. Its commands are not current; use
+> [`../docs/testing.md`](../docs/testing.md) instead.
+
 ## Purpose
 
 This guide takes a first-time user from a fresh checkout to a reviewed V0

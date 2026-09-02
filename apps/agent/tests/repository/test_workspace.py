@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from sage.config import Settings
-from sage.domain.requests import SolveRequest
+from sage.domain.solve import SolveRequest
 from sage.errors import HostGitError, HostGitTimeoutError, WorkspaceError
 from sage.repository.workspace import prepare_run
 

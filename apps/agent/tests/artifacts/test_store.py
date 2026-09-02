@@ -1,13 +1,12 @@
 import json
 from pathlib import Path
 
-from sage.artifacts import ArtifactStore
+from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
-from sage.domain.requests import PreparedRun, SolveRequest
-from sage.domain.results import AgentFinalOutput, SolveResult
+from sage.domain.solve import AgentFinalOutput, PreparedRun, SolveRequest, SolveResult
 
 
-def test_artifact_store_persists_required_files_without_secret(tmp_path: Path) -> None:
+def test_run_artifacts_persists_required_files_without_secret(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     workspace = run_dir / "repo"
@@ -35,15 +34,15 @@ def test_artifact_store_persists_required_files_without_secret(tmp_path: Path) -
         run_dir=run_dir,
         workspace_dir=workspace,
     )
-    store = ArtifactStore()
+    store = RunArtifacts(run_dir)
 
-    store.initialize_run(
+    store.initialize(
         request=request,
         prepared_run=prepared,
         issue_text="Issue contents",
         settings=settings,
     )
-    store.persist_result(final_output=final, result=result)
+    store.write_result(final_output=final, result=result)
 
     expected = {
         "request.json",

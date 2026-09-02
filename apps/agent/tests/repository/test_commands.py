@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from sage.config import Settings
-from sage.repository import RepositoryTools
+from sage.repository.service import Repository
 from sage.repository.commands import run_command
 from sage.sandbox.base import CommandResult
 
@@ -61,7 +61,7 @@ def test_repository_formats_command_result_as_bounded_valid_json(
         stdout='"\\\n' * 2_000,
         stderr="error" * 1_000,
     )
-    repository = RepositoryTools(
+    repository = Repository(
         workspace_root=tmp_path,
         sandbox=RecordingSandbox(raw_result),
         settings=Settings(openai_api_key="test", max_tool_output_chars=1_000),

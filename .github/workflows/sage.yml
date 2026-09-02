@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Authorize and deduplicate
         id: gate
-        uses: 24aysh/sage/.github/actions/sage-gate@583c40bbf1c8be03369d0c691b4db13d6e32603c
+        uses: 24aysh/sage/.github/actions/sage-gate@2d68feab091044a8338931ca9c585fef9ba58fad
         with:
           github-token: ${{ github.token }}
 
@@ -51,7 +51,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      SAGE_RUNTIME: ${{ vars.SAGE_RUNTIME || 'v2' }}
       LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
       LANGSMITH_PROJECT: ${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}
       LANGSMITH_WORKSPACE_ID: ${{ vars.LANGSMITH_WORKSPACE_ID }}
@@ -69,7 +68,7 @@ jobs:
     steps:
       - name: Solve the accepted Issue
         id: solve
-        uses: 24aysh/sage/.github/actions/sage-solve@583c40bbf1c8be03369d0c691b4db13d6e32603c
+        uses: 24aysh/sage/.github/actions/sage-solve@2d68feab091044a8338931ca9c585fef9ba58fad
         with:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -78,8 +77,6 @@ jobs:
           web-search-api-key: ${{ secrets.SAGE_WEB_SEARCH_API_KEY }}
           web-search-provider: ${{ vars.SAGE_WEB_SEARCH_PROVIDER || '' }}
           openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
-          runtime: ${{ vars.SAGE_RUNTIME || 'v2' }}
-          model-profile: constrained-cross-provider
           v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
           v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
           google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
@@ -122,7 +119,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Preserve or repair terminal status
-        uses: 24aysh/sage/.github/actions/sage-gate@583c40bbf1c8be03369d0c691b4db13d6e32603c
+        uses: 24aysh/sage/.github/actions/sage-gate@2d68feab091044a8338931ca9c585fef9ba58fad
         with:
           github-token: ${{ github.token }}
           operation: finalize

@@ -1,4 +1,4 @@
-"""LangSmith trace metadata and human-readable V2 agent activity logs."""
+"""LangSmith trace metadata and human-readable agent activity logs."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def workflow_trace_config(
     graph_name: str,
     model_profile: str,
 ) -> RunnableConfig:
-    """Build safe root trace attributes for one V2 workflow."""
+    """Build safe root trace attributes while retaining trace schema labels."""
 
     return {
         "run_name": "Sage V2 Workflow",

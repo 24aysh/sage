@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sage.errors import CommandTimeoutError, RepositoryError
 from sage.repository.output import truncate_text
-from sage.repository.paths import workspace_relative_path
+from sage.repository.filesystem import workspace_relative_path
 from sage.repository.selection import IGNORED_GLOBS
 from sage.sandbox.base import Sandbox
 

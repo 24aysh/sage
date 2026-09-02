@@ -1,4 +1,4 @@
-"""Semantic review contracts for Sage V2."""
+"""Semantic review contracts for Sage."""
 
 from __future__ import annotations
 

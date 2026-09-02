@@ -14,7 +14,7 @@ from sage.integrations.github.api_models import (
 )
 from sage.integrations.github.events import load_issue_comment_event
 from sage.integrations.github.gate import evaluate_gate
-from sage.integrations.github.gate_models import GateOutcome
+from sage.integrations.github.models import GateOutcome
 from sage.integrations.github.models import GitHubInvocation, GitHubRepository
 from sage.integrations.github.status import invocation_marker
 

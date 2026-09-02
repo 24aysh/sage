@@ -2,6 +2,12 @@
 
 ## Document status
 
+> **Status:** Historical, superseded implementation plan for the first
+> Planner/patch-first prototype. Use
+> [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
+> The provider and runtime choices below are retained only as a migration
+> record.
+
 This is the implementation-ready companion to
 [`13_SAGE_V2_PROVISIONAL_DESIGN.md`](13_SAGE_V2_PROVISIONAL_DESIGN.md) for the
 first Sage V2 prototype.

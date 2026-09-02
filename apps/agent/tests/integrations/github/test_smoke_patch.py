@@ -1,6 +1,6 @@
 import pytest
 
-from sage.integrations.github.smoke_patch import normalize_null_file_headers
+from sage.integrations.github.publication_smoke import normalize_null_file_headers
 
 
 @pytest.mark.parametrize("alias", ["dev/null", "a/dev/null", "b/dev/null"])

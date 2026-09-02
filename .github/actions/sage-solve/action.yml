@@ -9,30 +9,22 @@ inputs:
     description: Model credential scoped to the solve controller step.
     required: true
   gemini-api-key:
-    description: V2 Reviewer credential scoped to the solve controller step.
+    description: Reviewer credential scoped to the solve controller step.
     required: true
   openai-max-retries:
     description: Bounded OpenAI SDK retries for temporary rate limits.
     required: false
     default: "2"
-  runtime:
-    description: Trusted runtime selector (v2).
-    required: false
-    default: v2
-  model-profile:
-    description: Locked V2 provider profile.
-    required: false
-    default: constrained-cross-provider
   v2-solver-model:
-    description: OpenAI model used for V2 implementation and repair.
+    description: OpenAI model used for implementation and repair.
     required: false
     default: gpt-5.4-mini
   v2-reviewer-model:
-    description: Gemini model used for V2 semantic review.
+    description: Gemini model used for semantic review.
     required: false
     default: gemini-3.5-flash
   google-model-context-approved:
-    description: Google context acknowledgement; set false to disable V2 Google calls.
+    description: Google context acknowledgement; set false to disable Google calls.
     required: false
     default: "true"
   langsmith-api-key:
@@ -101,7 +93,7 @@ runs:
       shell: bash
       env:
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
-        SAGE_SANDBOX_IMAGE: sage-sandbox:v1
+        SAGE_SANDBOX_IMAGE: sage-sandbox:v2
       run: |
         set -euo pipefail
         docker build \
@@ -118,8 +110,6 @@ runs:
         SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}
         SAGE_WEB_SEARCH_PROVIDER: ${{ inputs.web-search-provider }}
         OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
-        SAGE_RUNTIME: ${{ inputs.runtime }}
-        SAGE_MODEL_PROFILE: ${{ inputs.model-profile }}
         SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}
         SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}
         SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}
@@ -131,7 +121,7 @@ runs:
         SAGE_DIAGNOSTICS_DIR: ${{ runner.temp }}/sage-diagnostics
         SAGE_RUNNER_TEMP: ${{ runner.temp }}
         SAGE_RUNS_DIR: ${{ runner.temp }}/sage-runs
-        SAGE_SANDBOX_IMAGE: sage-sandbox:v1
+        SAGE_SANDBOX_IMAGE: sage-sandbox:v2
         UV_CACHE_DIR: ${{ runner.temp }}/sage-uv-cache
       run: |
         set -euo pipefail

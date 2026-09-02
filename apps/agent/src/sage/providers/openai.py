@@ -1,4 +1,4 @@
-"""OpenAI error classification shared by the V2 coding path."""
+"""OpenAI error classification for the coding provider."""
 
 from openai import RateLimitError
 

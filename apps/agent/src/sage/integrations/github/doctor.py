@@ -21,7 +21,7 @@ def main() -> int:
         root / ".github/actions/sage-gate/action.yml",
         root / ".github/actions/sage-solve/action.yml",
         root / ".github/workflows/sage.yml",
-        root / "specs/22_V2_DEFAULT_RUNTIME_TESTING.md",
+        root / "docs/testing.md",
         root / ".env.example",
     )
     for path in required:
@@ -44,7 +44,7 @@ def main() -> int:
             _error(f"moving or placeholder action reference in {path.relative_to(root)}")
             status = 1
 
-    guide = root / "specs/22_V2_DEFAULT_RUNTIME_TESTING.md"
+    guide = root / "docs/testing.md"
     if guide.is_file():
         guide_body = guide.read_text(encoding="utf-8")
         if "OPENAI_API_KEY" in guide_body and "github-doctor" in guide_body:
