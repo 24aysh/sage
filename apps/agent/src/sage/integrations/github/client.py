@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
-import socket
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from typing import Protocol, TypeVar
-from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlencode
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
@@ -26,46 +21,21 @@ from sage.integrations.github.api_models import (
 )
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.models import GitHubRepository, validate_branch_name
-
-GITHUB_API_VERSION = "2026-03-10"
-MAX_RESPONSE_BYTES = 2_000_000
-MAX_ATTEMPTS = 3
-MAX_RETRY_DELAY_SECONDS = 10.0
-_TRANSIENT_STATUSES = frozenset({429, 502, 503, 504})
-_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9:._-]{1,100}$")
-_LINK_PATTERN = re.compile(r'<([^>]+)>;\s*rel="([^"]+)"')
-
-
-@dataclass(frozen=True, slots=True)
-class HttpResponse:
-    """Bounded response returned by an injected HTTP transport."""
-
-    status: int
-    headers: Mapping[str, str]
-    body: bytes
-
-
-class HttpTransport(Protocol):
-    """HTTP boundary used to keep normal tests offline."""
-
-    def request(
-        self,
-        *,
-        method: str,
-        url: str,
-        headers: Mapping[str, str],
-        body: bytes | None,
-        timeout_seconds: int,
-    ) -> HttpResponse:
-        """Perform one bounded HTTP request."""
-
-
-class HttpTransportError(Exception):
-    """Bounded transport failure without URL, headers, or credentials."""
-
-
-class _ReadableResponse(Protocol):
-    def read(self, amount: int = -1) -> bytes: ...
+from sage.integrations.github.transport import (
+    GITHUB_API_VERSION,
+    MAX_ATTEMPTS,
+    MAX_RESPONSE_BYTES,
+    TRANSIENT_STATUSES,
+    HttpResponse,
+    HttpTransport,
+    HttpTransportError,
+    UrllibTransport,
+    fallback_delay,
+    header,
+    pagination_links,
+    request_id,
+    response_delay,
+)
 
 
 class GitHubClient(Protocol):
@@ -130,49 +100,6 @@ class GitHubClient(Protocol):
         body: str,
         draft: bool,
     ) -> GitHubPullRequestSnapshot: ...
-
-
-class UrllibTransport:
-    """urllib implementation that never returns an unbounded response."""
-
-    def request(
-        self,
-        *,
-        method: str,
-        url: str,
-        headers: Mapping[str, str],
-        body: bytes | None,
-        timeout_seconds: int,
-    ) -> HttpResponse:
-        request = Request(
-            url=url,
-            data=body,
-            headers=dict(headers),
-            method=method,
-        )
-        try:
-            with urlopen(request, timeout=timeout_seconds) as response:
-                return HttpResponse(
-                    status=response.status,
-                    headers=_normalized_headers(response.headers),
-                    body=_read_bounded(response),
-                )
-        except HTTPError as error:
-            try:
-                try:
-                    return HttpResponse(
-                        status=error.code,
-                        headers=_normalized_headers(error.headers),
-                        body=_read_bounded(error),
-                    )
-                except (TimeoutError, socket.timeout, OSError) as read_error:
-                    raise HttpTransportError(
-                        "GitHub API transport failed."
-                    ) from read_error
-            finally:
-                error.close()
-        except (URLError, TimeoutError, socket.timeout, OSError) as error:
-            raise HttpTransportError("GitHub API transport failed.") from error
 
 
 class RestGitHubClient:
@@ -286,7 +213,7 @@ class RestGitHubClient:
         ):
             raise _invalid_response(operation)
 
-        links = _pagination_links(_header(response.headers, "link"))
+        links = pagination_links(header(response.headers, "link"))
         next_page = links.get("next")
         last_page = max(page, links.get("last", page))
         try:
@@ -518,7 +445,7 @@ class RestGitHubClient:
         headers = {
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {self._settings.github_token}",
-            "User-Agent": "sage/1.0",
+            "User-Agent": "sage/2.0",
             "X-GitHub-Api-Version": GITHUB_API_VERSION,
         }
         if request_body is not None:
@@ -537,7 +464,7 @@ class RestGitHubClient:
                 )
             except HttpTransportError as error:
                 if retryable and attempt + 1 < attempts:
-                    self._sleep(_fallback_delay(attempt))
+                    self._sleep(fallback_delay(attempt))
                     continue
                 raise GitHubApiError(
                     f"{operation} failed because the GitHub API was unreachable.",
@@ -548,25 +475,27 @@ class RestGitHubClient:
                 raise GitHubApiError(
                     f"{operation} returned an oversized response.",
                     status_code=response.status,
-                    request_id=_request_id(response.headers),
+                    request_id=request_id(response.headers),
                     ambiguous=method == "POST",
                 )
             if response.status in expected_statuses:
                 return response
             if (
                 retryable
-                and response.status in _TRANSIENT_STATUSES
+                and response.status in TRANSIENT_STATUSES
                 and attempt + 1 < attempts
             ):
-                self._sleep(_response_delay(response, attempt))
+                self._sleep(response_delay(response, attempt))
                 continue
 
-            request_id = _request_id(response.headers)
-            request_suffix = f" (request {request_id})" if request_id else ""
+            response_request_id = request_id(response.headers)
+            request_suffix = (
+                f" (request {response_request_id})" if response_request_id else ""
+            )
             raise GitHubApiError(
                 f"{operation} failed with HTTP {response.status}{request_suffix}.",
                 status_code=response.status,
-                request_id=request_id,
+                request_id=response_request_id,
                 ambiguous=(
                     method == "POST"
                     and (
@@ -766,61 +695,3 @@ def _require_ref(value: str, label: str) -> None:
         validate_branch_name(value)
     except ValueError as error:
         raise ValueError(f"{label} is invalid.") from error
-
-
-def _normalized_headers(
-    headers: Mapping[str, str] | None,
-) -> dict[str, str]:
-    if headers is None:
-        return {}
-    return {str(name).lower(): str(value) for name, value in headers.items()}
-
-
-def _read_bounded(response: _ReadableResponse) -> bytes:
-    return response.read(MAX_RESPONSE_BYTES + 1)
-
-
-def _header(headers: Mapping[str, str], name: str) -> str | None:
-    requested = name.casefold()
-    for header_name, value in headers.items():
-        if header_name.casefold() == requested:
-            return value
-    return None
-
-
-def _request_id(headers: Mapping[str, str]) -> str | None:
-    value = _header(headers, "x-github-request-id")
-    if value and _REQUEST_ID_PATTERN.fullmatch(value):
-        return value
-    return None
-
-
-def _pagination_links(header: str | None) -> dict[str, int]:
-    if not header:
-        return {}
-    pages: dict[str, int] = {}
-    for url, relation in _LINK_PATTERN.findall(header):
-        values = parse_qs(urlsplit(url).query).get("page", [])
-        if len(values) != 1:
-            continue
-        try:
-            page = int(values[0])
-        except ValueError:
-            continue
-        if page > 0:
-            pages[relation] = page
-    return pages
-
-
-def _response_delay(response: HttpResponse, attempt: int) -> float:
-    retry_after = _header(response.headers, "retry-after")
-    if retry_after is not None:
-        try:
-            return min(max(float(retry_after), 0.0), MAX_RETRY_DELAY_SECONDS)
-        except ValueError:
-            pass
-    return _fallback_delay(attempt)
-
-
-def _fallback_delay(attempt: int) -> float:
-    return min(float(2**attempt), MAX_RETRY_DELAY_SECONDS)
