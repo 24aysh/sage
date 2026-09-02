@@ -5,14 +5,17 @@ from __future__ import annotations
 import hashlib
 import re
 
-from sage.artifacts.v2 import V2ArtifactStore
+from sage.artifacts.store import RunArtifacts
+from sage.config import Settings
+from sage.domain.solver import SolverPlan
 from sage.domain.verification import (
     VerificationCheckResult,
     VerificationCommand,
     VerificationResult,
     VerificationStatus,
 )
-from sage.repository import RepositoryTools
+from sage.repository.service import Repository
+from sage.verification.discovery import discover_solver_verification_commands
 
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _TEMP_PATH = re.compile(r"/(?:tmp|home)/[^\s:]+")
@@ -26,8 +29,8 @@ class Verifier:
     def __init__(
         self,
         *,
-        repository: RepositoryTools,
-        artifacts: V2ArtifactStore,
+        repository: Repository,
+        artifacts: RunArtifacts,
         max_log_chars: int,
     ) -> None:
         self._repository = repository
@@ -107,6 +110,20 @@ class Verifier:
         )
         self._artifacts.write_verification_summary(pass_number, verification)
         return verification
+
+    def verify_plan(
+        self,
+        plan: SolverPlan,
+        settings: Settings,
+        *,
+        pass_number: int,
+    ) -> VerificationResult:
+        """Discover trusted checks and verify one saved Solver plan."""
+
+        return self.verify(
+            discover_solver_verification_commands(plan=plan, settings=settings),
+            pass_number=pass_number,
+        )
 
 
 def _safe_log(stdout: str, stderr: str) -> str:

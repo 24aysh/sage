@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sage.artifacts.v2 import V2ArtifactStore
+from sage.artifacts.store import RunArtifacts
 from sage.config import ConfiguredVerificationCommand, Settings
 from sage.domain.solver import SolverAcceptanceCriterion, SolverPlan, SolverPlanTask
 from sage.domain.verification import VerificationSource, VerificationStatus
@@ -81,7 +81,7 @@ def test_discovery_orders_mandatory_then_trusted_configured_commands() -> None:
 
 def test_verifier_runs_sequentially_and_redacts_secret_like_logs(tmp_path: Path) -> None:
     repository = FakeRepository()
-    artifacts = V2ArtifactStore(tmp_path)
+    artifacts = RunArtifacts(tmp_path)
     commands = discover_solver_verification_commands(
         plan=_plan(),
         settings=Settings(openai_api_key="test", command_timeout_seconds=30),
@@ -137,7 +137,7 @@ def test_optional_failure_is_visible_without_blocking_required_success(
 
     result = Verifier(
         repository=repository,  # type: ignore[arg-type]
-        artifacts=V2ArtifactStore(tmp_path),
+        artifacts=RunArtifacts(tmp_path),
         max_log_chars=4_000,
     ).verify(commands, pass_number=1)
 

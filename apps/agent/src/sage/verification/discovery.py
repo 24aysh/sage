@@ -27,7 +27,7 @@ def discover_solver_verification_commands(
     plan: SolverPlan,
     settings: Settings,
 ) -> tuple[VerificationCommand, ...]:
-    """Build V2 checks from trusted configuration and Solver plan hints."""
+    """Build checks from trusted configuration and Solver plan hints."""
 
     commands: list[VerificationCommand] = [
         VerificationCommand(
