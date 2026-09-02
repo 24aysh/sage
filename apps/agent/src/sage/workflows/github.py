@@ -1,4 +1,4 @@
-"""Provider-specific orchestration around the existing issue solver."""
+"""Authorized GitHub solve, publication, and finalization workflow."""
 
 from __future__ import annotations
 
@@ -11,9 +11,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict
 
 from sage.config import Settings
-from sage.domain.requests import SolveRequest
-from sage.domain.results import SolveOutcome, SolveResult
-from sage.domain.runtime import AgentRuntime
+from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
 from sage.errors import (
     AgentRuntimeError,
     ArtifactError,
@@ -26,20 +24,20 @@ from sage.errors import (
     SandboxError,
     WorkspaceError,
 )
-from sage.integrations.github.authorization import is_authorized_permission
-from sage.integrations.github.branches import issue_branch_name
 from sage.integrations.github.client import GitHubClient
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.context import (
     build_issue_context,
     materialize_issue_context,
 )
+from sage.integrations.github.gate import is_authorized_permission
 from sage.integrations.github.models import GitHubInvocation
-from sage.integrations.github.provenance import (
+from sage.integrations.github.models import issue_branch_name
+from sage.integrations.github.diagnostics import (
     build_github_provenance,
     persist_github_diagnostics,
 )
-from sage.integrations.github.publishing import (
+from sage.integrations.github.publication import (
     PublicationOutcome,
     PublicationResult,
     publish_solve_result,
@@ -51,9 +49,9 @@ from sage.integrations.github.status import (
     has_terminal_status,
     transition_invocation_status,
 )
+from sage.orchestration.context import SolveEngine
 from sage.repository.host_git import run_git
-from sage.runtimes.factory import build_runtime
-from sage.workflow.solve import solve_issue
+from sage.workflows.solve import solve_issue
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +102,9 @@ class Publisher(Protocol):
 
 
 SettingsFactory = Callable[[], Settings]
-RuntimeFactory = Callable[[Settings], AgentRuntime]
+OrchestratorFactory = Callable[[Settings], SolveEngine]
 SolveRunner = Callable[
-    [SolveRequest, AgentRuntime, Settings],
+    [SolveRequest, SolveEngine, Settings],
     Awaitable[SolveResult],
 ]
 
@@ -121,8 +119,8 @@ async def run_github_issue(
     diagnostics_dir: Path,
     runner_temp: Path,
     status_comment_id: int,
+    orchestrator_factory: OrchestratorFactory,
     settings_factory: SettingsFactory = Settings.from_env,
-    runtime_factory: RuntimeFactory = build_runtime,
     solve_runner: SolveRunner = solve_issue,
     publisher: Publisher = publish_solve_result,
 ) -> GitHubWorkflowResult:
@@ -190,13 +188,13 @@ async def run_github_issue(
             base_ref=invocation.base_sha,
         )
         settings = settings_factory()
-        runtime = runtime_factory(settings)
-        solve_result = await solve_runner(request, runtime, settings)
+        orchestrator = orchestrator_factory(settings)
+        solve_result = await solve_runner(request, orchestrator, settings)
         if solve_result.base_sha != invocation.base_sha:
             raise GitHubPublicationError(
                 "The solve result base does not match the validated event base."
             )
-        terminal_mapping = _v2_terminal_mapping(solve_result.outcome)
+        terminal_mapping = _terminal_mapping(solve_result.outcome)
         if terminal_mapping is not None:
             workflow_outcome, terminal_state = terminal_mapping
             provenance = build_github_provenance(
@@ -305,42 +303,62 @@ async def run_github_issue(
             publication=publication,
         )
     except Exception as error:
-        category = classify_github_failure(error)
-        branch_url = (
-            error.branch_url
-            if isinstance(error, GitHubOrphanBranchError)
-            else None
+        _record_failure(
+            error,
+            invocation=invocation,
+            client=client,
+            solve_result=solve_result,
+            branch_name=branch_name,
+            diagnostics_dir=diagnostics_dir,
+            status_comment_id=status_comment_id,
+            max_comment_pages=github_settings.max_comment_pages,
         )
-        try:
-            provenance = build_github_provenance(
-                invocation,
-                branch=branch_name,
-                outcome=f"failed:{category}",
-                current_base_sha=(
-                    invocation.base_sha if solve_result is not None else None
-                ),
-                local_run_id=(solve_result.run_id if solve_result is not None else None),
-            )
-            persist_github_diagnostics(
-                provenance,
-                diagnostics_dir=diagnostics_dir,
-                run_dir=(solve_result.run_dir if solve_result is not None else None),
-            )
-        except Exception:
-            logger.error("Unable to persist safe GitHub failure diagnostics.")
-        try:
-            transition_invocation_status(
-                invocation,
-                client,
-                status_comment_id=status_comment_id,
-                max_comment_pages=github_settings.max_comment_pages,
-                state=WorkflowStatusState.FAILED,
-                failure_category=category,
-                branch_url=branch_url,
-            )
-        except Exception:
-            logger.error("Unable to persist the safe GitHub terminal status.")
         raise
+
+
+def _record_failure(
+    error: Exception,
+    *,
+    invocation: GitHubInvocation,
+    client: GitHubClient,
+    solve_result: SolveResult | None,
+    branch_name: str,
+    diagnostics_dir: Path,
+    status_comment_id: int,
+    max_comment_pages: int,
+) -> None:
+    """Best-effort reconcile safe diagnostics and status, preserving the error."""
+
+    category = classify_github_failure(error)
+    try:
+        provenance = build_github_provenance(
+            invocation,
+            branch=branch_name,
+            outcome=f"failed:{category}",
+            current_base_sha=(invocation.base_sha if solve_result is not None else None),
+            local_run_id=(solve_result.run_id if solve_result is not None else None),
+        )
+        persist_github_diagnostics(
+            provenance,
+            diagnostics_dir=diagnostics_dir,
+            run_dir=(solve_result.run_dir if solve_result is not None else None),
+        )
+    except Exception:
+        logger.error("Unable to persist safe GitHub failure diagnostics.")
+    try:
+        transition_invocation_status(
+            invocation,
+            client,
+            status_comment_id=status_comment_id,
+            max_comment_pages=max_comment_pages,
+            state=WorkflowStatusState.FAILED,
+            failure_category=category,
+            branch_url=(
+                error.branch_url if isinstance(error, GitHubOrphanBranchError) else None
+            ),
+        )
+    except Exception:
+        logger.error("Unable to persist the safe GitHub terminal status.")
 
 
 def finalize_github_issue(
@@ -417,7 +435,7 @@ def classify_github_failure(error: Exception) -> str:
     return "controller_failure"
 
 
-def _v2_terminal_mapping(
+def _terminal_mapping(
     outcome: SolveOutcome,
 ) -> tuple[GitHubWorkflowOutcome, WorkflowStatusState] | None:
     mapping = {

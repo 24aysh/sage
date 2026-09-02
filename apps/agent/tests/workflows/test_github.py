@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from sage.config import Settings
-from sage.domain.results import SolveOutcome, SolveResult
+from sage.domain.solve import SolveOutcome, SolveResult
 from sage.errors import (
     AgentRuntimeError,
     GitHubPublicationError,
@@ -22,9 +22,9 @@ from sage.integrations.github.api_models import (
 )
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.events import load_issue_comment_event
-from sage.integrations.github.gate_models import GateOutcome
+from sage.integrations.github.models import GateOutcome
 from sage.integrations.github.models import GitHubInvocation
-from sage.integrations.github.publishing import (
+from sage.integrations.github.publication import (
     BaseMovement,
     PublicationOutcome,
     PublicationResult,
@@ -34,7 +34,7 @@ from sage.integrations.github.status import (
     render_gate_status,
     status_state,
 )
-from sage.workflow.github_issue import (
+from sage.workflows.github import (
     GitHubWorkflowOutcome,
     classify_github_failure,
     finalize_github_issue,
@@ -122,7 +122,7 @@ def test_no_change_uses_exact_sha_without_calling_publisher(tmp_path: Path) -> N
     client = FakeClient(invocation)
     factories: list[str] = []
 
-    async def solve_runner(request, runtime, settings):
+    async def solve_runner(request, orchestrator, settings):
         assert request.repo_path == checkout.resolve()
         assert request.base_ref == base_sha
         assert request.issue_path.parent == (tmp_path / "context").resolve()
@@ -141,12 +141,12 @@ def test_no_change_uses_exact_sha_without_calling_publisher(tmp_path: Path) -> N
         checkout,
         solve_runner=solve_runner,
         settings_factory=lambda: factories.append("settings") or _settings(tmp_path),
-        runtime_factory=lambda settings: factories.append("runtime") or object(),
+        orchestrator_factory=lambda settings: factories.append("orchestrator") or object(),
         publisher=unexpected_publisher,
     )
 
     assert result.outcome is GitHubWorkflowOutcome.NO_CHANGES
-    assert factories == ["settings", "runtime"]
+    assert factories == ["settings", "orchestrator"]
     assert [status_state(body) for body in client.updates] == [
         WorkflowStatusState.WORKING,
         WorkflowStatusState.NO_CHANGES,
@@ -172,7 +172,7 @@ def test_non_empty_result_hands_authoritative_candidate_to_publisher(tmp_path: P
     )
     published_calls: list[SolveResult] = []
 
-    async def solve_runner(request, runtime, settings):
+    async def solve_runner(request, orchestrator, settings):
         return candidate
 
     def publisher(invocation_value, result, api, **kwargs):
@@ -229,7 +229,7 @@ def test_human_required_after_start_is_terminal_and_never_publishes(
         }
     )
 
-    async def solve_runner(request, runtime, settings):
+    async def solve_runner(request, orchestrator, settings):
         return terminal
 
     result = _run(
@@ -282,7 +282,7 @@ def test_solve_time_gate_stops_before_model_construction(
     def forbidden_settings():
         raise AssertionError("Model settings must not be loaded.")
 
-    async def forbidden_solve(request, runtime, settings):
+    async def forbidden_solve(request, orchestrator, settings):
         raise AssertionError("Solver must not run.")
 
     result = _run(
@@ -304,7 +304,7 @@ def test_runtime_failure_is_safely_classified_and_does_not_publish(tmp_path: Pat
     invocation = _invocation(base_sha)
     client = FakeClient(invocation)
 
-    async def failing_solve(request, runtime, settings):
+    async def failing_solve(request, orchestrator, settings):
         raise AgentRuntimeError("provider detail must stay in logs")
 
     with pytest.raises(AgentRuntimeError):
@@ -332,7 +332,7 @@ def test_publication_failure_preserves_safe_terminal_and_run_artifacts(tmp_path:
     invocation = _invocation(base_sha)
     client = FakeClient(invocation)
 
-    async def solve_runner(request, runtime, settings):
+    async def solve_runner(request, orchestrator, settings):
         return _solve_result(
             tmp_path,
             base_sha,
@@ -391,7 +391,7 @@ def _run(
     *,
     solve_runner,
     settings_factory=None,
-    runtime_factory=None,
+    orchestrator_factory=None,
     publisher=None,
 ):
     import asyncio
@@ -407,7 +407,7 @@ def _run(
             runner_temp=tmp_path / "runner",
             status_comment_id=client.status_comment_id,
             settings_factory=settings_factory or (lambda: _settings(tmp_path)),
-            runtime_factory=runtime_factory or (lambda settings: object()),
+            orchestrator_factory=orchestrator_factory or (lambda settings: object()),
             solve_runner=solve_runner,
             publisher=publisher or (
                 lambda *args, **kwargs: pytest.fail("unexpected publisher call")

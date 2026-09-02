@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from sage.config import Settings
-from sage.domain.requests import PreparedRun, SolveRequest
-from sage.domain.results import AgentFinalOutput, SolveOutcome
+from sage.domain.solve import PreparedRun, SolveRequest
+from sage.domain.solve import AgentFinalOutput, SolveOutcome
 from sage.errors import AgentRuntimeError, WorkspaceError
-from sage.workflow.solve import solve_issue
+from sage.workflows.solve import solve_issue
 
 
 class FakeSandbox:
@@ -46,25 +46,25 @@ class FakeStore:
         self.initialized = False
         self.persisted = False
 
-    def initialize_run(self, **kwargs) -> None:
+    def initialize(self, **kwargs) -> None:
         self.initialized = True
 
-    def persist_result(self, **kwargs) -> None:
+    def write_result(self, **kwargs) -> None:
         self.persisted = True
 
 
-class SuccessfulRuntime:
+class SuccessfulEngine:
     async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
         assert issue_text == "Fix it."
         return AgentFinalOutput(summary="Fixed.")
 
 
-class FailingRuntime:
+class FailingEngine:
     async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
         raise AgentRuntimeError("model failed")
 
 
-class EnvironmentBlockedRuntime:
+class EnvironmentBlockedEngine:
     async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
         return AgentFinalOutput(
             summary="The reviewer found an environment blocker.",
@@ -72,7 +72,7 @@ class EnvironmentBlockedRuntime:
         )
 
 
-class NoChangeRuntime:
+class NoChangeEngine:
     async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
         return AgentFinalOutput(
             summary="No change is required.",
@@ -82,7 +82,7 @@ class NoChangeRuntime:
 
 def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
     repository = FakeRepository()
     store = FakeStore()
@@ -90,11 +90,11 @@ def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch)
     result = asyncio.run(
         solve_issue(
             request,
-            SuccessfulRuntime(),
+            SuccessfulEngine(),
             settings,
             sandbox_factory=lambda *_: sandbox,
             repository_factory=lambda *_: repository,
-            artifact_store=store,
+            artifacts=store,
         )
     )
 
@@ -108,18 +108,18 @@ def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch)
 
 def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
 
     with pytest.raises(AgentRuntimeError, match="model failed"):
         asyncio.run(
             solve_issue(
                 request,
-                FailingRuntime(),
+                FailingEngine(),
                 settings,
                 sandbox_factory=lambda *_: sandbox,
                 repository_factory=lambda *_: FakeRepository(),
-                artifact_store=FakeStore(),
+                artifacts=FakeStore(),
             )
         )
 
@@ -132,24 +132,17 @@ def test_solve_issue_preserves_nonpublishable_candidate_for_diagnostics(
     monkeypatch,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    settings = settings.model_copy(
-        update={
-            "runtime": "v2",
-            "gemini_api_key": "gemini-test",
-            "google_model_context_approved": True,
-        }
-    )
-    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
 
     result = asyncio.run(
         solve_issue(
             request,
-            EnvironmentBlockedRuntime(),
+            EnvironmentBlockedEngine(),
             settings,
             sandbox_factory=lambda *_: sandbox,
             repository_factory=lambda *_: FakeRepository(),
-            artifact_store=FakeStore(),
+            artifacts=FakeStore(),
         )
     )
 
@@ -164,18 +157,18 @@ def test_solve_issue_rejects_completed_result_without_candidate(
     monkeypatch,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
 
     with pytest.raises(WorkspaceError, match="authoritative candidate"):
         asyncio.run(
             solve_issue(
                 request,
-                SuccessfulRuntime(),
+                SuccessfulEngine(),
                 settings,
                 sandbox_factory=lambda *_: sandbox,
                 repository_factory=lambda *_: EmptyRepository(),
-                artifact_store=FakeStore(),
+                artifacts=FakeStore(),
             )
         )
 
@@ -187,18 +180,18 @@ def test_solve_issue_rejects_no_change_result_with_candidate(
     monkeypatch,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    monkeypatch.setattr("sage.workflow.solve.prepare_run", lambda *_: prepared)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
 
-    with pytest.raises(WorkspaceError, match="no-change"):
+    with pytest.raises(WorkspaceError, match="No-change"):
         asyncio.run(
             solve_issue(
                 request,
-                NoChangeRuntime(),
+                NoChangeEngine(),
                 settings,
                 sandbox_factory=lambda *_: sandbox,
                 repository_factory=lambda *_: FakeRepository(),
-                artifact_store=FakeStore(),
+                artifacts=FakeStore(),
             )
         )
 

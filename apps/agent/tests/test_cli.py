@@ -3,9 +3,9 @@ from pathlib import Path
 import sage.cli as cli
 from sage.cli import _build_parser, _render_result
 from sage.config import Settings
-from sage.domain.results import SolveOutcome, SolveResult
-from sage.integrations.github.gate_models import GateOutcome, GateResult
-from sage.workflow.github_issue import GitHubWorkflowOutcome, GitHubWorkflowResult
+from sage.domain.solve import SolveOutcome, SolveResult
+from sage.integrations.github.models import GateOutcome, GateResult
+from sage.workflows.github import GitHubWorkflowOutcome, GitHubWorkflowResult
 
 
 def test_cli_uses_sage_name(capsys, tmp_path: Path) -> None:
@@ -24,7 +24,7 @@ def test_cli_uses_sage_name(capsys, tmp_path: Path) -> None:
     _render_result(result, model="test-model")
 
     assert parser.prog == "sage"
-    assert capsys.readouterr().out.startswith("Sage V2\n")
+    assert capsys.readouterr().out.startswith("Sage\n")
 
 
 def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
@@ -38,7 +38,7 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
             "--base-ref",
             "main",
             "--sandbox-image",
-            "custom:v0",
+            "custom:test",
             "--debug",
         ]
     )
@@ -47,7 +47,7 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
     assert arguments.repo == tmp_path / "repo"
     assert arguments.issue_file == tmp_path / "issue.md"
     assert arguments.base_ref == "main"
-    assert arguments.sandbox_image == "custom:v0"
+    assert arguments.sandbox_image == "custom:test"
     assert arguments.debug is True
 
 
@@ -64,12 +64,11 @@ def test_langsmith_traces_are_flushed_only_when_enabled(monkeypatch) -> None:
     assert calls == ["flush"]
 
 
-def test_v2_non_publishable_partial_diff_returns_exit_two(
+def test_non_publishable_partial_diff_returns_exit_two(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     settings = Settings(
-        runtime="v2",
         openai_api_key="openai-test",
         gemini_api_key="gemini-test",
         google_model_context_approved=True,
@@ -87,9 +86,9 @@ def test_v2_non_publishable_partial_diff_returns_exit_two(
     )
     monkeypatch.setattr(cli.Settings, "from_env", lambda: settings)
     monkeypatch.setattr(cli, "_validate_prerequisites", lambda *args, **kwargs: None)
-    monkeypatch.setattr(cli, "build_runtime", lambda value: object())
+    monkeypatch.setattr(cli, "build_orchestrator", lambda value: object())
 
-    async def fake_solve(request, runtime, effective_settings):
+    async def fake_solve(request, orchestrator, effective_settings):
         return result
 
     monkeypatch.setattr(cli, "solve_issue", fake_solve)
