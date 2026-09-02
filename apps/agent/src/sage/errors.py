@@ -45,6 +45,10 @@ class AgentRuntimeError(SageError):
     """Raised when the configured agent runtime fails."""
 
 
+class InvalidModelContractError(AgentRuntimeError):
+    """Raised when a model role violates a cross-field contract."""
+
+
 class ArtifactError(SageError):
     """Raised when run artifacts cannot be persisted."""
 
