@@ -37,6 +37,16 @@ def test_run_status_disables_the_git_pager() -> None:
     assert 'git --no-pager -C "$$run_dir/repo" diff --check' in target
 
 
+def test_legion_memory_target_uses_bound_repository_and_optional_database() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("legion-memory:", 1)[1].split("\nnew-issue:", 1)[0]
+
+    assert 'args=(memory build --repo "$(REPO)")' in target
+    assert '--memory-file "$(MEMORY_FILE)"' in target
+    assert "LANGSMITH_TRACING=false" in target
+    assert "OPENAI_API_KEY" not in target
+
+
 def test_first_run_validates_inputs_before_credentials(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()

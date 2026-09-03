@@ -14,6 +14,7 @@ from pathlib import Path
 
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
+from sage.composition import build_legion_memory_service, build_orchestrator
 from sage.config import Settings
 from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
 from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
@@ -29,7 +30,6 @@ from sage.integrations.github.publication_smoke import (
     default_publication_smoke_dir,
     run_publication_smoke,
 )
-from sage.composition import build_orchestrator
 from sage.workflows.github import finalize_github_issue, run_github_issue
 from sage.workflows.solve import solve_issue
 
@@ -79,6 +79,33 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--sandbox-image")
     solve_parser.add_argument("--debug", action="store_true")
     solve_parser.set_defaults(handler=_run_local_solve)
+
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Build or inspect the local Legion Memory graph.",
+    )
+    memory_subparsers = memory_parser.add_subparsers(
+        dest="memory_command",
+        required=True,
+    )
+    memory_build_parser = memory_subparsers.add_parser(
+        "build",
+        help="Build, update, or confirm a repository graph.",
+    )
+    memory_build_parser.add_argument("--repo", required=True, type=Path)
+    memory_build_parser.add_argument("--memory-file", type=Path)
+    memory_build_parser.add_argument("--full-rebuild", action="store_true")
+    memory_build_parser.add_argument("--debug", action="store_true")
+    memory_build_parser.set_defaults(handler=_run_memory_build)
+
+    memory_status_parser = memory_subparsers.add_parser(
+        "status",
+        help="Inspect graph readiness and provenance.",
+    )
+    memory_status_parser.add_argument("--repo", required=True, type=Path)
+    memory_status_parser.add_argument("--memory-file", type=Path)
+    memory_status_parser.add_argument("--debug", action="store_true")
+    memory_status_parser.set_defaults(handler=_run_memory_status)
 
     github_parser = subparsers.add_parser(
         "github",
@@ -154,6 +181,58 @@ def _build_parser() -> argparse.ArgumentParser:
     publication_smoke_parser.add_argument("--debug", action="store_true")
     publication_smoke_parser.set_defaults(handler=_run_github_publication_smoke)
     return parser
+
+
+def _run_memory_build(arguments: argparse.Namespace) -> int:
+    """Run the strict standalone graph build command."""
+
+    result = build_legion_memory_service().build_or_update_graph_tool(
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+        full_rebuild=arguments.full_rebuild,
+    )
+    print("Legion Memory build: ready")
+    print(f"  Memory file: {result.memory_file}")
+    print(f"  Build type: {result.build_type.value}")
+    print(f"  Indexed SHA: {result.indexed_sha}")
+    print(f"  Files indexed: {result.files_indexed}")
+    print(f"  Files parsed: {result.files_parsed}")
+    print(f"  Files removed: {result.files_removed}")
+    print(f"  Nodes: {result.total_nodes}")
+    print(f"  Edges: {result.total_edges}")
+    print(f"  Flows: {result.total_flows}")
+    print(f"  Communities: {result.total_communities}")
+    print(f"  Languages: {', '.join(result.languages) or 'none'}")
+    print(f"  Duration: {result.duration_ms:.2f} ms")
+    if result.warnings:
+        print("  Warnings:")
+        for warning in result.warnings:
+            print(f"    - {warning}")
+    return 0
+
+
+def _run_memory_status(arguments: argparse.Namespace) -> int:
+    """Print a bounded graph health and provenance summary."""
+
+    stats = build_legion_memory_service().graph_stats(
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+    )
+    print(f"Legion Memory status: {stats.status.value}")
+    print(f"  Memory file: {stats.memory_file}")
+    if stats.status.value != "ready":
+        print("  Build the graph with: sage memory build --repo <repository>")
+        return 1
+    print(f"  Build type: {stats.build_type.value if stats.build_type else 'unknown'}")
+    print(f"  Indexed SHA: {stats.indexed_sha}")
+    print(f"  Files: {stats.files}")
+    print(f"  Nodes: {stats.nodes}")
+    print(f"  Edges: {stats.edges}")
+    print(f"  Flows: {stats.flows}")
+    print(f"  Communities: {stats.communities}")
+    print(f"  Languages: {', '.join(stats.languages) or 'none'}")
+    print(f"  Last updated: {stats.last_updated}")
+    return 0
 
 
 def _run_local_solve(arguments: argparse.Namespace) -> int:

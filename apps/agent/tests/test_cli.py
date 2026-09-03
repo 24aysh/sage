@@ -3,6 +3,12 @@ from pathlib import Path
 import sage.cli as cli
 from sage.cli import _build_parser, _render_result
 from sage.config import Settings
+from sage.domain.memory import (
+    MemoryBuildResult,
+    MemoryBuildType,
+    MemoryGraphStats,
+    MemoryStatus,
+)
 from sage.domain.solve import SolveOutcome, SolveResult
 from sage.integrations.github.models import GateOutcome, GateResult
 from sage.workflows.github import GitHubWorkflowOutcome, GitHubWorkflowResult
@@ -49,6 +55,83 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
     assert arguments.base_ref == "main"
     assert arguments.sandbox_image == "custom:test"
     assert arguments.debug is True
+
+
+def test_memory_build_arguments_and_output(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    memory_file = tmp_path / "graph.sqlite3"
+    result = MemoryBuildResult(
+        build_type=MemoryBuildType.FULL,
+        memory_file=memory_file,
+        repository_id="repository-id",
+        indexed_sha="a" * 40,
+        schema_version=1,
+        files_indexed=2,
+        files_parsed=2,
+        files_removed=0,
+        total_nodes=5,
+        total_edges=4,
+        total_flows=1,
+        total_communities=1,
+        languages=("python",),
+        duration_ms=12.5,
+    )
+
+    class FakeService:
+        def build_or_update_graph_tool(self, **arguments):
+            assert arguments == {
+                "repo_root": tmp_path,
+                "memory_file": memory_file,
+                "full_rebuild": True,
+            }
+            return result
+
+    monkeypatch.setattr(cli, "build_legion_memory_service", lambda: FakeService())
+
+    exit_code = cli.main(
+        [
+            "memory",
+            "build",
+            "--repo",
+            str(tmp_path),
+            "--memory-file",
+            str(memory_file),
+            "--full-rebuild",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Legion Memory build: ready" in output
+    assert "Build type: full" in output
+    assert f"Memory file: {memory_file}" in output
+
+
+def test_memory_status_reports_missing_without_model_configuration(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    stats = MemoryGraphStats(
+        status=MemoryStatus.MISSING,
+        memory_file=tmp_path / "missing.sqlite3",
+    )
+
+    class FakeService:
+        def graph_stats(self, **arguments):
+            assert arguments["repo_root"] == tmp_path
+            return stats
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "build_legion_memory_service", lambda: FakeService())
+
+    exit_code = cli.main(["memory", "status", "--repo", str(tmp_path)])
+
+    assert exit_code == 1
+    assert "Legion Memory status: missing" in capsys.readouterr().out
 
 
 def test_langsmith_traces_are_flushed_only_when_enabled(monkeypatch) -> None:
