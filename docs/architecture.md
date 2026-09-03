@@ -35,6 +35,31 @@ The outer loop is normal Python, not an agent graph. LangGraph is used only for
 one bounded Solver tool session. Every repair starts a fresh session, and every
 repaired candidate receives a fresh review.
 
+## Legion Memory
+
+Phase 1 provides a local, rebuildable repository knowledge graph named Legion
+Memory. It indexes source blobs from the selected repository's committed
+`HEAD`, stores repository-relative symbols and relationships in SQLite, and
+records the repository identity, exact Git SHA, parser version, schema version,
+and build state. One `build_or_update_graph_tool` operation chooses a full,
+incremental, or no-change build; callers do not implement separate cold/warm
+paths.
+
+The graph includes FTS5 search, containment, imports, calls, inheritance,
+test links, bounded flows, communities, impact traversal, hubs, bridges, and
+knowledge-gap summaries. Tree-sitter provides grammar parsing and NetworkX
+provides deterministic graph analysis. Supported grammars are Python,
+JavaScript, TypeScript/TSX, Go, Rust, Java, C#, Ruby, C/C++/Objective-C,
+Kotlin, Swift, PHP, Scala, Dart, Lua, Bash, Elixir, Zig, Julia, HCL, SQL,
+YAML, Nix, PowerShell, Svelte, Vue, R, Perl, and Solidity.
+
+The Phase 1 LangChain adapters are native, read-only, repository-bound tools;
+they accept neither a database path nor arbitrary SQL from the model. They are
+implemented and tested but are not yet bound to the Solver. Issue-specific
+retrieval is Phase 2 and local solve integration is Phase 3. No MCP server,
+daemon, watcher, graph mutation tool, model call, or network service is part of
+the graph engine.
+
 ## Dependency tower
 
 Dependencies point toward stable contracts:
@@ -57,6 +82,8 @@ The enforced rules are:
 - orchestration does not import CLI, workflows, GitHub integration, or Docker;
 - provider adapters do not import agents, orchestration, workflows, repository,
   research, verification, or sandbox packages;
+- `legion_memory` does not import agents, CLI, composition, orchestration,
+  workflows, integrations, providers, or sandbox packages;
 - package `__init__.py` files document ownership and contain no implementation;
 - non-composition modules have at most 14 internal module dependencies; and
 - removed architecture and state-engine packages cannot reappear unnoticed.
@@ -82,6 +109,9 @@ These rules are executable in
 | Safe file operations | `sage/repository/filesystem.py` |
 | Deterministic verification | `sage/verification/` |
 | Research budgets and cache | `sage/research/service.py` |
+| Legion Memory build and query boundary | `sage/legion_memory/service.py` |
+| Legion Memory parsing and SQLite graph | `sage/legion_memory/parsing.py`, `store.py` |
+| Native read-only memory adapters | `sage/agents/memory_tools.py` |
 | Model adapters and call accounting | `sage/providers/` |
 | Atomic run evidence | `sage/artifacts/store.py` |
 | Local solve resource lifecycle | `sage/workflows/solve.py` |
@@ -203,21 +233,20 @@ at least two real implementations need that boundary.
 
 ## Refactor measurements
 
-Measured on 3 September 2026 after the consolidation:
+Measured on 4 September 2026 after Legion Memory Phase 1:
 
 | Metric | Before | Current |
 | --- | ---: | ---: |
-| Production Python files | 81 | 75 |
-| Production Python lines | 10,922 | 10,859 |
-| Nonblank production Python lines | 9,383 | 9,336 |
+| Production Python files | 81 | 82 |
+| Production Python lines | 10,922 | 13,702 |
+| Nonblank production Python lines | 9,383 | 11,922 |
 | Solve coordinator | 631 lines | 324 lines |
 | Highest internal module fan-out | 21 | 14 |
 | Supported solve architectures | 1 behind selectors/factories | 1 constructed directly |
 
-The source-line target in the implementation plan was a five-percent review
-signal. The final tree reduces total lines only slightly because explicit
-agent, orchestration, transport, publication, and safety boundaries replace
-implicit mixed-responsibility code. Compressing those boundaries would make
+The current increase is the explicit Phase 1 parser, transactional SQLite
+store, graph algorithms, native tool boundary, and typed contracts. Existing
+solve orchestration remains unchanged. Compressing these boundaries would make
 the system smaller but harder to audit. File count, coordinator size, and
 dependency fan-out carry the intended navigation improvement, and the current
 nonblank size is guarded against regression.

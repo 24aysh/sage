@@ -11,6 +11,12 @@ under `docs/` for present behavior and commands.
 | [`../docs/architecture.md`](../docs/architecture.md) | Implemented behavior, ownership, and dependency boundaries |
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
 
+## Proposed work
+
+| Document | Status |
+| --- | --- |
+| [`25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Phase 1 native SQLite graph and tools implemented; retrieval and local Solver integration remain proposed; GitHub Actions integration is deferred |
+
 ## Implemented consolidation
 
 | Document | Status |

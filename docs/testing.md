@@ -70,6 +70,57 @@ make graph
 The graph should contain the bounded model/tool loop. It is not the outer
 solve/verify/review workflow.
 
+## Legion Memory Phase 1
+
+Build or update a repository graph without provider credentials, Docker, MCP,
+or network access:
+
+```bash
+make legion-memory REPO=/absolute/path/to/repository
+```
+
+To choose the SQLite file explicitly:
+
+```bash
+make legion-memory \
+  REPO=/absolute/path/to/repository \
+  MEMORY_FILE=/absolute/path/to/graph.sqlite3
+```
+
+The direct CLI equivalents are:
+
+```bash
+uv run --project apps/agent sage memory build \
+  --repo /absolute/path/to/repository \
+  --memory-file /absolute/path/to/graph.sqlite3
+
+uv run --project apps/agent sage memory status \
+  --repo /absolute/path/to/repository \
+  --memory-file /absolute/path/to/graph.sqlite3
+```
+
+Without `MEMORY_FILE`, commands run from the Sage repository root use
+`.sage/legion-memory/<repo>-<identity>/graph.sqlite3`. The build output reports
+the resolved file, full/incremental/no-change decision, exact indexed SHA,
+counts, languages, warnings, and duration. Legion Memory reads committed
+`HEAD` blobs, so a build does not mutate the target repository and does not
+accidentally label dirty worktree content with the accepted SHA.
+
+Run only the graph suite while iterating:
+
+```bash
+LANGSMITH_TRACING=false uv run --project apps/agent \
+  pytest -c apps/agent/pyproject.toml apps/agent/tests/legion_memory
+```
+
+For a manual smoke check, build once and expect `full`, rerun unchanged and
+expect `no_change`, commit a source change and expect `incremental`, then run
+`memory status`. Confirm node and edge counts are non-zero and `git status` in
+the target repository is unchanged. The deterministic tests additionally
+cover add/change/delete/rename reconciliation, stale and foreign databases,
+corrupt schemas, SQL-shaped search input, every supported grammar, and every
+native read-only tool adapter.
+
 ## Architecture checks
 
 The AST guard verifies package ownership, dependency direction, empty package
@@ -231,6 +282,14 @@ SHA or diff-digest change is a safety failure, not a retry signal.
 GitHub workflow failure: run `make actions-check`, then inspect only the
 allowlisted diagnostic artifact and the bot-owned status comment. Provider
 details and credentials are deliberately excluded.
+
+Legion Memory status is `missing`: run `make legion-memory REPO=...` or pass
+the same explicit `MEMORY_FILE` to both build and status. A stale-SHA or
+foreign-repository error is intentional; rebuild for the selected repository
+instead of reusing the database. For corruption or an unsupported schema,
+move the bad local database aside and run the build command to create a fresh
+one. A standalone build fails non-zero rather than silently claiming memory is
+ready.
 
 Check the installed workflow files, immutable Action pins, documentation, and
 Docker availability with:
