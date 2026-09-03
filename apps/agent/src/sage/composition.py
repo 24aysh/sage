@@ -1,14 +1,23 @@
 """Production dependency construction for the single Sage solve architecture."""
 
+from pathlib import Path
+
 from langchain_openai import ChatOpenAI
 
 from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent
 from sage.config import Settings
 from sage.errors import ConfigurationError
+from sage.legion_memory.service import LegionMemoryService
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.google import GoogleProvider
 from sage.research.service import build_research_service
+
+
+def build_legion_memory_service(*, data_root: Path | None = None) -> LegionMemoryService:
+    """Construct Sage's local deterministic graph capability."""
+
+    return LegionMemoryService(data_root=data_root)
 
 
 def build_orchestrator(settings: Settings) -> SolveOrchestrator:

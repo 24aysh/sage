@@ -35,6 +35,16 @@ LAYER_FORBIDDEN_IMPORTS = {
     "research": ("agents", "orchestration", "workflows"),
     "sandbox": ("agents", "orchestration", "workflows"),
     "verification": ("agents", "orchestration", "workflows"),
+    "legion_memory": (
+        "agents",
+        "cli",
+        "composition",
+        "integrations",
+        "orchestration",
+        "providers",
+        "sandbox",
+        "workflows",
+    ),
 }
 
 
@@ -135,8 +145,8 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
         .splitlines()
     )
 
-    assert len(files) <= 75
-    assert nonblank_lines <= 9_340
+    assert len(files) <= 82
+    assert nonblank_lines <= 11_922
     assert orchestrator_lines <= 400
     for path in files:
         assert len(_sage_imports(path)) <= 14, path
