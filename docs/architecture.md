@@ -37,8 +37,9 @@ repaired candidate receives a fresh review.
 
 ## Legion Memory
 
-Phase 1 provides a local, rebuildable repository knowledge graph named Legion
-Memory. It indexes source blobs from the selected repository's committed
+Phases 1 and 2 provide a local, rebuildable repository knowledge graph named
+Legion Memory plus deterministic Issue-relevant retrieval. The graph indexes
+source blobs from the selected repository's committed
 `HEAD`, stores repository-relative symbols and relationships in SQLite, and
 records the repository identity, exact Git SHA, parser version, schema version,
 and build state. One `build_or_update_graph_tool` operation chooses a full,
@@ -53,12 +54,26 @@ JavaScript, TypeScript/TSX, Go, Rust, Java, C#, Ruby, C/C++/Objective-C,
 Kotlin, Swift, PHP, Scala, Dart, Lua, Bash, Elixir, Zig, Julia, HCL, SQL,
 YAML, Nix, PowerShell, Svelte, Vue, R, Perl, and Solidity.
 
-The Phase 1 LangChain adapters are native, read-only, repository-bound tools;
+The LangChain adapters are native, read-only, repository-bound tools;
 they accept neither a database path nor arbitrary SQL from the model. They are
-implemented and tested but are not yet bound to the Solver. Issue-specific
-retrieval is Phase 2 and local solve integration is Phase 3. No MCP server,
-daemon, watcher, graph mutation tool, model call, or network service is part of
-the graph engine.
+implemented and tested but are not yet bound to the Solver. Phase 2 retrieval
+extracts bounded Issue paths, identifiers, error tokens, and terms, ranks exact
+and FTS5 hits, expands the best seeds through relationships, flows, and
+communities, and returns explainable source locators under result and character
+budgets. A stale, foreign, missing, corrupt, or incompatible graph returns an
+explicit unavailable result so Phase 3 can continue without memory. Local
+Solver integration remains Phase 3. No MCP server, daemon, watcher, model call,
+or network service is part of retrieval.
+
+The 15 functions in `agents/memory_tools.py` are the deliberately frozen
+model-callable read-only subset from the Phase 1 specification, not a claim of
+parity with all 30 tools exported by `code-review-graph`. Legion also owns the
+pre-run build operation natively, for 16 implemented upstream-equivalent
+capabilities in total. The omitted upstream set includes embedding, explicit
+post-processing, source-mutating refactors, wiki writes, and multi-repository
+registry operations, as well as read-only review helpers. Adding exact parity
+requires a separate safety and ownership pass; write/build/maintenance tools
+must not be exposed to the Solver merely to make the counts equal.
 
 ## Dependency tower
 
@@ -111,6 +126,7 @@ These rules are executable in
 | Research budgets and cache | `sage/research/service.py` |
 | Legion Memory build and query boundary | `sage/legion_memory/service.py` |
 | Legion Memory parsing and SQLite graph | `sage/legion_memory/parsing.py`, `store.py` |
+| Legion Memory Issue ranking and graph expansion | `sage/legion_memory/retrieval.py` |
 | Native read-only memory adapters | `sage/agents/memory_tools.py` |
 | Model adapters and call accounting | `sage/providers/` |
 | Atomic run evidence | `sage/artifacts/store.py` |
