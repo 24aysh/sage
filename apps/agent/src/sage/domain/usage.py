@@ -37,6 +37,18 @@ class ModelCallRecord(BaseModel):
     request_id: str | None = Field(default=None, max_length=200)
 
 
+class AgentToolCallRecord(BaseModel):
+    """One model-requested tool call without arguments or result content."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    call_number: int = Field(ge=1)
+    model_call_number: int = Field(ge=1)
+    stage: str = Field(min_length=1, max_length=100)
+    role: ModelRole
+    tool_name: str = Field(min_length=1, max_length=100)
+
+
 class RunProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -44,5 +56,6 @@ class RunProvenance(BaseModel):
     route: str = "single"
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()
+    tool_calls: tuple[AgentToolCallRecord, ...] = ()
     solver_sessions: int = Field(default=0, ge=0)
     review_cycles: int = Field(default=0, ge=0)

@@ -172,3 +172,35 @@ class MemoryRetrievalResult(BaseModel):
     items: tuple[MemoryRetrievalItem, ...] = ()
     warnings: tuple[str, ...] = ()
     duration_ms: float = Field(default=0.0, ge=0.0)
+
+
+class MemoryToolCallRecord(BaseModel):
+    """Bounded evidence for one native memory tool invocation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    call_number: int = Field(ge=1)
+    tool_name: str = Field(min_length=1, max_length=100)
+    status: str = Field(min_length=1, max_length=40)
+    hit_count: int = Field(default=0, ge=0)
+    returned_paths: tuple[str, ...] = Field(default=(), max_length=20)
+    duration_ms: float = Field(ge=0.0)
+    truncated: bool = False
+
+
+class LegionMemoryRunArtifact(BaseModel):
+    """Run evidence for optional memory preparation, retrieval, and usage."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    format_version: int = 1
+    requested_memory_file: Path
+    resolved_memory_file: Path
+    status: MemoryRetrievalStatus
+    repository_id: str | None = None
+    indexed_sha: str | None = None
+    build: MemoryBuildResult | None = None
+    retrieval: MemoryRetrievalResult | None = None
+    tool_calls: tuple[MemoryToolCallRecord, ...] = ()
+    failure_category: str | None = Field(default=None, max_length=100)
+    fallback: str = Field(max_length=200)

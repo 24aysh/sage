@@ -190,6 +190,28 @@ def test_build_does_not_mutate_the_target_repository(
     assert git(fixture_repo, "status", "--short", "--untracked-files=all") == before
 
 
+def test_local_workspace_clone_reuses_source_repository_identity(
+    fixture_repo: Path,
+    tmp_path: Path,
+) -> None:
+    service = LegionMemoryService(data_root=tmp_path / "memory")
+    built = service.build_or_update_graph_tool(repo_root=fixture_repo)
+    workspace = tmp_path / "workspace"
+    subprocess.run(
+        ["git", "clone", "--quiet", str(fixture_repo), str(workspace)],
+        check=True,
+    )
+
+    updated = service.build_or_update_graph_tool(
+        repo_root=workspace,
+        memory_file=built.memory_file,
+    )
+
+    assert updated.repository_id == built.repository_id
+    assert updated.indexed_sha == built.indexed_sha
+    assert updated.build_type is MemoryBuildType.NO_CHANGE
+
+
 def test_failed_postprocessing_preserves_the_previous_ready_graph(
     fixture_repo: Path,
     tmp_path: Path,

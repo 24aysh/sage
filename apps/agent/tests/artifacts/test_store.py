@@ -60,4 +60,7 @@ def test_run_artifacts_persists_required_files_without_secret(tmp_path: Path) ->
         if path.is_file()
     )
     assert "must-not-persist" not in all_text
+    assert "memory_file" not in json.loads(
+        (run_dir / "request.json").read_text(encoding="utf-8")
+    )
     assert json.loads((run_dir / "changed-files.json").read_text()) == ["file.py"]

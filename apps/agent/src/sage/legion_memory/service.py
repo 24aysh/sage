@@ -882,6 +882,8 @@ class LegionMemoryService:
                 )
                 if nested:
                     origin = nested
+                else:
+                    return f"path:{candidate.resolve()}"
         return f"git:{origin.strip()}" if origin else f"path:{root}"
 
     @staticmethod

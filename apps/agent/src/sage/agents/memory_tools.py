@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
+from time import perf_counter
 from typing import Literal
 
 from langchain_core.tools import BaseTool, tool
@@ -21,6 +22,7 @@ def build_legion_memory_tools(
     repo_root: Path,
     memory_file: Path,
     output_chars: int = DEFAULT_MEMORY_TOOL_OUTPUT_CHARS,
+    usage_recorder: Callable[[str, dict[str, object], float], None] | None = None,
 ) -> list[BaseTool]:
     """Bind read-only graph tools to one repository and immutable graph path."""
 
@@ -31,6 +33,7 @@ def build_legion_memory_tools(
         operation: Callable[..., dict[str, object]],
         **arguments: object,
     ) -> str:
+        started = perf_counter()
         try:
             result = operation(
                 repo_root=repo_root,
@@ -50,7 +53,17 @@ def build_legion_memory_tools(
                 "truncated": False,
                 "data": {},
             }
-        return _bounded_json(result, max_chars=output_chars)
+        rendered = _bounded_json(result, max_chars=output_chars)
+        if usage_recorder is not None:
+            recorded_result = result
+            if '"truncated":true' in rendered:
+                recorded_result = {**result, "truncated": True}
+            usage_recorder(
+                operation.__name__,
+                recorded_result,
+                round((perf_counter() - started) * 1_000, 2),
+            )
+        return rendered
 
     @tool
     async def list_graph_stats_tool() -> str:

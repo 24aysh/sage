@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
 from sage.config import Settings
+from sage.domain.memory import LegionMemoryRunArtifact
 from sage.domain.solve import AgentFinalOutput, PreparedRun, SolveRequest, SolveResult
 from sage.domain.usage import RunProvenance
 from sage.errors import ArtifactError
@@ -47,10 +48,10 @@ class RunArtifacts:
             "sandbox_image": settings.sandbox_image,
         }
         try:
-            write_json_atomic(
-                prepared_run.run_dir / "request.json",
-                request.model_dump(mode="json"),
-            )
+            request_payload = request.model_dump(mode="json")
+            if request.memory_file is None:
+                request_payload.pop("memory_file", None)
+            write_json_atomic(prepared_run.run_dir / "request.json", request_payload)
             write_json_atomic(prepared_run.run_dir / "metadata.json", metadata)
             write_text_atomic(prepared_run.run_dir / "issue.md", issue_text)
         except OSError as error:
@@ -128,6 +129,9 @@ class RunArtifacts:
 
     def write_usage(self, value: RunProvenance) -> Path:
         return self._json("usage.json", value)
+
+    def write_legion_memory(self, value: LegionMemoryRunArtifact) -> Path:
+        return self._json("legion-memory.json", value)
 
     def write_terminal(self, value: BaseModel) -> Path:
         return self._json("terminal.json", value)

@@ -51,12 +51,16 @@ def test_every_native_adapter_invokes_and_returns_json(
     built_memory: tuple[LegionMemoryService, Path],
 ) -> None:
     service, memory_file = built_memory
+    usage: list[tuple[str, dict[str, object], float]] = []
     tools = {
         item.name: item
         for item in build_legion_memory_tools(
             service,
             repo_root=fixture_repo,
             memory_file=memory_file,
+            usage_recorder=lambda name, result, duration: usage.append(
+                (name, result, duration)
+            ),
         )
     }
     calls = {
@@ -83,6 +87,10 @@ def test_every_native_adapter_invokes_and_returns_json(
         assert payload["indexed_sha"]
         assert payload["repository_id"]
         assert payload["returned"] <= payload["total"]
+
+    assert len(usage) == len(EXPECTED_TOOLS)
+    assert {name for name, _, _ in usage} == EXPECTED_TOOLS
+    assert all(duration >= 0 for _, _, duration in usage)
 
 
 def test_adapters_report_unavailable_graph_and_bound_output(

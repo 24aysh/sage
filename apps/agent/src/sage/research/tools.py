@@ -2,20 +2,54 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Protocol
+
 from langchain_core.tools import BaseTool, tool
 
-from sage.research.models import ResearchRole
-from sage.research.service import ResearchService
+from sage.research.models import (
+    ResearchReadResponse,
+    ResearchRole,
+    ResearchSearchResponse,
+)
 
 
-def build_solver_research_tools(service: ResearchService) -> list[BaseTool]:
+class ResearchToolService(Protocol):
+    """Narrow service surface consumed by model-callable research adapters."""
+
+    async def search_documentation(
+        self,
+        *,
+        role: ResearchRole,
+        query: str,
+        ecosystem: str | None = None,
+        package: str | None = None,
+        version: str | None = None,
+        domains: Sequence[str] = (),
+        max_results: int = 5,
+    ) -> ResearchSearchResponse: ...
+
+    async def search_web(
+        self,
+        *,
+        role: ResearchRole,
+        query: str,
+        domains: Sequence[str] = (),
+        recency_days: int | None = None,
+        max_results: int = 5,
+    ) -> ResearchSearchResponse: ...
+
+    def read(self, *, role: ResearchRole, result_id: str) -> ResearchReadResponse: ...
+
+
+def build_solver_research_tools(service: ResearchToolService) -> list[BaseTool]:
     """Build the Solver's bounded documentation and web research tools."""
 
     return build_research_tools(service, role=ResearchRole.SOLVER, allow_web=True)
 
 
 def build_research_tools(
-    service: ResearchService,
+    service: ResearchToolService,
     *,
     role: ResearchRole,
     allow_web: bool,
