@@ -20,12 +20,13 @@ OUTPUT_DIR ?=
 ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
+LEGION_SOLVE ?= false
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-debug \
-	legion-memory legion-retrieve run-status run-test
+	legion-memory legion-retrieve legion-solve run-status run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -59,6 +60,8 @@ help: ## Show the available commands and variables.
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
 		'  make solve REPO=/absolute/path/to/repo ISSUE=/absolute/path/to/issue.md' \
+		'  make legion-solve REPO=... ISSUE=... MEMORY=...' \
+		'                        Solve with a build/update and Legion Memory retrieval.' \
 		'  make solve-debug REPO=... ISSUE=...' \
 		'  make run-status RUN_DIR=/absolute/path/to/run' \
 		'  make run-test RUN_DIR=... TEST_COMMAND="python3 -m unittest -v"' \
@@ -427,12 +430,22 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	fi; \
 	image_args=(); \
 	if [[ -n "$(SANDBOX_IMAGE)" ]]; then image_args=(--sandbox-image "$(SANDBOX_IMAGE)"); fi; \
+	memory_args=(); \
+	if [[ "$(LEGION_SOLVE)" == "true" ]]; then \
+		if [[ -z "$(MEMORY)" ]]; then \
+			echo "ERROR: MEMORY is required for legion-solve." >&2; \
+			echo "Use: make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
+			exit 1; \
+		fi; \
+		memory_args=(--memory-file "$(MEMORY)"); \
+	fi; \
 	set +e; \
 	uv run --project "$(AGENT_PROJECT)" sage solve \
 		--repo "$(REPO)" \
 		--issue-file "$(ISSUE)" \
 		--base-ref "$(BASE_REF)" \
 		"$${image_args[@]}" \
+		"$${memory_args[@]}" \
 		$(DEBUG_FLAG); \
 	status=$$?; \
 	set -e; \
@@ -449,6 +462,9 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 
 solve-debug: DEBUG_FLAG := --debug
 solve-debug: solve ## Run a live solve with debug logs and tracebacks.
+
+legion-solve: LEGION_SOLVE := true
+legion-solve: solve ## Run a live solve with Legion Memory enabled.
 
 run-status: ## Validate and summarize a completed run directory.
 	@set -euo pipefail; \

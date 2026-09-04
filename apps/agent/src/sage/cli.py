@@ -83,6 +83,7 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--issue-file", required=True, type=Path)
     solve_parser.add_argument("--base-ref", default="HEAD")
     solve_parser.add_argument("--sandbox-image")
+    solve_parser.add_argument("--memory-file", type=Path)
     solve_parser.add_argument("--debug", action="store_true")
     solve_parser.set_defaults(handler=_run_local_solve)
 
@@ -329,11 +330,26 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
         issue_path=arguments.issue_file.expanduser().resolve(),
         base_ref=arguments.base_ref,
         sandbox_image=arguments.sandbox_image,
+        memory_file=(
+            arguments.memory_file.expanduser().resolve()
+            if arguments.memory_file is not None
+            else None
+        ),
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
     orchestrator = build_orchestrator(settings)
-    result = asyncio.run(solve_issue(request, orchestrator, settings))
+    if request.memory_file is not None:
+        result = asyncio.run(
+            solve_issue(
+                request,
+                orchestrator,
+                settings,
+                memory_service=build_legion_memory_service(),
+            )
+        )
+    else:
+        result = asyncio.run(solve_issue(request, orchestrator, settings))
     _render_result(
         result,
         model=settings.solver_model,
@@ -560,20 +576,70 @@ def _render_result(result: SolveResult, *, model: str) -> None:
         print()
         print("Patch:")
         print(f"  {result.run_dir / 'diff.patch'}")
-        return
-
-    print("Agent completed without producing a repository change.")
-    print()
-    print("Summary:")
-    print(f"  {result.summary}")
-    if result.remaining_uncertainty:
+    else:
+        print("Agent completed without producing a repository change.")
         print()
-        print("Remaining uncertainty:")
-        for uncertainty in result.remaining_uncertainty:
-            print(f"  {uncertainty}")
+        print("Summary:")
+        print(f"  {result.summary}")
+        if result.remaining_uncertainty:
+            print()
+            print("Remaining uncertainty:")
+            for uncertainty in result.remaining_uncertainty:
+                print(f"  {uncertainty}")
+        print()
+        print("Run artifacts:")
+        print(f"  {result.run_dir}")
+
+    _render_solve_memory_summary(result)
+    _render_solve_usage_summary(result)
+
+
+def _render_solve_memory_summary(result: SolveResult) -> None:
+    memory = result.memory
+    if memory is None:
+        return
     print()
-    print("Run artifacts:")
-    print(f"  {result.run_dir}")
+    print("Legion Memory:")
+    print(f"  Status: {memory.status.value}")
+    print(
+        "  Initial retrieval: "
+        f"{memory.retrieval.returned if memory.retrieval is not None else 0} memories"
+    )
+    print(f"  Native memory tool calls: {len(memory.tool_calls)}")
+    print(f"  Fallback: {memory.fallback}")
+    print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
+
+
+def _render_solve_usage_summary(result: SolveResult) -> None:
+    provenance = result.provenance
+    print()
+    print("Usage totals:")
+    if provenance is None:
+        print("  Model calls: unavailable")
+        print("  Total tool calls: unavailable")
+        print("  Total tokens: unavailable")
+        return
+    input_tokens = sum(call.input_tokens or 0 for call in provenance.calls)
+    output_tokens = sum(call.output_tokens or 0 for call in provenance.calls)
+    cached_tokens = sum(call.cached_tokens or 0 for call in provenance.calls)
+    tool_counts: dict[str, int] = {}
+    for call in provenance.tool_calls:
+        tool_counts[call.tool_name] = tool_counts.get(call.tool_name, 0) + 1
+    print(f"  Model calls: {len(provenance.calls)}")
+    print(f"  Total tool calls: {len(provenance.tool_calls)}")
+    print(
+        "  Tools: "
+        + (
+            ", ".join(
+                f"{name}={count}" for name, count in sorted(tool_counts.items())
+            )
+            or "none"
+        )
+    )
+    print(f"  Input tokens: {input_tokens}")
+    print(f"  Output tokens: {output_tokens}")
+    print(f"  Cached input tokens: {cached_tokens}")
+    print(f"  Total tokens: {input_tokens + output_tokens}")
 
 
 if __name__ == "__main__":

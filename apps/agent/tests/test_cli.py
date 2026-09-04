@@ -4,6 +4,7 @@ import sage.cli as cli
 from sage.cli import _build_parser, _render_result
 from sage.config import Settings
 from sage.domain.memory import (
+    LegionMemoryRunArtifact,
     MemoryBuildResult,
     MemoryBuildType,
     MemoryGraphStats,
@@ -14,6 +15,13 @@ from sage.domain.memory import (
     MemoryStatus,
 )
 from sage.domain.solve import SolveOutcome, SolveResult
+from sage.domain.usage import (
+    AgentToolCallRecord,
+    AttemptKind,
+    ModelCallRecord,
+    ModelRole,
+    RunProvenance,
+)
 from sage.integrations.github.models import GateOutcome, GateResult
 from sage.workflows.github import GitHubWorkflowOutcome, GitHubWorkflowResult
 
@@ -58,7 +66,25 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
     assert arguments.issue_file == tmp_path / "issue.md"
     assert arguments.base_ref == "main"
     assert arguments.sandbox_image == "custom:test"
+    assert arguments.memory_file is None
     assert arguments.debug is True
+
+
+def test_local_solve_accepts_explicit_memory_file(tmp_path: Path) -> None:
+    memory_file = tmp_path / "graph.sqlite3"
+    arguments = _build_parser().parse_args(
+        [
+            "solve",
+            "--repo",
+            str(tmp_path / "repo"),
+            "--issue-file",
+            str(tmp_path / "issue.md"),
+            "--memory-file",
+            str(memory_file),
+        ]
+    )
+
+    assert arguments.memory_file == memory_file
 
 
 def test_memory_build_arguments_and_output(
@@ -282,6 +308,108 @@ def test_non_publishable_partial_diff_returns_exit_two(
     )
 
     assert cli._run_local_solve(arguments) == 2
+
+
+def test_memory_solve_injects_service_and_reports_comparable_usage(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    settings = Settings(
+        openai_api_key="openai-test",
+        gemini_api_key="gemini-test",
+        google_model_context_approved=True,
+    )
+    memory_file = tmp_path / "graph.sqlite3"
+    service = object()
+    memory = LegionMemoryRunArtifact(
+        requested_memory_file=memory_file,
+        resolved_memory_file=memory_file,
+        status=MemoryRetrievalStatus.NO_MATCH,
+        fallback="normal repository inspection",
+    )
+    provenance = RunProvenance(
+        calls=(
+            ModelCallRecord(
+                call_number=1,
+                stage="solver",
+                role=ModelRole.SOLVER,
+                attempt_kind=AttemptKind.PRIMARY,
+                provider="openai",
+                model="test-model",
+                input_tokens=20,
+                output_tokens=5,
+                cached_tokens=4,
+                latency_ms=1,
+                outcome="success",
+            ),
+        ),
+        tool_calls=(
+            AgentToolCallRecord(
+                call_number=1,
+                model_call_number=1,
+                stage="solver",
+                role=ModelRole.SOLVER,
+                tool_name="read_file",
+            ),
+            AgentToolCallRecord(
+                call_number=2,
+                model_call_number=1,
+                stage="solver",
+                role=ModelRole.SOLVER,
+                tool_name="read_file",
+            ),
+        ),
+    )
+    result = SolveResult(
+        run_id="run-id",
+        base_sha="a" * 40,
+        summary="No change required.",
+        remaining_uncertainty=[],
+        changed_files=[],
+        diff="",
+        run_dir=tmp_path,
+        workspace_dir=tmp_path / "repo",
+        outcome=SolveOutcome.NO_CHANGE,
+        provenance=provenance,
+        memory=memory,
+    )
+    monkeypatch.setattr(cli.Settings, "from_env", lambda: settings)
+    monkeypatch.setattr(cli, "_validate_prerequisites", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "build_orchestrator", lambda value: object())
+    monkeypatch.setattr(cli, "build_legion_memory_service", lambda: service)
+
+    async def fake_solve(
+        request,
+        orchestrator,
+        effective_settings,
+        *,
+        memory_service,
+    ):
+        assert request.memory_file == memory_file
+        assert memory_service is service
+        return result
+
+    monkeypatch.setattr(cli, "solve_issue", fake_solve)
+    arguments = _build_parser().parse_args(
+        [
+            "solve",
+            "--repo",
+            str(tmp_path / "repo"),
+            "--issue-file",
+            str(tmp_path / "issue.md"),
+            "--memory-file",
+            str(memory_file),
+        ]
+    )
+
+    assert cli._run_local_solve(arguments) == 2
+    output = capsys.readouterr().out
+    assert "Legion Memory:" in output
+    assert "Status: no_match" in output
+    assert "Total tool calls: 2" in output
+    assert "Tools: read_file=2" in output
+    assert "Total tokens: 25" in output
 
 
 def test_github_gate_does_not_require_model_configuration(
