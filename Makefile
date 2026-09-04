@@ -11,6 +11,7 @@ ENV_PATH = $(if $(filter /%,$(ENV_FILE)),$(ENV_FILE),$(ROOT_DIR)/$(ENV_FILE))
 SANDBOX_IMAGE ?=
 REPO ?=
 MEMORY_FILE ?=
+MEMORY ?=
 ISSUE ?=
 BASE_REF ?= HEAD
 RUN_DIR ?=
@@ -24,7 +25,7 @@ DEBUG_FLAG :=
 .PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-debug \
-	legion-memory run-status run-test
+	legion-memory legion-retrieve run-status run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -52,6 +53,8 @@ help: ## Show the available commands and variables.
 		'  make graph             Print the compiled LangGraph Mermaid diagram.' \
 		'  make legion-memory REPO=/absolute/path/to/repo' \
 		'                        Build or update the local Legion Memory graph.' \
+		'  make legion-retrieve REPO=... ISSUE=... MEMORY=...' \
+		'                        Print Issue-relevant memories from a ready graph.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
@@ -374,6 +377,20 @@ legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optiona
 	if [[ -n "$(MEMORY_FILE)" ]]; then args+=(--memory-file "$(MEMORY_FILE)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
+
+legion-retrieve: ## Retrieve memories for ISSUE from MEMORY, bound to REPO.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -z "$(REPO)" || -z "$(ISSUE)" || -z "$(MEMORY)" ]]; then \
+		echo "ERROR: REPO, ISSUE, and MEMORY are required." >&2; \
+		echo "Use: make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
+		exit 1; \
+	fi; \
+	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
+	[[ -f "$(ISSUE)" ]] || { echo "ERROR: issue file does not exist: $(ISSUE)" >&2; exit 1; }; \
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
+		uv run --project "$(AGENT_PROJECT)" sage memory retrieve \
+		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \

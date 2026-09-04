@@ -16,8 +16,14 @@ from langchain_core.tracers.langchain import wait_for_all_tracers
 
 from sage.composition import build_legion_memory_service, build_orchestrator
 from sage.config import Settings
+from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
-from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
+from sage.errors import (
+    ConfigurationError,
+    GitHubConfigurationError,
+    LegionMemoryQueryError,
+    SageError,
+)
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.events import (
@@ -106,6 +112,16 @@ def _build_parser() -> argparse.ArgumentParser:
     memory_status_parser.add_argument("--memory-file", type=Path)
     memory_status_parser.add_argument("--debug", action="store_true")
     memory_status_parser.set_defaults(handler=_run_memory_status)
+
+    memory_retrieve_parser = memory_subparsers.add_parser(
+        "retrieve",
+        help="Retrieve Issue-relevant context from a ready graph.",
+    )
+    memory_retrieve_parser.add_argument("--repo", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--issue-file", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--memory-file", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--debug", action="store_true")
+    memory_retrieve_parser.set_defaults(handler=_run_memory_retrieve)
 
     github_parser = subparsers.add_parser(
         "github",
@@ -233,6 +249,75 @@ def _run_memory_status(arguments: argparse.Namespace) -> int:
     print(f"  Languages: {', '.join(stats.languages) or 'none'}")
     print(f"  Last updated: {stats.last_updated}")
     return 0
+
+
+def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
+    """Print an explainable, model-free retrieval result for one Issue."""
+
+    issue_file = arguments.issue_file.expanduser().resolve()
+    if not issue_file.is_file():
+        raise LegionMemoryQueryError(f"Issue file does not exist: {issue_file}")
+    try:
+        issue_text = issue_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise LegionMemoryQueryError(
+            f"Unable to read Issue file: {type(error).__name__}: {str(error)[:300]}"
+        ) from error
+    result = build_legion_memory_service().retrieve_issue_context(
+        issue_text=issue_text,
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+    )
+    _render_memory_retrieval(result)
+    return 1 if result.status is MemoryRetrievalStatus.UNAVAILABLE else 0
+
+
+def _render_memory_retrieval(result: MemoryRetrievalResult) -> None:
+    """Render stable retrieval logs without trusting database text as terminal data."""
+
+    print(f"Legion Memory retrieval: {result.status.value}")
+    print(f"  Memory used: {'yes' if result.status is MemoryRetrievalStatus.USED else 'no'}")
+    print(f"  Outcome: {result.outcome.value}")
+    print(f"  Summary: {_safe_log_value(result.summary, 500)}")
+    print(f"  Memory file: {result.memory_file}")
+    print(f"  Indexed SHA: {result.indexed_sha or 'unavailable'}")
+    print(f"  Search modes: {', '.join(result.search_modes) or 'none'}")
+    print(
+        "  Query terms: "
+        + (", ".join(_safe_log_value(term, 80) for term in result.query_terms) or "none")
+    )
+    print(f"  Lexical candidates: {result.lexical_candidates}")
+    print(f"  Graph-expanded candidates: {result.expanded_candidates}")
+    print(f"  Retrieved: {result.returned}/{result.total_candidates}")
+    print(f"  Omitted: {result.omitted}")
+    print(f"  Truncated: {'yes' if result.truncated else 'no'}")
+    print(f"  Context characters: {result.context_chars}")
+    print(f"  Duration: {result.duration_ms:.2f} ms")
+    if result.items:
+        print("  Retrieved memories:")
+        for item in result.items:
+            location = (
+                f"{_safe_log_value(item.file_path, 300)}:"
+                f"{item.line_start}-{item.line_end}"
+            )
+            print(
+                f"    {item.rank}. {_safe_log_value(item.kind, 40)} "
+                f"{_safe_log_value(item.qualified_name, 500)}"
+            )
+            print(f"       Location: {location}")
+            print(f"       Score: {item.score:.3f}")
+            print(f"       Why: {', '.join(item.reasons)}")
+    if result.warnings:
+        print("  Warnings:")
+        for warning in result.warnings:
+            print(f"    - {_safe_log_value(warning, 500)}")
+
+
+def _safe_log_value(value: object, limit: int) -> str:
+    rendered = "".join(
+        character if character.isprintable() else " " for character in str(value)
+    )
+    return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
 
 
 def _run_local_solve(arguments: argparse.Namespace) -> int:

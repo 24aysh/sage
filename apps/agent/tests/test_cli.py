@@ -7,6 +7,10 @@ from sage.domain.memory import (
     MemoryBuildResult,
     MemoryBuildType,
     MemoryGraphStats,
+    MemoryRetrievalItem,
+    MemoryRetrievalOutcome,
+    MemoryRetrievalResult,
+    MemoryRetrievalStatus,
     MemoryStatus,
 )
 from sage.domain.solve import SolveOutcome, SolveResult
@@ -132,6 +136,98 @@ def test_memory_status_reports_missing_without_model_configuration(
 
     assert exit_code == 1
     assert "Legion Memory status: missing" in capsys.readouterr().out
+
+
+def test_memory_retrieve_prints_usage_and_ranked_memories(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    issue_file = tmp_path / "issue.md"
+    issue_file.write_text("Fix `helper`.\n", encoding="utf-8")
+    memory_file = tmp_path / "graph.sqlite3"
+    memory_file.touch()
+    result = MemoryRetrievalResult(
+        status=MemoryRetrievalStatus.USED,
+        outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+        summary="Retrieved one relevant symbol.",
+        memory_file=memory_file,
+        repository_id="repository-id",
+        indexed_sha="a" * 40,
+        search_modes=("exact", "fts"),
+        query_terms=("helper",),
+        lexical_candidates=1,
+        total_candidates=1,
+        returned=1,
+        context="bounded context",
+        context_chars=15,
+        items=(
+            MemoryRetrievalItem(
+                rank=1,
+                kind="Function",
+                name="helper",
+                qualified_name="service.py::helper",
+                file_path="service.py",
+                line_start=8,
+                line_end=9,
+                language="python",
+                score=16.25,
+                reasons=("exact_identifier", "fts"),
+            ),
+        ),
+        duration_ms=1.25,
+    )
+
+    class FakeService:
+        def retrieve_issue_context(self, **arguments):
+            assert arguments == {
+                "issue_text": "Fix `helper`.\n",
+                "repo_root": tmp_path,
+                "memory_file": memory_file,
+            }
+            return result
+
+    monkeypatch.setattr(cli, "build_legion_memory_service", lambda: FakeService())
+
+    exit_code = cli.main(
+        [
+            "memory",
+            "retrieve",
+            "--repo",
+            str(tmp_path),
+            "--issue-file",
+            str(issue_file),
+            "--memory-file",
+            str(memory_file),
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Legion Memory retrieval: used" in output
+    assert "Memory used: yes" in output
+    assert "service.py::helper" in output
+    assert "Why: exact_identifier, fts" in output
+
+
+def test_memory_retrieve_prints_explicit_no_match(capsys, tmp_path: Path) -> None:
+    result = MemoryRetrievalResult(
+        status=MemoryRetrievalStatus.NO_MATCH,
+        outcome=MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES,
+        summary="The graph is ready, but the Issue produced no lexical matches.",
+        memory_file=tmp_path / "graph.sqlite3",
+        indexed_sha="a" * 40,
+        search_modes=("none",),
+        query_terms=("quasarnebulazxq",),
+        duration_ms=0.5,
+    )
+
+    cli._render_memory_retrieval(result)
+
+    output = capsys.readouterr().out
+    assert "Legion Memory retrieval: no_match" in output
+    assert "Memory used: no" in output
+    assert "Retrieved memories:" not in output
 
 
 def test_langsmith_traces_are_flushed_only_when_enabled(monkeypatch) -> None:

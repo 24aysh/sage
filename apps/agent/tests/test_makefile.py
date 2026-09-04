@@ -47,6 +47,19 @@ def test_legion_memory_target_uses_bound_repository_and_optional_database() -> N
     assert "OPENAI_API_KEY" not in target
 
 
+def test_legion_retrieve_target_requires_issue_and_explicit_database() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("legion-retrieve:", 1)[1].split("\nnew-issue:", 1)[0]
+
+    assert "REPO, ISSUE, and MEMORY are required" in target
+    assert "sage memory retrieve" in target
+    assert '--repo "$(REPO)"' in target
+    assert '--issue-file "$(ISSUE)"' in target
+    assert '--memory-file "$(MEMORY)"' in target
+    assert "LANGSMITH_TRACING=false" in target
+    assert "OPENAI_API_KEY" not in target
+
+
 def test_first_run_validates_inputs_before_credentials(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
