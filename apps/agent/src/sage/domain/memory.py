@@ -24,6 +24,25 @@ class MemoryStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class MemoryRetrievalStatus(StrEnum):
+    """Whether Issue-relevant memory can be exposed to a caller."""
+
+    USED = "used"
+    NO_MATCH = "no_match"
+    UNAVAILABLE = "unavailable"
+    DISABLED = "disabled"
+
+
+class MemoryRetrievalOutcome(StrEnum):
+    """Specific, observable reason for a retrieval status."""
+
+    USEFUL_CONTEXT = "useful_context"
+    USEFUL_CONTEXT_TRUNCATED = "useful_context_truncated"
+    NO_LEXICAL_CANDIDATES = "no_lexical_candidates"
+    BELOW_THRESHOLD = "below_threshold"
+    GRAPH_UNAVAILABLE = "graph_unavailable"
+
+
 class MemoryGraphStats(BaseModel):
     """Bounded health and size summary for one graph database."""
 
@@ -83,3 +102,73 @@ class MemoryToolResult(BaseModel):
     omitted: int = Field(default=0, ge=0)
     truncated: bool = False
     data: dict[str, object] = Field(default_factory=dict)
+
+
+class MemoryRetrievalBudgets(BaseModel):
+    """Hard deterministic limits for one Issue retrieval."""
+
+    model_config = ConfigDict(frozen=True)
+
+    max_results: int = Field(default=12, ge=1, le=50)
+    max_seeds: int = Field(default=5, ge=1, le=20)
+    max_related_per_seed: int = Field(default=8, ge=1, le=50)
+    max_chars: int = Field(default=12_000, ge=500, le=50_000)
+    max_issue_chars: int = Field(default=50_000, ge=1_000, le=200_000)
+    usefulness_threshold: float = Field(default=5.0, ge=0.0, le=100.0)
+
+
+class MemoryRelationshipEvidence(BaseModel):
+    """One graph fact explaining why a related item was selected."""
+
+    model_config = ConfigDict(frozen=True)
+
+    reason: str = Field(min_length=1, max_length=40)
+    relationship: str = Field(min_length=1, max_length=40)
+    seed_qualified_name: str = Field(min_length=1, max_length=1_000)
+
+
+class MemoryRetrievalItem(BaseModel):
+    """One ranked, source-locating retrieval result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    rank: int = Field(ge=1)
+    kind: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=300)
+    qualified_name: str = Field(min_length=1, max_length=1_000)
+    file_path: str = Field(min_length=1, max_length=500)
+    line_start: int = Field(ge=1)
+    line_end: int = Field(ge=1)
+    language: str = Field(min_length=1, max_length=40)
+    is_test: bool = False
+    signature: str = Field(default="", max_length=500)
+    score: float = Field(ge=0.0)
+    reasons: tuple[str, ...] = ()
+    relationships: tuple[MemoryRelationshipEvidence, ...] = ()
+
+
+class MemoryRetrievalResult(BaseModel):
+    """Bounded, explainable result of retrieving memory for one Issue."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: MemoryRetrievalStatus
+    outcome: MemoryRetrievalOutcome
+    summary: str = Field(max_length=500)
+    memory_file: Path
+    repository_id: str | None = None
+    indexed_sha: str | None = None
+    last_updated: str | None = None
+    search_modes: tuple[str, ...] = ()
+    query_terms: tuple[str, ...] = ()
+    lexical_candidates: int = Field(default=0, ge=0)
+    expanded_candidates: int = Field(default=0, ge=0)
+    total_candidates: int = Field(default=0, ge=0)
+    returned: int = Field(default=0, ge=0)
+    omitted: int = Field(default=0, ge=0)
+    truncated: bool = False
+    context: str = ""
+    context_chars: int = Field(default=0, ge=0)
+    items: tuple[MemoryRetrievalItem, ...] = ()
+    warnings: tuple[str, ...] = ()
+    duration_ms: float = Field(default=0.0, ge=0.0)

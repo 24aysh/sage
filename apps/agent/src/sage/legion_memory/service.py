@@ -22,6 +22,10 @@ from sage.domain.memory import (
     MemoryBuildResult,
     MemoryBuildType,
     MemoryGraphStats,
+    MemoryRetrievalBudgets,
+    MemoryRetrievalOutcome,
+    MemoryRetrievalResult,
+    MemoryRetrievalStatus,
     MemoryStatus,
     MemoryToolResult,
 )
@@ -33,6 +37,7 @@ from sage.legion_memory.parsing import (
     detect_language,
     normalize_path,
 )
+from sage.legion_memory.retrieval import retrieve_issue_context as retrieve_context
 from sage.legion_memory.store import GraphStore, SCHEMA_VERSION
 
 _IGNORED_PARTS = frozenset(
@@ -252,6 +257,58 @@ class LegionMemoryService:
                 f"Unable to read Legion Memory status: {type(error).__name__}: "
                 f"{str(error)[:300]}"
             ) from error
+
+    def retrieve_issue_context(
+        self,
+        *,
+        issue_text: str,
+        repo_root: Path,
+        memory_file: Path | None = None,
+        budgets: MemoryRetrievalBudgets | None = None,
+    ) -> MemoryRetrievalResult:
+        """Retrieve bounded Issue-relevant context or a stable fallback status."""
+
+        limits = budgets or MemoryRetrievalBudgets()
+        if not issue_text.strip():
+            raise LegionMemoryQueryError("Issue text cannot be empty.")
+        if len(issue_text) > limits.max_issue_chars:
+            raise LegionMemoryQueryError(
+                f"Issue text exceeds the {limits.max_issue_chars}-character limit."
+            )
+        started = perf_counter()
+        database = (
+            memory_file.expanduser().resolve()
+            if memory_file is not None
+            else (self._data_root or Path(".sage/legion-memory")) / "unavailable.sqlite3"
+        )
+        try:
+            root = self._repository_root(repo_root)
+            database = self.resolve_memory_file(root, memory_file)
+            with self._ready_store(root, database) as store:
+                return retrieve_context(
+                    issue_text,
+                    store,
+                    memory_file=database,
+                    budgets=limits,
+                )
+        except (
+            LegionMemoryBuildError,
+            LegionMemoryQueryError,
+            OSError,
+            ValueError,
+            sqlite3.Error,
+            subprocess.SubprocessError,
+        ) as error:
+            return MemoryRetrievalResult(
+                status=MemoryRetrievalStatus.UNAVAILABLE,
+                outcome=MemoryRetrievalOutcome.GRAPH_UNAVAILABLE,
+                summary=(
+                    "Memory retrieval is unavailable; continue without memory. "
+                    f"{type(error).__name__}: {str(error)[:300]}"
+                )[:500],
+                memory_file=database,
+                duration_ms=round((perf_counter() - started) * 1_000, 2),
+            )
 
     def list_graph_stats_tool(self, **arguments: object) -> dict[str, object]:
         stats = self.graph_stats(**arguments)  # type: ignore[arg-type]

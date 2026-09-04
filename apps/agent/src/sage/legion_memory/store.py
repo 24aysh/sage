@@ -43,7 +43,9 @@ class GraphStore:
                 isolation_level=None,
             )
         self.connection.row_factory = sqlite3.Row
-        self.connection.execute("PRAGMA busy_timeout=5000")
+        self.connection.execute(
+            "PRAGMA busy_timeout=100" if read_only else "PRAGMA busy_timeout=5000"
+        )
         self.connection.execute("PRAGMA foreign_keys=ON")
         if not read_only:
             self.connection.execute("PRAGMA journal_mode=WAL")
