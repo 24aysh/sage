@@ -5,12 +5,22 @@ from pathlib import Path
 
 import pytest
 
+from sage.agents.prompts import build_solver_message
+from sage.agents.solver import SolverPlanSession, build_solver_tools
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
+from sage.domain.memory import (
+    MemoryBuildResult,
+    MemoryBuildType,
+    MemoryRetrievalOutcome,
+    MemoryRetrievalResult,
+    MemoryRetrievalStatus,
+)
 from sage.domain.solve import PreparedRun
-from sage.orchestration.context import SolveContext
 from sage.errors import RepositoryError
-from sage.agents.solver import SolverPlanSession, build_solver_tools
+from sage.legion_memory.service import LegionMemoryService
+from sage.legion_memory.session import MemorySession
+from sage.orchestration.context import SolveContext
 
 
 class Repository:
@@ -121,3 +131,81 @@ def test_save_plan_unlocks_mutation_and_persists_outside_repository(
 
     assert repository.mutations == 1
     assert (run_dir / "solver-plan.json").is_file()
+
+
+def test_memory_context_and_tools_are_added_only_for_a_valid_session(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    memory_file = tmp_path / "graph.sqlite3"
+    session = MemorySession(
+        service=LegionMemoryService(),
+        repo_root=tmp_path,
+        requested_memory_file=memory_file,
+        memory_file=memory_file,
+        build=MemoryBuildResult(
+            build_type=MemoryBuildType.NO_CHANGE,
+            memory_file=memory_file,
+            repository_id="repository-id",
+            indexed_sha="a" * 40,
+            schema_version=1,
+            files_indexed=1,
+            files_parsed=0,
+            files_removed=0,
+            total_nodes=2,
+            total_edges=1,
+            total_flows=0,
+            total_communities=0,
+            duration_ms=1,
+        ),
+        retrieval=MemoryRetrievalResult(
+            status=MemoryRetrievalStatus.USED,
+            outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+            summary="Found one symbol.",
+            memory_file=memory_file,
+            indexed_sha="a" * 40,
+            returned=1,
+            total_candidates=1,
+            context="Function helper at app.py:1-2",
+            context_chars=29,
+            duration_ms=1,
+        ),
+    )
+    context = SolveContext(
+        prepared_run=PreparedRun(
+            run_id="run",
+            source_repo=tmp_path,
+            run_dir=run_dir,
+            workspace_dir=tmp_path,
+            base_ref="HEAD",
+            base_sha="a" * 40,
+        ),
+        repository=Repository(),  # type: ignore[arg-type]
+        settings=Settings(openai_api_key="test"),
+        artifacts=RunArtifacts(run_dir),
+        memory=session,
+    )
+
+    tools = {
+        item.name
+        for item in build_solver_tools(
+            context,
+            SolverPlanSession(RunArtifacts(run_dir)),
+        )
+    }
+    message = build_solver_message(
+        base_sha="a" * 40,
+        issue_text="Fix helper.",
+        memory_context=session.initial_context,
+    )
+
+    assert "semantic_search_nodes_tool" in tools
+    assert "get_architecture_overview_tool" in tools
+    assert "<untrusted-legion-memory>" in message
+    assert "Function helper at app.py:1-2" in message
+    assert "</untrusted-legion-memory>" in message
+    assert "<untrusted-legion-memory>" not in build_solver_message(
+        base_sha="a" * 40,
+        issue_text="Fix helper.",
+    )

@@ -10,6 +10,8 @@ ENV_FILE ?= .env
 ENV_PATH = $(if $(filter /%,$(ENV_FILE)),$(ENV_FILE),$(ROOT_DIR)/$(ENV_FILE))
 SANDBOX_IMAGE ?=
 REPO ?=
+MEMORY_FILE ?=
+MEMORY ?=
 ISSUE ?=
 BASE_REF ?= HEAD
 RUN_DIR ?=
@@ -18,12 +20,13 @@ OUTPUT_DIR ?=
 ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
+LEGION_SOLVE ?= false
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-debug \
-	run-status run-test
+	legion-memory legion-retrieve legion-solve run-status run-test
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -49,10 +52,16 @@ help: ## Show the available commands and variables.
 		'  make actions-check     Validate action/workflow syntax and policy.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph             Print the compiled LangGraph Mermaid diagram.' \
+		'  make legion-memory REPO=/absolute/path/to/repo' \
+		'                        Build or update the local Legion Memory graph.' \
+		'  make legion-retrieve REPO=... ISSUE=... MEMORY=...' \
+		'                        Print Issue-relevant memories from a ready graph.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
 		'  make solve REPO=/absolute/path/to/repo ISSUE=/absolute/path/to/issue.md' \
+		'  make legion-solve REPO=... ISSUE=... MEMORY=...' \
+		'                        Solve with a build/update and Legion Memory retrieval.' \
 		'  make solve-debug REPO=... ISSUE=...' \
 		'  make run-status RUN_DIR=/absolute/path/to/run' \
 		'  make run-test RUN_DIR=... TEST_COMMAND="python3 -m unittest -v"' \
@@ -359,6 +368,33 @@ graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/agents/test_loop.py::test_compiled_graph_renders_expected_mermaid"
 
+legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optional.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -z "$(REPO)" ]]; then \
+		echo "ERROR: REPO is required. Use an absolute path to a Git repository." >&2; \
+		exit 1; \
+	fi; \
+	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
+	args=(memory build --repo "$(REPO)"); \
+	if [[ -n "$(MEMORY_FILE)" ]]; then args+=(--memory-file "$(MEMORY_FILE)"); fi; \
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
+		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
+
+legion-retrieve: ## Retrieve memories for ISSUE from MEMORY, bound to REPO.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -z "$(REPO)" || -z "$(ISSUE)" || -z "$(MEMORY)" ]]; then \
+		echo "ERROR: REPO, ISSUE, and MEMORY are required." >&2; \
+		echo "Use: make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
+		exit 1; \
+	fi; \
+	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
+	[[ -f "$(ISSUE)" ]] || { echo "ERROR: issue file does not exist: $(ISSUE)" >&2; exit 1; }; \
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
+		uv run --project "$(AGENT_PROJECT)" sage memory retrieve \
+		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)"
+
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
@@ -394,12 +430,22 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	fi; \
 	image_args=(); \
 	if [[ -n "$(SANDBOX_IMAGE)" ]]; then image_args=(--sandbox-image "$(SANDBOX_IMAGE)"); fi; \
+	memory_args=(); \
+	if [[ "$(LEGION_SOLVE)" == "true" ]]; then \
+		if [[ -z "$(MEMORY)" ]]; then \
+			echo "ERROR: MEMORY is required for legion-solve." >&2; \
+			echo "Use: make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
+			exit 1; \
+		fi; \
+		memory_args=(--memory-file "$(MEMORY)"); \
+	fi; \
 	set +e; \
 	uv run --project "$(AGENT_PROJECT)" sage solve \
 		--repo "$(REPO)" \
 		--issue-file "$(ISSUE)" \
 		--base-ref "$(BASE_REF)" \
 		"$${image_args[@]}" \
+		"$${memory_args[@]}" \
 		$(DEBUG_FLAG); \
 	status=$$?; \
 	set -e; \
@@ -416,6 +462,9 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 
 solve-debug: DEBUG_FLAG := --debug
 solve-debug: solve ## Run a live solve with debug logs and tracebacks.
+
+legion-solve: LEGION_SOLVE := true
+legion-solve: solve ## Run a live solve with Legion Memory enabled.
 
 run-status: ## Validate and summarize a completed run directory.
 	@set -euo pipefail; \

@@ -14,9 +14,16 @@ from pathlib import Path
 
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
+from sage.composition import build_legion_memory_service, build_orchestrator
 from sage.config import Settings
+from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
-from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
+from sage.errors import (
+    ConfigurationError,
+    GitHubConfigurationError,
+    LegionMemoryQueryError,
+    SageError,
+)
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.events import (
@@ -29,7 +36,6 @@ from sage.integrations.github.publication_smoke import (
     default_publication_smoke_dir,
     run_publication_smoke,
 )
-from sage.composition import build_orchestrator
 from sage.workflows.github import finalize_github_issue, run_github_issue
 from sage.workflows.solve import solve_issue
 
@@ -77,8 +83,46 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--issue-file", required=True, type=Path)
     solve_parser.add_argument("--base-ref", default="HEAD")
     solve_parser.add_argument("--sandbox-image")
+    solve_parser.add_argument("--memory-file", type=Path)
     solve_parser.add_argument("--debug", action="store_true")
     solve_parser.set_defaults(handler=_run_local_solve)
+
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Build or inspect the local Legion Memory graph.",
+    )
+    memory_subparsers = memory_parser.add_subparsers(
+        dest="memory_command",
+        required=True,
+    )
+    memory_build_parser = memory_subparsers.add_parser(
+        "build",
+        help="Build, update, or confirm a repository graph.",
+    )
+    memory_build_parser.add_argument("--repo", required=True, type=Path)
+    memory_build_parser.add_argument("--memory-file", type=Path)
+    memory_build_parser.add_argument("--full-rebuild", action="store_true")
+    memory_build_parser.add_argument("--debug", action="store_true")
+    memory_build_parser.set_defaults(handler=_run_memory_build)
+
+    memory_status_parser = memory_subparsers.add_parser(
+        "status",
+        help="Inspect graph readiness and provenance.",
+    )
+    memory_status_parser.add_argument("--repo", required=True, type=Path)
+    memory_status_parser.add_argument("--memory-file", type=Path)
+    memory_status_parser.add_argument("--debug", action="store_true")
+    memory_status_parser.set_defaults(handler=_run_memory_status)
+
+    memory_retrieve_parser = memory_subparsers.add_parser(
+        "retrieve",
+        help="Retrieve Issue-relevant context from a ready graph.",
+    )
+    memory_retrieve_parser.add_argument("--repo", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--issue-file", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--memory-file", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--debug", action="store_true")
+    memory_retrieve_parser.set_defaults(handler=_run_memory_retrieve)
 
     github_parser = subparsers.add_parser(
         "github",
@@ -156,6 +200,127 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_memory_build(arguments: argparse.Namespace) -> int:
+    """Run the strict standalone graph build command."""
+
+    result = build_legion_memory_service().build_or_update_graph_tool(
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+        full_rebuild=arguments.full_rebuild,
+    )
+    print("Legion Memory build: ready")
+    print(f"  Memory file: {result.memory_file}")
+    print(f"  Build type: {result.build_type.value}")
+    print(f"  Indexed SHA: {result.indexed_sha}")
+    print(f"  Files indexed: {result.files_indexed}")
+    print(f"  Files parsed: {result.files_parsed}")
+    print(f"  Files removed: {result.files_removed}")
+    print(f"  Nodes: {result.total_nodes}")
+    print(f"  Edges: {result.total_edges}")
+    print(f"  Flows: {result.total_flows}")
+    print(f"  Communities: {result.total_communities}")
+    print(f"  Languages: {', '.join(result.languages) or 'none'}")
+    print(f"  Duration: {result.duration_ms:.2f} ms")
+    if result.warnings:
+        print("  Warnings:")
+        for warning in result.warnings:
+            print(f"    - {warning}")
+    return 0
+
+
+def _run_memory_status(arguments: argparse.Namespace) -> int:
+    """Print a bounded graph health and provenance summary."""
+
+    stats = build_legion_memory_service().graph_stats(
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+    )
+    print(f"Legion Memory status: {stats.status.value}")
+    print(f"  Memory file: {stats.memory_file}")
+    if stats.status.value != "ready":
+        print("  Build the graph with: sage memory build --repo <repository>")
+        return 1
+    print(f"  Build type: {stats.build_type.value if stats.build_type else 'unknown'}")
+    print(f"  Indexed SHA: {stats.indexed_sha}")
+    print(f"  Files: {stats.files}")
+    print(f"  Nodes: {stats.nodes}")
+    print(f"  Edges: {stats.edges}")
+    print(f"  Flows: {stats.flows}")
+    print(f"  Communities: {stats.communities}")
+    print(f"  Languages: {', '.join(stats.languages) or 'none'}")
+    print(f"  Last updated: {stats.last_updated}")
+    return 0
+
+
+def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
+    """Print an explainable, model-free retrieval result for one Issue."""
+
+    issue_file = arguments.issue_file.expanduser().resolve()
+    if not issue_file.is_file():
+        raise LegionMemoryQueryError(f"Issue file does not exist: {issue_file}")
+    try:
+        issue_text = issue_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise LegionMemoryQueryError(
+            f"Unable to read Issue file: {type(error).__name__}: {str(error)[:300]}"
+        ) from error
+    result = build_legion_memory_service().retrieve_issue_context(
+        issue_text=issue_text,
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+    )
+    _render_memory_retrieval(result)
+    return 1 if result.status is MemoryRetrievalStatus.UNAVAILABLE else 0
+
+
+def _render_memory_retrieval(result: MemoryRetrievalResult) -> None:
+    """Render stable retrieval logs without trusting database text as terminal data."""
+
+    print(f"Legion Memory retrieval: {result.status.value}")
+    print(f"  Memory used: {'yes' if result.status is MemoryRetrievalStatus.USED else 'no'}")
+    print(f"  Outcome: {result.outcome.value}")
+    print(f"  Summary: {_safe_log_value(result.summary, 500)}")
+    print(f"  Memory file: {result.memory_file}")
+    print(f"  Indexed SHA: {result.indexed_sha or 'unavailable'}")
+    print(f"  Search modes: {', '.join(result.search_modes) or 'none'}")
+    print(
+        "  Query terms: "
+        + (", ".join(_safe_log_value(term, 80) for term in result.query_terms) or "none")
+    )
+    print(f"  Lexical candidates: {result.lexical_candidates}")
+    print(f"  Graph-expanded candidates: {result.expanded_candidates}")
+    print(f"  Retrieved: {result.returned}/{result.total_candidates}")
+    print(f"  Omitted: {result.omitted}")
+    print(f"  Truncated: {'yes' if result.truncated else 'no'}")
+    print(f"  Context characters: {result.context_chars}")
+    print(f"  Duration: {result.duration_ms:.2f} ms")
+    if result.items:
+        print("  Retrieved memories:")
+        for item in result.items:
+            location = (
+                f"{_safe_log_value(item.file_path, 300)}:"
+                f"{item.line_start}-{item.line_end}"
+            )
+            print(
+                f"    {item.rank}. {_safe_log_value(item.kind, 40)} "
+                f"{_safe_log_value(item.qualified_name, 500)}"
+            )
+            print(f"       Location: {location}")
+            print(f"       Score: {item.score:.3f}")
+            print(f"       Why: {', '.join(item.reasons)}")
+    if result.warnings:
+        print("  Warnings:")
+        for warning in result.warnings:
+            print(f"    - {_safe_log_value(warning, 500)}")
+
+
+def _safe_log_value(value: object, limit: int) -> str:
+    rendered = "".join(
+        character if character.isprintable() else " " for character in str(value)
+    )
+    return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
+
+
 def _run_local_solve(arguments: argparse.Namespace) -> int:
     """Run one local solve."""
 
@@ -165,11 +330,26 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
         issue_path=arguments.issue_file.expanduser().resolve(),
         base_ref=arguments.base_ref,
         sandbox_image=arguments.sandbox_image,
+        memory_file=(
+            arguments.memory_file.expanduser().resolve()
+            if arguments.memory_file is not None
+            else None
+        ),
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
     orchestrator = build_orchestrator(settings)
-    result = asyncio.run(solve_issue(request, orchestrator, settings))
+    if request.memory_file is not None:
+        result = asyncio.run(
+            solve_issue(
+                request,
+                orchestrator,
+                settings,
+                memory_service=build_legion_memory_service(),
+            )
+        )
+    else:
+        result = asyncio.run(solve_issue(request, orchestrator, settings))
     _render_result(
         result,
         model=settings.solver_model,
@@ -396,20 +576,70 @@ def _render_result(result: SolveResult, *, model: str) -> None:
         print()
         print("Patch:")
         print(f"  {result.run_dir / 'diff.patch'}")
-        return
-
-    print("Agent completed without producing a repository change.")
-    print()
-    print("Summary:")
-    print(f"  {result.summary}")
-    if result.remaining_uncertainty:
+    else:
+        print("Agent completed without producing a repository change.")
         print()
-        print("Remaining uncertainty:")
-        for uncertainty in result.remaining_uncertainty:
-            print(f"  {uncertainty}")
+        print("Summary:")
+        print(f"  {result.summary}")
+        if result.remaining_uncertainty:
+            print()
+            print("Remaining uncertainty:")
+            for uncertainty in result.remaining_uncertainty:
+                print(f"  {uncertainty}")
+        print()
+        print("Run artifacts:")
+        print(f"  {result.run_dir}")
+
+    _render_solve_memory_summary(result)
+    _render_solve_usage_summary(result)
+
+
+def _render_solve_memory_summary(result: SolveResult) -> None:
+    memory = result.memory
+    if memory is None:
+        return
     print()
-    print("Run artifacts:")
-    print(f"  {result.run_dir}")
+    print("Legion Memory:")
+    print(f"  Status: {memory.status.value}")
+    print(
+        "  Initial retrieval: "
+        f"{memory.retrieval.returned if memory.retrieval is not None else 0} memories"
+    )
+    print(f"  Native memory tool calls: {len(memory.tool_calls)}")
+    print(f"  Fallback: {memory.fallback}")
+    print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
+
+
+def _render_solve_usage_summary(result: SolveResult) -> None:
+    provenance = result.provenance
+    print()
+    print("Usage totals:")
+    if provenance is None:
+        print("  Model calls: unavailable")
+        print("  Total tool calls: unavailable")
+        print("  Total tokens: unavailable")
+        return
+    input_tokens = sum(call.input_tokens or 0 for call in provenance.calls)
+    output_tokens = sum(call.output_tokens or 0 for call in provenance.calls)
+    cached_tokens = sum(call.cached_tokens or 0 for call in provenance.calls)
+    tool_counts: dict[str, int] = {}
+    for call in provenance.tool_calls:
+        tool_counts[call.tool_name] = tool_counts.get(call.tool_name, 0) + 1
+    print(f"  Model calls: {len(provenance.calls)}")
+    print(f"  Total tool calls: {len(provenance.tool_calls)}")
+    print(
+        "  Tools: "
+        + (
+            ", ".join(
+                f"{name}={count}" for name, count in sorted(tool_counts.items())
+            )
+            or "none"
+        )
+    )
+    print(f"  Input tokens: {input_tokens}")
+    print(f"  Output tokens: {output_tokens}")
+    print(f"  Cached input tokens: {cached_tokens}")
+    print(f"  Total tokens: {input_tokens + output_tokens}")
 
 
 if __name__ == "__main__":

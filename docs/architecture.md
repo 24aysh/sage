@@ -17,6 +17,7 @@ is no runtime selector, version factory, or dormant implementation path.
 CLI or GitHub Action
   -> use-case workflow
     -> clean checkout at the accepted base SHA
+    -> optional Legion Memory build/update and Issue retrieval
     -> network-disabled Docker sandbox
     -> deterministic SolveOrchestrator
       -> fresh Solver tool session
@@ -34,6 +35,60 @@ CLI or GitHub Action
 The outer loop is normal Python, not an agent graph. LangGraph is used only for
 one bounded Solver tool session. Every repair starts a fresh session, and every
 repaired candidate receives a fresh review.
+
+## Legion Memory
+
+Phases 1 through 3 provide a local, rebuildable repository knowledge graph named
+Legion Memory plus deterministic Issue-relevant retrieval. The graph indexes
+source blobs from the selected repository's committed
+`HEAD`, stores repository-relative symbols and relationships in SQLite, and
+records the repository identity, exact Git SHA, parser version, schema version,
+and build state. One `build_or_update_graph_tool` operation chooses a full,
+incremental, or no-change build; callers do not implement separate cold/warm
+paths.
+
+The graph includes FTS5 search, containment, imports, calls, inheritance,
+test links, bounded flows, communities, impact traversal, hubs, bridges, and
+knowledge-gap summaries. Tree-sitter provides grammar parsing and NetworkX
+provides deterministic graph analysis. Supported grammars are Python,
+JavaScript, TypeScript/TSX, Go, Rust, Java, C#, Ruby, C/C++/Objective-C,
+Kotlin, Swift, PHP, Scala, Dart, Lua, Bash, Elixir, Zig, Julia, HCL, SQL,
+YAML, Nix, PowerShell, Svelte, Vue, R, Perl, and Solidity.
+
+The LangChain adapters are native, read-only, repository-bound tools;
+they accept neither a database path nor arbitrary SQL from the model. A local
+memory solve builds or updates the graph against the clean workspace before
+the sandbox or first model call, retrieves bounded Issue context, and creates
+a run-scoped memory session. Phase 2 retrieval
+extracts bounded Issue paths, identifiers, error tokens, and terms, ranks exact
+and FTS5 hits, expands the best seeds through relationships, flows, and
+communities, and returns explainable source locators under result and character
+budgets. A stale, foreign, missing, corrupt, or incompatible graph returns an
+explicit unavailable result so the normal Solver can continue without memory.
+A valid session binds all 15 native read-only tools to the Solver. Useful
+initial results are included in an `<untrusted-legion-memory>` envelope;
+`no_match` keeps the tools available for exploration without adding an empty
+prompt section. Unavailable memory binds no graph tools. The Reviewer remains
+unchanged and judges only the actual candidate evidence. No MCP server,
+daemon, watcher, model call, or network service is part of retrieval.
+
+The graph remains a snapshot of the accepted base SHA throughout mutations
+and repairs. Solver instructions require current repository reads before
+planning or editing. Every native memory call records only its name, status,
+hit count, returned repository-relative paths, duration, and truncation state.
+The provider call ledger separately records every model-requested tool name so
+baseline and memory-assisted runs can compare tool and token totals without
+persisting tool arguments.
+
+The 15 functions in `agents/memory_tools.py` are the deliberately frozen
+model-callable read-only subset from the Phase 1 specification, not a claim of
+parity with all 30 tools exported by `code-review-graph`. Legion also owns the
+pre-run build operation natively, for 16 implemented upstream-equivalent
+capabilities in total. The omitted upstream set includes embedding, explicit
+post-processing, source-mutating refactors, wiki writes, and multi-repository
+registry operations, as well as read-only review helpers. Adding exact parity
+requires a separate safety and ownership pass; write/build/maintenance tools
+must not be exposed to the Solver merely to make the counts equal.
 
 ## Dependency tower
 
@@ -57,6 +112,8 @@ The enforced rules are:
 - orchestration does not import CLI, workflows, GitHub integration, or Docker;
 - provider adapters do not import agents, orchestration, workflows, repository,
   research, verification, or sandbox packages;
+- `legion_memory` does not import agents, CLI, composition, orchestration,
+  workflows, integrations, providers, or sandbox packages;
 - package `__init__.py` files document ownership and contain no implementation;
 - non-composition modules have at most 14 internal module dependencies; and
 - removed architecture and state-engine packages cannot reappear unnoticed.
@@ -82,6 +139,11 @@ These rules are executable in
 | Safe file operations | `sage/repository/filesystem.py` |
 | Deterministic verification | `sage/verification/` |
 | Research budgets and cache | `sage/research/service.py` |
+| Legion Memory build and query boundary | `sage/legion_memory/service.py` |
+| Legion Memory parsing and SQLite graph | `sage/legion_memory/parsing.py`, `store.py` |
+| Legion Memory Issue ranking and graph expansion | `sage/legion_memory/retrieval.py` |
+| Run-scoped Legion Memory binding and usage evidence | `sage/legion_memory/session.py` |
+| Native read-only memory adapters | `sage/agents/memory_tools.py` |
 | Model adapters and call accounting | `sage/providers/` |
 | Atomic run evidence | `sage/artifacts/store.py` |
 | Local solve resource lifecycle | `sage/workflows/solve.py` |
@@ -99,6 +161,11 @@ The Solver receives the Issue and accepted base SHA. It can list the tree,
 search exact text, read bounded file ranges, request bounded research, persist
 or revise a typed plan, edit files through structured operations, show the
 actual Git diff, and run allowlisted verification commands.
+
+For an explicit memory-assisted local run, the Solver also receives bounded
+untrusted base-snapshot locators and read-only graph tools. It must verify
+those locators with current repository reads. A graph result cannot unlock
+mutation or satisfy an acceptance criterion.
 
 Mutation is locked until the Solver persists an implementable plan. The Solver
 cannot use a raw patch tool, arbitrary mutation shell, Git commit or push,
@@ -138,6 +205,7 @@ candidate-snapshot.json
 verification-summary.json
 review.json
 usage.json
+legion-memory.json              # memory-assisted local runs only
 terminal.json
 agent-final.json
 changed-files.json
@@ -149,6 +217,11 @@ Immutable histories live under `solver-plans/`, `verification/`, and
 metadata and trace labels retain their current format identifiers so existing
 run consumers and operational trace history remain compatible.
 
+`usage.json` includes provider-reported input, output, and cached tokens plus
+the names of model-requested tools. `legion-memory.json` records build,
+retrieval, fallback, and native memory-tool summaries without raw tool
+arguments or source bodies.
+
 ## Security boundaries
 
 - The source checkout is never the candidate workspace.
@@ -156,6 +229,8 @@ run consumers and operational trace history remain compatible.
   sandbox with bounded resources and timeouts.
 - Host Git is limited to workspace preparation and the trusted publication
   transaction.
+- Legion Memory is read-only to the model, repository-bound, SHA-validated,
+  and always treated as untrusted navigation evidence.
 - GitHub credentials are scoped to the controller and temporary publication
   environment; they never enter prompts, artifacts, the target sandbox, or Git
   command arguments.
@@ -203,24 +278,24 @@ at least two real implementations need that boundary.
 
 ## Refactor measurements
 
-Measured on 3 September 2026 after the consolidation:
+Measured on 4 September 2026 after Legion Memory Phase 3:
 
 | Metric | Before | Current |
 | --- | ---: | ---: |
-| Production Python files | 81 | 75 |
-| Production Python lines | 10,922 | 10,859 |
-| Nonblank production Python lines | 9,383 | 9,336 |
-| Solve coordinator | 631 lines | 324 lines |
+| Production Python files | 81 | 84 |
+| Production Python lines | 10,922 | 15,105 |
+| Nonblank production Python lines | 9,383 | 13,180 |
+| Solve coordinator | 631 lines | 327 lines |
 | Highest internal module fan-out | 21 | 14 |
 | Supported solve architectures | 1 behind selectors/factories | 1 constructed directly |
 
-The source-line target in the implementation plan was a five-percent review
-signal. The final tree reduces total lines only slightly because explicit
-agent, orchestration, transport, publication, and safety boundaries replace
-implicit mixed-responsibility code. Compressing those boundaries would make
-the system smaller but harder to audit. File count, coordinator size, and
-dependency fan-out carry the intended navigation improvement, and the current
-nonblank size is guarded against regression.
+The current increase includes the parser, transactional SQLite store, graph
+algorithms, deterministic retrieval, native tool boundary, run-scoped memory
+session, usage evidence, and typed contracts. Phase 3 extends the existing
+solve lifecycle without adding another orchestration architecture. Compressing
+these boundaries would make the system smaller but harder to audit. File
+count, coordinator size, and dependency fan-out carry the intended navigation
+improvement, and the current nonblank size is guarded against regression.
 
 The detailed migration rationale and compatibility decisions are linked from
 [`refactor-plan.md`](refactor-plan.md). Verification commands are in

@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
 
 from sage.config import Settings
@@ -133,6 +133,41 @@ def test_reviewer_has_no_provider_fallback() -> None:
             manager.invoke_reviewer(stage="review", messages=[], schema=Result)
         )
     assert len(manager.records) == 1
+
+
+def test_solver_usage_records_tool_names_and_tokens_without_arguments() -> None:
+    manager = ModelCalls(settings=_settings(), reviewer=Provider([]))
+    call_number = manager.start_coding_call(role=ModelRole.SOLVER, stage="solver")
+
+    manager.finish_coding_call(
+        role=ModelRole.SOLVER,
+        stage="solver",
+        call_number=call_number,
+        message=AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "read_file",
+                    "args": {"path": "secret.py"},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }
+            ],
+            usage_metadata={
+                "input_tokens": 20,
+                "output_tokens": 5,
+                "total_tokens": 25,
+                "input_token_details": {"cache_read": 4},
+            },
+        ),
+        latency_ms=1.5,
+    )
+
+    provenance = manager.provenance()
+    assert provenance.calls[0].input_tokens == 20
+    assert provenance.calls[0].output_tokens == 5
+    assert provenance.tool_calls[0].tool_name == "read_file"
+    assert "secret.py" not in provenance.model_dump_json()
 
 
 def _settings() -> Settings:

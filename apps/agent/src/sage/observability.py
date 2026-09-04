@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from langchain_core.runnables import RunnableConfig
 
+from sage.domain.memory import LegionMemoryRunArtifact
 from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole
 
 _STAGE_ACTIVITIES = {
@@ -138,6 +139,69 @@ def log_agent_result(
     """Log a safe, domain-level summary of an agent's structured decision."""
 
     logger.info(_panel(f"{role.value.capitalize()}: result", details))
+
+
+def log_legion_memory(
+    logger: logging.Logger,
+    artifact: LegionMemoryRunArtifact,
+) -> None:
+    """Log stable graph and retrieval summaries without graph payload content."""
+
+    build = artifact.build
+    graph_details: list[tuple[str, object]] = []
+    if build is None:
+        graph_details.extend(
+            (
+                ("Status", "unavailable"),
+                ("Failure", artifact.failure_category or "unavailable"),
+                ("Memory file", artifact.resolved_memory_file),
+            )
+        )
+    else:
+        graph_details.extend(
+            (
+                ("Build", build.build_type.value),
+                ("Base", build.indexed_sha[:12]),
+                (
+                    "Files",
+                    f"{build.files_parsed} updated / {build.files_indexed} indexed",
+                ),
+                ("Graph", f"{build.total_nodes} nodes / {build.total_edges} edges"),
+                ("Memory file", artifact.resolved_memory_file),
+            )
+        )
+    title = "Legion Memory: graph ready" if build else "Legion Memory: graph unavailable"
+    logger.info(_panel(title, graph_details))
+
+    retrieval = artifact.retrieval
+    paths = (
+        tuple(dict.fromkeys(item.file_path for item in retrieval.items))[:5]
+        if retrieval is not None
+        else ()
+    )
+    logger.info(
+        _panel(
+            "Legion Memory: retrieval",
+            (
+                ("Status", artifact.status.value),
+                (
+                    "Search",
+                    ", ".join(retrieval.search_modes) if retrieval else "not run",
+                ),
+                (
+                    "Matches",
+                    (
+                        f"{retrieval.returned} returned / "
+                        f"{retrieval.total_candidates} considered"
+                        if retrieval
+                        else "0 returned / 0 considered"
+                    ),
+                ),
+                ("Relevant paths", ", ".join(paths) or "none"),
+                ("Fallback", artifact.fallback),
+            ),
+        )
+    )
 
 
 def _panel(title: str, details: Sequence[tuple[str, object]]) -> str:

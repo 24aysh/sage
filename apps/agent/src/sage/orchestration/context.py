@@ -10,6 +10,7 @@ from sage.domain.solve import AgentFinalOutput, PreparedRun
 if TYPE_CHECKING:
     from sage.artifacts.store import RunArtifacts
     from sage.config import Settings
+    from sage.legion_memory.session import MemorySession
     from sage.repository.service import Repository
 
 
@@ -21,6 +22,7 @@ class SolveContext:
     repository: Repository
     settings: Settings
     artifacts: RunArtifacts
+    memory: MemorySession | None = None
 
 
 class SolveEngine(Protocol):

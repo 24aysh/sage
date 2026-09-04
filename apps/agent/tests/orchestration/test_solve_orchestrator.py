@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable
 
 from sage.agents.reviewer import ReviewerAgent
-from sage.agents.solver import SolverAgent
+from sage.agents.solver import SolverAgent, SolverPlanSession
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
 from sage.domain.review import (
@@ -20,11 +20,19 @@ from sage.domain.review import (
     ReviewResult,
     ReviewVerdict,
 )
+from sage.domain.memory import (
+    MemoryRetrievalOutcome,
+    MemoryRetrievalResult,
+    MemoryRetrievalStatus,
+)
 from sage.domain.solve import PreparedRun, SolveOutcome
 from sage.domain.solver import SolverFinalResult, SolverOutcome
 from sage.orchestration.context import SolveContext
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.base import ProviderResult
+from sage.providers.calls import ModelCalls
+from sage.legion_memory.service import LegionMemoryService
+from sage.legion_memory.session import MemorySession
 from sage.research.service import build_research_service
 from sage.repository.service import Repository
 from sage.sandbox.base import CommandResult
@@ -232,6 +240,104 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
     assert "Solver: activity" in caplog.text
     assert "Reviewer: activity" in caplog.text
     assert "Admission:" not in caplog.text
+
+
+def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path) -> None:
+    workspace, base_sha = _repository(tmp_path)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    settings = Settings(
+        openai_api_key="openai-test",
+        gemini_api_key="gemini-test",
+        solver_model="solver-model",
+        run_deadline_seconds=600,
+        finalization_reserve_seconds=60,
+    )
+    service = LegionMemoryService(data_root=tmp_path / "memory")
+    build = service.build_or_update_graph_tool(repo_root=workspace)
+    memory = MemorySession(
+        service=service,
+        repo_root=workspace,
+        requested_memory_file=build.memory_file,
+        memory_file=build.memory_file,
+        build=build,
+        retrieval=MemoryRetrievalResult(
+            status=MemoryRetrievalStatus.USED,
+            outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+            summary="Found app.py.",
+            memory_file=build.memory_file,
+            repository_id=build.repository_id,
+            indexed_sha=base_sha,
+            search_modes=("exact",),
+            total_candidates=1,
+            returned=1,
+            context="File app.py at app.py:1-1",
+            context_chars=26,
+            duration_ms=1,
+        ),
+    )
+    model = BindingModel(
+        [
+            [
+                _tool(
+                    "semantic_search_nodes_tool",
+                    {"query": "app.py", "limit": 5},
+                    "memory",
+                ),
+                _tool("read_file", {"path": "app.py"}, "source"),
+                _tool("save_plan", _plan_args(), "plan"),
+                _final("inspected memory and current source"),
+            ]
+        ]
+    )
+    prepared = PreparedRun(
+        run_id="memory-solver-test",
+        source_repo=workspace,
+        run_dir=run_dir,
+        workspace_dir=workspace,
+        base_ref="HEAD",
+        base_sha=base_sha,
+    )
+    artifacts = RunArtifacts(run_dir)
+    repository = Repository(
+        workspace_root=workspace,
+        sandbox=LocalSandbox(workspace),  # type: ignore[arg-type]
+        settings=settings,
+    )
+    context = SolveContext(
+        prepared_run=prepared,
+        repository=repository,
+        settings=settings,
+        artifacts=artifacts,
+        memory=memory,
+    )
+    calls = ModelCalls(
+        settings=settings,
+        reviewer=ReviewerProvider([]),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        SolverAgent(settings=settings, model=model).run(  # type: ignore[arg-type]
+            stage="solver",
+            message=(
+                "<untrusted-legion-memory>\nFile app.py at app.py:1-1\n"
+                "</untrusted-legion-memory>"
+            ),
+            context=context,
+            plans=SolverPlanSession(artifacts),
+            calls=calls,
+            research=build_research_service(settings),
+        )
+    )
+
+    assert result.outcome.value == "implemented"
+    assert "semantic_search_nodes_tool" in model.bound_tool_names[0]
+    assert [record.tool_name for record in calls.provenance().tool_calls] == [
+        "semantic_search_nodes_tool",
+        "read_file",
+        "save_plan",
+    ]
+    assert memory.tool_calls[0].tool_name == "semantic_search_nodes_tool"
 
 
 def _repository(tmp_path: Path) -> tuple[Path, str]:

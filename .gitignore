@@ -1,12 +1,6 @@
 # misc
-github_issue_to_pr_multi_agent_research.md
-cost_research.md
-project_research.md
-adaptive_multi_agent_coding_assistant_design.md
-project_research_updated.md
 random.md
-SAGE_V2_PROVISIONAL_DESIGN_SPEC_UPDATED.md
-adaptive_multi_agent_coding_assistant_design.md
+code-review-graph
 
 # Python
 **/.venv/
@@ -29,6 +23,7 @@ adaptive_multi_agent_coding_assistant_design.md
 # Agent runs
 .sage/runs/
 .sage/publication-smoke
+.sage/legion-memory/
 
 # Editors / OS
 .DS_Store

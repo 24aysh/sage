@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Literal, Protocol, TypeVar
+from pathlib import Path
+from typing import Any, Literal, Protocol, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 
 from sage.agents.loop import build_graph as build_tool_graph
 from sage.agents.loop import recursion_limit
+from sage.agents.memory_tools import build_legion_memory_tools
 from sage.agents.prompts import (
     SOLVER_INSTRUCTIONS,
     build_repair_message,
@@ -37,8 +39,7 @@ from sage.domain.usage import AttemptKind, ModelRole
 from sage.errors import AgentRuntimeError, RepositoryError
 from sage.observability import agent_trace_config, log_agent_result
 from sage.providers.calls import ModelCalls
-from sage.research.service import ResearchService
-from sage.research.tools import build_solver_research_tools
+from sage.research.tools import ResearchToolService, build_solver_research_tools
 from sage.verification.discovery import is_allowed_solver_verification_command
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,22 @@ class SolverContext(RepositoryContext, Protocol):
 
     prepared_run: PreparedRun
     settings: Settings
+    memory: SolverMemorySession | None
+
+
+class SolverMemorySession(Protocol):
+    """Narrow run-scoped memory surface consumed by Solver tool binding."""
+
+    service: Any
+    repo_root: Path
+    memory_file: Path
+
+    def record_tool_call(
+        self,
+        tool_name: str,
+        result: dict[str, object],
+        duration_ms: float,
+    ) -> None: ...
 
 
 class SolverAgent:
@@ -68,7 +85,7 @@ class SolverAgent:
         context: SolverContext,
         plans: SolverPlanSession,
         calls: ModelCalls,
-        research: ResearchService,
+        research: ResearchToolService,
     ) -> SolverFinalResult:
         input_cap = (
             self._settings.repair_input_chars
@@ -227,7 +244,7 @@ class SolverPlanSession:
 def build_solver_tools(
     context: SolverContext,
     plans: SolverPlanSession,
-    research: ResearchService | None = None,
+    research: ResearchToolService | None = None,
 ) -> list[BaseTool]:
     """Build the Solver's structured repository and research tool set."""
 
@@ -372,10 +389,19 @@ def build_solver_tools(
         )
         return context.repository.format_command_result(result)
 
-    research_tools = (
-        build_solver_research_tools(research)
-        if research is not None
+    memory_tools = (
+        build_legion_memory_tools(
+            context.memory.service,
+            repo_root=context.memory.repo_root,
+            memory_file=context.memory.memory_file,
+            output_chars=context.settings.max_tool_output_chars,
+            usage_recorder=context.memory.record_tool_call,
+        )
+        if context.memory is not None
         else []
+    )
+    research_tools = (
+        build_solver_research_tools(research) if research is not None else []
     )
     show_diff = build_show_diff_tool(
         context,
@@ -383,6 +409,7 @@ def build_solver_tools(
     )
     return [
         *build_repository_read_tools(context),
+        *memory_tools,
         *research_tools,
         save_plan,
         revise_plan,
