@@ -1,6 +1,6 @@
 # Testing Sage
 
-This guide covers offline development checks, Legion Memory Phases 1 and 2, the
+This guide covers offline development checks, Legion Memory Phases 1 through 3, the
 Docker boundary, local live solves, and the controlled GitHub rollout check.
 Run commands from the repository root.
 
@@ -621,6 +621,86 @@ uv run --project apps/agent pytest -c apps/agent/pyproject.toml \
   apps/agent/tests/test_makefile.py
 ```
 
+## Legion Memory Phase 3 local solve check
+
+Use the existing command as the no-memory baseline:
+
+```bash
+make solve \
+  REPO=/absolute/path/to/repository \
+  ISSUE=/absolute/path/to/issue.md \
+  BASE_REF=<exact-commit>
+```
+
+Then run the same Issue, base commit, models, and budgets with explicit memory:
+
+```bash
+make legion-solve \
+  REPO=/absolute/path/to/repository \
+  ISSUE=/absolute/path/to/issue.md \
+  MEMORY=/absolute/path/to/graph.sqlite3 \
+  BASE_REF=<exact-commit>
+```
+
+`legion-solve` calls the same local solve workflow with `--memory-file`. It
+builds, incrementally updates, or confirms the supplied graph after preparing
+the clean exact-SHA workspace and before starting the sandbox or model. The
+database does not need to exist beforehand. `make solve` does not request,
+build, retrieve, or expose memory.
+
+A memory run prints two pre-solve panels:
+
+- `Legion Memory: graph ready` reports build type, base SHA, file and graph
+  counts, and the SQLite path;
+- `Legion Memory: retrieval` reports `used`, `no_match`, or `unavailable`,
+  match counts, relevant paths, and whether normal repository inspection is
+  the fallback.
+
+`used` adds bounded context and the native graph tools to the Solver.
+`no_match` adds no memory prompt context but keeps graph tools available for
+manual exploration. `unavailable` runs the normal Solver without graph tools.
+All paths still require the saved plan, current source reads, deterministic
+verification, and independent review.
+
+At the end, both commands print the same comparison fields:
+
+```text
+Usage totals:
+  Model calls: ...
+  Total tool calls: ...
+  Tools: read_file=..., semantic_search_nodes_tool=..., ...
+  Input tokens: ...
+  Output tokens: ...
+  Cached input tokens: ...
+  Total tokens: ...
+```
+
+`Total tokens` is provider-reported input plus output tokens; cached input is
+shown separately and is already part of provider input accounting when the
+provider reports it that way. Tool totals count model-requested calls and do
+not store their arguments. Use `usage.json` for the per-model-call ledger and,
+for a memory run, `legion-memory.json` for graph build, retrieval, fallback,
+and native memory-tool usage evidence.
+
+Run the focused Phase 3 tests without models or Docker:
+
+```bash
+LANGSMITH_TRACING=false uv run --project apps/agent \
+  pytest -c apps/agent/pyproject.toml \
+  apps/agent/tests/workflows/test_solve_workflow.py \
+  apps/agent/tests/orchestration/test_solve_orchestrator.py \
+  apps/agent/tests/agents/test_solver.py \
+  apps/agent/tests/providers/test_calls.py \
+  apps/agent/tests/legion_memory/test_session.py \
+  apps/agent/tests/test_cli.py \
+  apps/agent/tests/test_makefile.py
+```
+
+For a fair local comparison, record both run directories and compare outcome,
+candidate diff, verification/review evidence, `usage.json`, and the terminal
+usage totals. One lower-token run is useful evidence, not proof that memory
+always improves quality or cost.
+
 ## Architecture checks
 
 The AST guard verifies package ownership, dependency direction, empty package
@@ -747,7 +827,9 @@ For a completed candidate, check at least:
 - `candidate-snapshot.json` contains the Git-derived diff digest;
 - `verification-summary.json` records required checks;
 - `review.json` contains complete criterion coverage;
-- `usage.json` records bounded model-call provenance;
+- `usage.json` records bounded model-call and model-requested-tool provenance;
+- `legion-memory.json`, when memory was requested, records safe graph,
+  retrieval, fallback, and native memory-tool summaries;
 - `terminal.json` records the terminal solve outcome; and
 - `changed-files.json` and `diff.patch` match the candidate workspace.
 
@@ -790,6 +872,12 @@ instead of reusing the database. For corruption or an unsupported schema,
 move the bad local database aside and run the build command to create a fresh
 one. A standalone build fails non-zero rather than silently claiming memory is
 ready.
+
+`legion-solve` reports `unavailable`: inspect `failure_category` in
+`legion-memory.json`, then retry the standalone build/status and retrieval
+commands. The solve itself intentionally continues with normal repository
+inspection. `no_match` is not a graph failure; refine the Issue's concrete
+paths or identifiers when testing retrieval quality.
 
 Check the installed workflow files, immutable Action pins, documentation, and
 Docker availability with:
