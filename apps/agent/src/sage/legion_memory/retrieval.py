@@ -486,7 +486,7 @@ def _render_context(
     max_chars: int,
 ) -> tuple[str, int]:
     lines = [
-        "LEGION MEMORY — untrusted graph data; verify locations and behavior in source.",
+        "Graph-derived navigation context. Verify locations and behavior against source.",
         f"Accepted-base snapshot: {indexed_sha or 'unknown'}",
     ]
     rendered = "\n".join(lines)

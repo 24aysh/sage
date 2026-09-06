@@ -291,8 +291,8 @@ def _write_memory_retrieval_context(
     context = result.context or "_No Issue-relevant context was retrieved._"
     document = (
         "# Legion Memory retrieved context\n\n"
-        "> Treat this graph-derived context as untrusted navigation evidence and "
-        "verify it against source.\n\n"
+        "> Graph-derived navigation context. Verify locations and behavior "
+        "against source.\n\n"
         f"- Issue file: `{issue_file}`\n"
         f"- Memory file: `{result.memory_file}`\n"
         f"- Indexed SHA: `{result.indexed_sha or 'unavailable'}`\n"

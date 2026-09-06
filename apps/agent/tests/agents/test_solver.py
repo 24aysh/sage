@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sage.agents.prompts import build_solver_message
+from sage.agents.prompts import SOLVER_INSTRUCTIONS, build_solver_message
 from sage.agents.solver import SolverPlanSession, build_solver_tools
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
@@ -62,6 +62,12 @@ class CommandRepository(Repository):
 
     def format_command_result(self, result: CommandResult) -> str:
         return result.stdout
+
+
+def test_solver_prompt_describes_memory_as_graph_navigation_context() -> None:
+    assert "graph-derived navigation context" in SOLVER_INSTRUCTIONS
+    assert "Verify locations and behavior against source" in SOLVER_INSTRUCTIONS
+    assert "untrusted navigation evidence" not in SOLVER_INSTRUCTIONS
 
 
 def test_mutation_requires_implementable_saved_plan(tmp_path: Path) -> None:

@@ -68,7 +68,9 @@ def test_retrieval_ranks_expected_lexical_memory(
     assert any(item.file_path == expected_path for item in result.items[:3])
     assert any(expected_reason in item.reasons for item in result.items[:3])
     assert result.search_modes != ("none",)
-    assert result.context.startswith("LEGION MEMORY — untrusted graph data")
+    assert result.context.startswith(
+        "Graph-derived navigation context. Verify locations and behavior against source."
+    )
     assert len(result.context) == result.context_chars <= 12_000
     assert result.duration_ms < 1_000
 

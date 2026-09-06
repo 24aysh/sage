@@ -238,6 +238,7 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
     assert f"Context file: {context_file}" in output
     saved_context = context_file.read_text(encoding="utf-8")
     assert "# Legion Memory retrieved context" in saved_context
+    assert "Graph-derived navigation context" in saved_context
     assert f"- Issue file: `{issue_file}`" in saved_context
     assert "- Status: `used`" in saved_context
     assert "- Context characters: 15" in saved_context
