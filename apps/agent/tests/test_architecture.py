@@ -146,7 +146,7 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
     )
 
     assert len(files) <= 84
-    assert nonblank_lines <= 13_180
+    assert nonblank_lines <= 13_203
     assert orchestrator_lines <= 400
     for path in files:
         assert len(_sage_imports(path)) <= 14, path

@@ -217,8 +217,10 @@ Immutable histories live under `solver-plans/`, `verification/`, and
 metadata and trace labels retain their current format identifiers so existing
 run consumers and operational trace history remain compatible.
 
-`usage.json` includes provider-reported input, output, and cached tokens plus
-the names of model-requested tools. `legion-memory.json` records build,
+`usage.json` includes provider-reported input, output, and cached tokens, the
+names of model-requested tools, and the ordered commands accepted by the
+Solver's `run_command` execution boundary. Other tool arguments are omitted.
+`legion-memory.json` records build,
 retrieval, fallback, and native memory-tool summaries without raw tool
 arguments or source bodies.
 

@@ -669,16 +669,21 @@ Usage totals:
   Model calls: ...
   Total tool calls: ...
   Tools: read_file=..., semantic_search_nodes_tool=..., ...
+  Commands: ["pytest ...", "git diff --check HEAD --"]
   Input tokens: ...
   Output tokens: ...
   Cached input tokens: ...
   Total tokens: ...
 ```
 
-`Total tokens` is provider-reported input plus output tokens; cached input is
-shown separately and is already part of provider input accounting when the
-provider reports it that way. Tool totals count model-requested calls and do
-not store their arguments. Use `usage.json` for the per-model-call ledger and,
+`Commands` lists the policy-approved Solver `run_command` invocations that
+reached the repository execution boundary, in execution order. Other tool
+arguments remain excluded. `Total tokens` is provider-reported input plus
+output tokens; cached input is shown separately and is already part of provider
+input accounting when the provider reports it that way. Tool totals count
+model-requested calls and do not store their arguments except for this
+dedicated command list. Use `usage.json` for the per-model-call and
+executed-command ledger and,
 for a memory run, `legion-memory.json` for graph build, retrieval, fallback,
 and native memory-tool usage evidence.
 

@@ -17,10 +17,16 @@ from sage.domain.memory import (
     MemoryRetrievalStatus,
 )
 from sage.domain.solve import PreparedRun
+from sage.domain.solver import (
+    SolverAcceptanceCriterion,
+    SolverPlan,
+    SolverPlanTask,
+)
 from sage.errors import RepositoryError
 from sage.legion_memory.service import LegionMemoryService
 from sage.legion_memory.session import MemorySession
 from sage.orchestration.context import SolveContext
+from sage.sandbox.base import CommandResult
 
 
 class Repository:
@@ -31,6 +37,31 @@ class Repository:
         del kwargs
         self.mutations += 1
         return "changed"
+
+
+class CommandRepository(Repository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.commands: list[str] = []
+
+    def run_command(
+        self,
+        *,
+        command: str,
+        timeout_seconds: int | None = None,
+    ) -> CommandResult:
+        del timeout_seconds
+        self.commands.append(command)
+        return CommandResult(
+            command=command,
+            exit_code=0,
+            stdout="passed",
+            stderr="",
+            timed_out=False,
+        )
+
+    def format_command_result(self, result: CommandResult) -> str:
+        return result.stdout
 
 
 def test_mutation_requires_implementable_saved_plan(tmp_path: Path) -> None:
@@ -131,6 +162,60 @@ def test_save_plan_unlocks_mutation_and_persists_outside_repository(
 
     assert repository.mutations == 1
     assert (run_dir / "solver-plan.json").is_file()
+
+
+def test_run_command_records_only_policy_approved_executions(tmp_path: Path) -> None:
+    repository = CommandRepository()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    context = SolveContext(
+        prepared_run=PreparedRun(
+            run_id="run",
+            source_repo=tmp_path,
+            run_dir=run_dir,
+            workspace_dir=tmp_path,
+            base_ref="HEAD",
+            base_sha="a" * 40,
+        ),
+        repository=repository,  # type: ignore[arg-type]
+        settings=Settings(openai_api_key="test"),
+        artifacts=RunArtifacts(run_dir),
+    )
+    plans = SolverPlanSession(RunArtifacts(run_dir))
+    plans.save(
+        SolverPlan(
+            issue_summary="Run the focused tests.",
+            approach="Verify the existing implementation.",
+            tasks=(
+                SolverPlanTask(task_id="verify", objective="Run focused tests."),
+            ),
+            acceptance_criteria=(
+                SolverAcceptanceCriterion(
+                    criterion_id="tests",
+                    requirement="Focused tests pass.",
+                ),
+            ),
+            status="implementable",
+        )
+    )
+    recorded: list[str] = []
+    tools = {
+        tool.name: tool
+        for tool in build_solver_tools(
+            context,
+            plans,
+            command_recorder=recorded.append,
+        )
+    }
+
+    with pytest.raises(RepositoryError, match="verification commands only"):
+        asyncio.run(tools["run_command"].ainvoke({"command": "echo unsafe"}))
+
+    result = asyncio.run(tools["run_command"].ainvoke({"command": "pytest -q"}))
+
+    assert result == "passed"
+    assert repository.commands == ["pytest -q"]
+    assert recorded == ["pytest -q"]
 
 
 def test_memory_context_and_tools_are_added_only_for_a_valid_session(

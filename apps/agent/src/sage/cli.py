@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -617,6 +618,7 @@ def _render_solve_usage_summary(result: SolveResult) -> None:
     if provenance is None:
         print("  Model calls: unavailable")
         print("  Total tool calls: unavailable")
+        print("  Commands: unavailable")
         print("  Total tokens: unavailable")
         return
     input_tokens = sum(call.input_tokens or 0 for call in provenance.calls)
@@ -636,6 +638,7 @@ def _render_solve_usage_summary(result: SolveResult) -> None:
             or "none"
         )
     )
+    print(f"  Commands: {json.dumps(list(provenance.commands), ensure_ascii=False)}")
     print(f"  Input tokens: {input_tokens}")
     print(f"  Output tokens: {output_tokens}")
     print(f"  Cached input tokens: {cached_tokens}")

@@ -52,6 +52,7 @@ class ModelCalls:
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
         self._tool_calls: list[AgentToolCallRecord] = []
+        self._commands: list[str] = []
         self._consecutive_failures: dict[str, int] = {}
         self.solver_sessions = 0
         self.review_cycles = 0
@@ -70,9 +71,16 @@ class ModelCalls:
         return RunProvenance(
             calls=self.records,
             tool_calls=tuple(self._tool_calls),
+            commands=tuple(self._commands),
             solver_sessions=self.solver_sessions,
             review_cycles=self.review_cycles,
         )
+
+    def record_command(self, command: str) -> None:
+        """Persist one policy-approved Solver command that reached execution."""
+
+        self._commands.append(command)
+        self._persist()
 
     def start_solver_session(self) -> None:
         """Record one initial or repair Solver tool-loop session."""

@@ -360,6 +360,7 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
                 tool_name="read_file",
             ),
         ),
+        commands=("pytest -q", "git diff --check HEAD --"),
     )
     result = SolveResult(
         run_id="run-id",
@@ -409,6 +410,7 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
     assert "Status: no_match" in output
     assert "Total tool calls: 2" in output
     assert "Tools: read_file=2" in output
+    assert 'Commands: ["pytest -q", "git diff --check HEAD --"]' in output
     assert "Total tokens: 25" in output
 
 

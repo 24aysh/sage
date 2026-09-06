@@ -1,8 +1,12 @@
 """Provider-neutral model usage and provenance contracts."""
 
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+
+ExecutedCommand = Annotated[str, StringConstraints(min_length=1, max_length=4_000)]
 
 
 class ModelRole(StrEnum):
@@ -57,5 +61,6 @@ class RunProvenance(BaseModel):
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()
     tool_calls: tuple[AgentToolCallRecord, ...] = ()
+    commands: tuple[ExecutedCommand, ...] = ()
     solver_sessions: int = Field(default=0, ge=0)
     review_cycles: int = Field(default=0, ge=0)

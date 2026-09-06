@@ -170,6 +170,24 @@ def test_solver_usage_records_tool_names_and_tokens_without_arguments() -> None:
     assert "secret.py" not in provenance.model_dump_json()
 
 
+def test_solver_usage_persists_commands_that_reached_execution() -> None:
+    snapshots = []
+    manager = ModelCalls(
+        settings=_settings(),
+        reviewer=Provider([]),
+        usage_writer=snapshots.append,
+    )
+
+    manager.record_command("pytest tests/test_checkout.py -q")
+    manager.record_command("git diff --check HEAD --")
+
+    assert manager.provenance().commands == (
+        "pytest tests/test_checkout.py -q",
+        "git diff --check HEAD --",
+    )
+    assert snapshots[-1].commands == manager.provenance().commands
+
+
 def _settings() -> Settings:
     return Settings(
         openai_api_key="openai",

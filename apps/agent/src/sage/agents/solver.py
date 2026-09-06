@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
 
@@ -99,7 +99,12 @@ class SolverAgent:
             message=message,
             context=context,
             calls=calls,
-            tools=build_solver_tools(context, plans, research),
+            tools=build_solver_tools(
+                context,
+                plans,
+                research,
+                command_recorder=calls.record_command,
+            ),
             output_schema=SolverFinalResult,
         )
         log_agent_result(
@@ -245,6 +250,8 @@ def build_solver_tools(
     context: SolverContext,
     plans: SolverPlanSession,
     research: ResearchToolService | None = None,
+    *,
+    command_recorder: Callable[[str], None] | None = None,
 ) -> list[BaseTool]:
     """Build the Solver's structured repository and research tool set."""
 
@@ -372,6 +379,8 @@ def build_solver_tools(
         """Run a policy-checked repository command in the isolated sandbox."""
 
         plans.require_implementable()
+        if len(command) > 4_000:
+            raise RepositoryError("run_command is limited to 4000 characters.")
         trusted_commands = {
             item.command for item in context.settings.verification_commands
         }
@@ -387,6 +396,8 @@ def build_solver_tools(
             command=command,
             timeout_seconds=timeout_seconds,
         )
+        if command_recorder is not None:
+            command_recorder(command)
         return context.repository.format_command_result(result)
 
     memory_tools = (
