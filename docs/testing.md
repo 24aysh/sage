@@ -640,6 +640,12 @@ make solve \
   BASE_REF=<exact-commit>
 ```
 
+Solver tool-argument validation is recoverable. In particular, `write_file`
+defaults an omitted `mode` to `create_or_replace`; other missing or invalid
+arguments are returned to the Solver as bounded correction feedback instead of
+terminating the run. Repository failures remain recoverable feedback, while
+unexpected implementation errors are still surfaced.
+
 Then run the same Issue, base commit, models, and budgets with explicit memory:
 
 ```bash

@@ -32,11 +32,17 @@ from sage.sandbox.base import CommandResult
 class Repository:
     def __init__(self) -> None:
         self.mutations = 0
+        self.write_modes: list[str] = []
 
     def replace_text(self, **kwargs) -> str:
         del kwargs
         self.mutations += 1
         return "changed"
+
+    def write_file(self, **kwargs) -> str:
+        self.mutations += 1
+        self.write_modes.append(kwargs["mode"])
+        return "written"
 
 
 class CommandRepository(Repository):
@@ -104,7 +110,7 @@ def test_mutation_requires_implementable_saved_plan(tmp_path: Path) -> None:
     assert "apply_patch" not in tools
 
 
-def test_save_plan_unlocks_mutation_and_persists_outside_repository(
+def test_save_plan_unlocks_mutation_and_write_file_has_safe_default(
     tmp_path: Path,
 ) -> None:
     repository = Repository()
@@ -165,8 +171,18 @@ def test_save_plan_unlocks_mutation_and_persists_outside_repository(
             }
         )
     )
+    result = asyncio.run(
+        tools["write_file"].ainvoke(
+            {
+                "path": "tests/test_example.py",
+                "content": "def test_example(): pass\n",
+            }
+        )
+    )
 
-    assert repository.mutations == 1
+    assert result == "written"
+    assert repository.mutations == 2
+    assert repository.write_modes == ["create_or_replace"]
     assert (run_dir / "solver-plan.json").is_file()
 
 

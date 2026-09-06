@@ -14,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt.tool_node import ToolInvocationError
 from pydantic import BaseModel, ValidationError
 
 from sage.errors import AgentRuntimeError, RepositoryError
@@ -266,10 +267,25 @@ def build_graph(
     return builder.compile(name=graph_name)
 
 
-def _handle_repository_tool_error(error: RepositoryError) -> str:
-    """Return a safe tool result so the model can correct its next request."""
+def _handle_repository_tool_error(
+    error: Exception,
+) -> str:
+    """Return safe repository or argument feedback for model correction."""
 
-    return f"Repository tool failed: {error}"
+    if isinstance(error, RepositoryError):
+        return f"Repository tool failed: {error}"
+    if not isinstance(error, ToolInvocationError):
+        raise error
+    details = error.filtered_errors or error.source.errors(include_url=False)
+    issues = []
+    for detail in details:
+        location = ".".join(str(part) for part in detail.get("loc", ())) or "arguments"
+        issues.append(f"{location}: {detail.get('msg', 'invalid value')}")
+    summary = "; ".join(issues)[:1_000] or "arguments did not match the schema"
+    return (
+        f"Tool arguments invalid for '{error.tool_name}': {summary}. "
+        "Correct the arguments and try again."
+    )
 
 
 def _latest_ai_message(state: AgentState) -> AIMessage | None:

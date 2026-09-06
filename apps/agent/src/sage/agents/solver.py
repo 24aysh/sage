@@ -346,7 +346,7 @@ def build_solver_tools(
     async def write_file(
         path: str,
         content: str,
-        mode: Literal["create", "replace", "create_or_replace"],
+        mode: Literal["create", "replace", "create_or_replace"] = "create_or_replace",
     ) -> str:
         """Create or replace one UTF-8 file after enforcing the plan gate."""
 
