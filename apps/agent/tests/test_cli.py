@@ -234,6 +234,38 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
     assert "Memory used: yes" in output
     assert "service.py::helper" in output
     assert "Why: exact_identifier, fts" in output
+    context_file = tmp_path / "graph.context.md"
+    assert f"Context file: {context_file}" in output
+    saved_context = context_file.read_text(encoding="utf-8")
+    assert "# Legion Memory retrieved context" in saved_context
+    assert f"- Issue file: `{issue_file}`" in saved_context
+    assert "- Status: `used`" in saved_context
+    assert "- Context characters: 15" in saved_context
+    assert "bounded context" in saved_context
+
+
+def test_memory_retrieve_context_replaces_a_stale_result(tmp_path: Path) -> None:
+    memory_file = tmp_path / "graph.sqlite3"
+    context_file = tmp_path / "graph.context.md"
+    context_file.write_text("stale memory\n", encoding="utf-8")
+    result = MemoryRetrievalResult(
+        status=MemoryRetrievalStatus.NO_MATCH,
+        outcome=MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES,
+        summary="The graph is ready, but the Issue produced no lexical matches.",
+        memory_file=memory_file,
+        indexed_sha="a" * 40,
+    )
+
+    written = cli._write_memory_retrieval_context(
+        result,
+        issue_file=tmp_path / "issue.md",
+    )
+
+    assert written == context_file
+    saved_context = written.read_text(encoding="utf-8")
+    assert "stale memory" not in saved_context
+    assert "- Status: `no_match`" in saved_context
+    assert "_No Issue-relevant context was retrieved._" in saved_context
 
 
 def test_memory_retrieve_prints_explicit_no_match(capsys, tmp_path: Path) -> None:

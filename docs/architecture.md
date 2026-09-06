@@ -224,6 +224,11 @@ Solver's `run_command` execution boundary. Other tool arguments are omitted.
 retrieval, fallback, and native memory-tool summaries without raw tool
 arguments or source bodies.
 
+Standalone `sage memory retrieve` writes the latest bounded prompt context as
+`<memory-stem>.context.md` beside the selected SQLite graph. It is an atomic,
+human-readable overwrite with graph SHA and retrieval status; an unavailable
+graph does not produce a context artifact.
+
 ## Security boundaries
 
 - The source checkout is never the candidate workspace.

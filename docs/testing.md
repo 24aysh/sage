@@ -594,6 +594,13 @@ make legion-retrieve \
   MEMORY=/tmp/legion-graph.sqlite3
 ```
 
+The command atomically saves the exact bounded context and its provenance next
+to the database. For the example above, the readable artifact is
+`/tmp/legion-graph.context.md`. A later retrieval against the same database
+replaces that file, including when the latest valid result is `no_match`, so an
+older context cannot be mistaken for the current result. The command prints the
+resolved path as `Context file`.
+
 The retrieval log starts with one of these states:
 
 - `Legion Memory retrieval: used` and `Memory used: yes`: useful context was
@@ -609,8 +616,9 @@ The retrieval log starts with one of these states:
 
 Every result also prints the exact indexed SHA, actual search modes, normalized
 query terms, lexical and graph-expanded candidate counts, returned/omitted
-counts, truncation, context characters, and duration. Graph text is treated as
-untrusted data and only repository-relative source locators are returned.
+counts, truncation, context characters, context-file path, and duration. Graph
+text is treated as untrusted data and only repository-relative source locators
+are returned.
 
 Run the focused Phase 2 tests with:
 
