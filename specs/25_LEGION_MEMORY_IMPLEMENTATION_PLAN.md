@@ -917,14 +917,35 @@ are complete.** Gemini/Qdrant configuration, generation publication/reuse,
 shared hybrid search, semantic-only seeds, compact relationship context,
 weighted Leiden and selected Python/JS parsing/flow improvements are now
 implemented with offline tests. Current commands and limits are documented in
-`docs/testing.md`. Remaining work includes the full language/tool-pattern
-matrix, exact community naming/splitting/population parity, native read/search
-enrichment, physical generation cleanup, real-server/live-provider checks and
-held-out solve evaluation. Retained old generations are filtered out of search
-but are not physically purged yet. Do not claim complete Phase 4 or measured
-token savings. The sub-phases below retain the complete target requirements.
+`docs/testing.md`. The subsequent gap-closing update implements bounded native
+read/search enrichment, broader static resolution/relationships, all 16 query
+patterns, six additional read-only tools (21 total), and post-publication Qdrant
+generation cleanup with retry. SQLite schema 3 preserves raw edge identities;
+parser-version invalidation rebuilds older graphs automatically on build.
 
-Validation on 7 September 2026: `make check` passed (419 tests and compilation),
+The tested static-pattern matrix covers Python aliases/re-exports/local imports,
+inheritance and shadowing; JS/TS aliases, re-exports, JSON tsconfig paths, callbacks,
+routes/events; Java typed receivers and package-isolated Spring events; Go
+receivers and Rust static/typed calls. Shared event/config nodes and derived
+dispatch links are reconciled after updates/deletions. This is not exhaustive
+certification of every upstream language/framework resolver. JSONC/inherited
+tsconfigs and exact community naming/splitting/population remain follow-ups.
+Sage intentionally keeps accepted-snapshot context, conservative whole-file
+change impact, and read-only refactor previews; no MCP/editor transport or
+refactor apply tokens are introduced. Cleanup retains other embedding identities.
+
+Live provider/server checks and held-out solve evaluation are explicitly left
+to manual evaluation at the user's request. Do not claim complete Phase 4 or
+measured token savings. The sub-phases below retain the target requirements;
+current supported behavior and testing commands live in `docs/architecture.md`
+and `docs/testing.md`. The updated fixture manifest is
+`apps/agent/tests/legion_memory/reference_manifest.json`.
+
+Gap-closing validation on 7 September 2026: `make check` passed (437 tests and
+compilation); `make graph`, `make github-smoke`, and `make github-doctor` passed.
+No live evaluation was run.
+
+Initial validation on 7 September 2026: `make check` passed (419 tests and compilation),
 as did `make graph`, `make github-smoke`, and `make github-doctor` (the latter
 required access to the Docker daemon). Manual Make smoke checks confirmed full
 and no-change graph builds, readable saved retrieval context, and strict,

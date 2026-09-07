@@ -776,12 +776,17 @@ inspect the counts and raise the explicit budget only if the API cost is
 acceptable. Requests are sequential and individually bounded; unchanged text
 is not re-embedded. Native retrieval never builds document vectors implicitly.
 
-Existing schema-1 SQLite graphs migrate on build. The parser-version change
+Existing schema-1/2 SQLite graphs migrate to schema 3 on build. The parser-version change
 also rebuilds metadata/relations from committed source. Direct retrieval of an
 old schema requires running the build first. Qdrant data is separate: copying
 only SQLite does not copy vectors. Deleted/renamed symbols and old generations
-are excluded from queries, but physical old-vector cleanup is still pending;
-account for retained generations when planning disk capacity.
+are excluded from queries. After successful publication, obsolete vectors in
+the active repository/model-identity collection are deleted and their SQLite
+manifests pruned. `Vector cleanup: complete / N obsolete points removed` reports
+this separately. A cleanup failure reports `pending` but keeps the new generation
+ready; the next build retries. Failed indexing never deletes recovery data.
+Other repositories and separately configured model/dimension collections are
+left alone, not treated as garbage for the current index.
 
 For an A/B/C comparison, replace `SAME_COMMIT` with one fixed SHA and keep
 models, Issue, verification and solve budgets identical:
@@ -821,6 +826,85 @@ model-recipe isolation, locks, schema migration, native-tool usage, Gemini
 request shape, invalid vectors, and selected parser/flow/community behavior.
 Real Gemini and Qdrant-server checks are separate opt-in checks; these offline
 results do not certify quota availability or shared-server concurrency.
+
+### Read/search enrichment and expanded native tools
+
+No additional environment variables are required. Memory-enabled Solver runs
+automatically enrich `read_file` and `search_text` with bounded callers, callees,
+flows, community and test links. No-memory `make solve` is unchanged. Enrichment
+does not embed queries: it uses the existing graph's lexical index and respects
+requested read ranges, the tool-output cap, and duplicate suppression. Source
+output is preserved if memory is missing, stale, busy or unusable.
+
+During a `make legion-solve` run, look for:
+
+```text
+Legion Memory enrichment: used; tool=read_file; symbols=2
+Legion Memory enrichment: skipped; tool=read_file; symbols=0
+```
+
+`skipped` covers no new context or exhausted character budget; `unavailable`
+means the graph could not be queried. The final summary reports enrichments
+used/attempted. `legion-memory.json` keeps separate `enrichments` records with
+status, paths, hits and duration; these are not added to model-requested tool
+counts. Repeated reads need not repeat already supplied structural context.
+
+The memory toolset now has 21 read-only tools. New capabilities are
+`detect_changes_tool`, `get_review_context_tool`, `find_large_functions_tool`,
+`get_surprising_connections_tool`, `get_suggested_questions_tool` and
+`refactor_tool`. Review snippets use Sage's existing current-source reader;
+refactoring returns candidates/previews only and cannot mutate or issue apply
+tokens. The graph's impact/risk estimates never replace verification or review.
+
+All 16 query-pattern names are supported, including `references_to`,
+`triggers_of`, `triggered_by`, `publishers_of`, `listeners_of`, `handlers_of`,
+`endpoints_for` and `consumers_of`. Ambiguous symbol names return qualified-name
+candidates. Empty results explicitly state static-analysis limitations. Config
+keys and events can be queried as `config:DB_HOST` / `event::ordered`; querying
+`consumers_of` also accepts the raw key. Unsupported dynamic relationships are
+not fabricated to produce a positive result.
+
+After changing or deleting a route, event publisher/listener, or config consumer,
+commit the fixture change and run `make legion-memory` again. Queries should
+lose removed handlers/consumers; shared event/config nodes should move to a
+surviving owner or disappear when no references remain. With embeddings enabled,
+obsolete-generation points should be removed only after the replacement is ready.
+
+To inspect the new capabilities without a model call, build the memory first,
+then adapt these paths:
+
+```bash
+uv run --project apps/agent python - /absolute/repo /absolute/memory/graph.sqlite3 <<'PY'
+import json
+import sys
+from pathlib import Path
+from sage.legion_memory.service import LegionMemoryService
+
+memory = LegionMemoryService()
+scope = dict(repo_root=Path(sys.argv[1]), memory_file=Path(sys.argv[2]))
+print(json.dumps(memory.find_large_functions_tool(min_lines=30, **scope), indent=2))
+print(json.dumps(memory.get_suggested_questions_tool(**scope), indent=2))
+print(json.dumps(memory.detect_changes_tool(**scope), indent=2))
+# Replace target with an actual symbol or qualified_name from your graph.
+print(json.dumps(memory.query_graph_tool(pattern="references_to", target="checkout", **scope), indent=2))
+PY
+```
+
+Focused offline regressions:
+
+```bash
+uv run --project apps/agent pytest apps/agent/tests/legion_memory/test_remaining.py apps/agent/tests/legion_memory/test_vectors.py
+make check
+```
+
+The static-pattern matrix includes Python aliases/re-exports/local imports,
+inheritance and shadowing; JS/TS imports, JSON tsconfig aliases, callbacks,
+routes and events; Java typed receivers and package-isolated Spring events;
+Go receivers and Rust static/typed calls. These fixtures are not certification
+of every upstream language/framework resolver. JSONC/extended tsconfigs and
+arbitrary dynamic dispatch may remain unresolved. Community refinements are
+separate from this update. Live comparative evaluation is intentionally left
+to the user; no paid evaluation commands were run.
 
 ## Architecture checks
 

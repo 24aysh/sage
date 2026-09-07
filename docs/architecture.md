@@ -71,7 +71,7 @@ and FTS5 hits, expands the best seeds through relationships, flows, and
 communities, and returns explainable source locators under result and character
 budgets. A stale, foreign, missing, corrupt, or incompatible graph returns an
 explicit unavailable result so the normal Solver can continue without memory.
-A valid session binds all 15 native read-only tools to the Solver. Useful
+A valid session binds 21 native read-only tools to the Solver. Useful
 initial results are included in an `<untrusted-legion-memory>` envelope;
 `no_match` keeps the tools available for exploration without adding an empty
 prompt section. Unavailable memory binds no graph tools. The Reviewer remains
@@ -86,7 +86,9 @@ chat-model credentials. `make solve` never constructs these adapters.
 
 `legion_memory/vectors.py` formats bounded non-File node documents, reuses
 same-text/same-model vectors, and reconciles vectors even on a no-change graph
-build. Schema 2 adds an embedding manifest and persistent memory namespace.
+build. Schema 2 added an embedding manifest and persistent memory namespace;
+schema 3 preserves original edge identities when distinct aliases converge on
+the same resolved target. Parser v3 rebuilds committed metadata on upgrade.
 Qdrant collections are isolated by namespace, repository and embedding identity;
 point IDs additionally include a generation. Only acknowledged, verified
 batches are recorded. A ready generation is published in SQLite after the
@@ -99,9 +101,13 @@ SQLite write transaction. The Qdrant client is opened/closed within each
 operation, not kept as a singleton. Default storage is a persistent `qdrant/`
 directory beside SQLite; concurrent opens fail safely. A configured server URL
 uses the same adapter, but shared-server concurrency across copied databases
-has not been certified. Old generations are retained for reuse/recovery and
-excluded from searches; automatic physical garbage collection is not yet
-implemented. Copying only SQLite preserves graph-only use, not the vectors.
+has not been certified. Once a generation is published, obsolete points in
+that repository/embedding-identity collection are physically pruned, then its
+obsolete SQLite manifests are removed. Failed publication never prunes recovery
+data. Failed cleanup leaves the current generation usable and retries on the
+next build, including no-change builds. Other repositories and separately
+configured embedding identities are not deleted. Copying only SQLite preserves
+graph-only use, not the vectors.
 
 `legion_memory/search.py` combines phrase-FTS and cosine-ranked vectors using
 RRF (constant 60), query-kind/identifier boosts and a context-file boost.
@@ -125,21 +131,48 @@ The provider call ledger separately records every model-requested tool name so
 baseline and memory-assisted runs can compare tool and token totals without
 persisting tool arguments.
 
-The 15 functions in `agents/memory_tools.py` are the deliberately frozen
-model-callable read-only subset from the Phase 1 specification, not a claim of
-parity with all 30 tools exported by `code-review-graph`. Legion also owns the
-pre-run build operation natively. Embedding creation is now integrated into
-that operation, not another model-callable tool. The omitted upstream set
-still includes separate post-processing, source-mutating refactors, wiki
-writes, registry operations and read-only review helpers. Adding exact parity
-requires a separate safety and ownership pass; write/build/maintenance tools
-must not be exposed to the Solver merely to make the counts equal.
+The 21 functions in `agents/memory_tools.py` extend the original 15 with
+`detect_changes_tool`, `get_review_context_tool`, `find_large_functions_tool`,
+`get_surprising_connections_tool`, `get_suggested_questions_tool`, and a
+read-only `refactor_tool` (rename-location preview, dead-code candidates,
+structural suggestions). Optional review snippets go through the existing
+repository read capability, never direct graph-supplied filesystem reads.
+Change detection compares the current workspace against accepted HEAD, not
+upstream's HEAD~1 default, and includes untracked paths without staging files.
+It conservatively maps changed files to accepted-base symbols and reports
+flows, direct/transitive tests, test gaps and static risk. It does not replace
+the independent Reviewer or grant mutation authority.
+
+`queries.py` provides all 16 reference query-pattern names, exact result counts,
+qualified-name disambiguation, unresolved locators and explicit confidence
+limitations. New relations include REFERENCES, IMPLEMENTS, HANDLES, PUBLISHES,
+CONSUMES and derived TRIGGERS/event-dispatch CALLS. Endpoint nodes locate routes;
+shared Event/ConfigKey nodes make literal identities searchable and embeddable.
+Their owners and dispatch links are reconciled globally after file deletion.
+`resolution.py` follows scoped imports, aliases, bounded re-export chains and
+typed receivers; unresolved/dynamic dispatch is not assigned arbitrarily to
+a same-named method. The regression matrix covers Python, JS/TS, Java, Go and
+Rust cases, including JSON tsconfig path mappings. tsconfig inheritance/JSONC
+and arbitrary runtime/framework dispatch are not certified by these fixtures.
+
+`MemorySession.enrich` enriches successful Solver file reads and text searches
+with callers/callees, up to three flows, a community and test links. Search
+enrichment is lexical: ordinary reads never make hidden embedding requests.
+Enrichment respects read ranges, deduplicates emitted symbol-context blocks,
+and stays within both the existing tool-output cap and 3,000-character per-call /
+16,000-character session caps. Failure preserves original source output.
+Structured usage is recorded separately as `enrichments` in legion-memory.json;
+these are not fabricated model-requested tool calls. No-memory reads and the
+Reviewer remain unchanged.
+
+Build, embedding and post-processing remain workflow-owned. MCP/editor hook
+transport, wiki/registry workflows and a second mutation/apply-token path are
+not introduced to match upstream tool counts.
 
 This is an initial Phase 4 implementation, not full upstream parity. Remaining
-work includes the wider language/resolver and `REFERENCES` matrix, exact
-upstream community naming/splitting and graph populations, additional
-read-only helpers, native read/search enrichment, generation cleanup, and
-held-out/live solve evaluation. The reference fingerprints and implemented
+work includes exhaustive language/framework parity certification and exact
+upstream community naming/splitting and graph populations. Live evaluation is
+user-managed and was explicitly excluded from this update. The reference fingerprints and implemented
 fixture coverage are recorded in `apps/agent/tests/legion_memory/reference_manifest.json`.
 
 ## Dependency tower
@@ -341,9 +374,9 @@ Measured on 7 September 2026 during Legion Memory Phase 4:
 
 | Metric | Before | Current |
 | --- | ---: | ---: |
-| Production Python files | 81 | 91 |
-| Production Python lines | 10,922 | approximately 16,200 |
-| Nonblank production Python lines | 9,383 | approximately 14,200 (budget 14,300) |
+| Production Python files | 81 | 96 |
+| Production Python lines | 10,922 | approximately 17,400 |
+| Nonblank production Python lines | 9,383 | approximately 15,200 (budget 15,600) |
 | Solve coordinator | 631 lines | 327 lines |
 | Highest internal module fan-out | 21 | 15 at CLI; 14 elsewhere |
 | Supported solve architectures | 1 behind selectors/factories | 1 constructed directly |
@@ -352,7 +385,9 @@ The current increase includes the parser, transactional SQLite store, graph
 algorithms, deterministic retrieval, native tool boundary, run-scoped memory
 session, usage evidence, and typed contracts. Phase 4 adds seven focused modules:
 embedding contracts, Gemini and Qdrant adapters, vector lifecycle, hybrid ranking,
-symbol metadata, and weighted communities. The CLI's extra dependency is the
+symbol metadata, and weighted communities. Five further focused modules own
+structural enrichment, symbol resolution, predefined queries, diagnostics and
+change-risk context. The CLI's extra dependency is the
 embedding usage contract. These extend the existing solve lifecycle without
 adding another orchestration architecture. Compressing
 these boundaries would make the system smaller but harder to audit. File
