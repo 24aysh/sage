@@ -195,9 +195,25 @@ class VectorIndex:
                     "sha": sha, "parser": parser, "generation": generation,
                     "count": eligible,
                 }))
+            # Publication is the commit point. Cleanup cannot invalidate a usable
+            # generation; failed cleanup is retried on the next no-change build.
+            removed = 0
+            cleanup_status = "complete"
+            cleanup_reason = None
+            try:
+                removed = vectors.prune(keep_generation=generation)
+                with store.transaction():
+                    store.connection.execute(
+                        "DELETE FROM vector_nodes WHERE fingerprint=? AND generation!=?",
+                        (identity, generation),
+                    )
+            except (MemoryVectorError, sqlite3.Error):
+                cleanup_status = "pending"
+                cleanup_reason = "Current vectors are ready; obsolete-vector cleanup will retry on build."
             return VectorStatus(status="ready", model=self.provider.identity.model,
                 dimensions=self.provider.identity.dimensions, generation=generation,
                 eligible=eligible, embedded=embedded, reused=reused,
+                removed=removed, cleanup_status=cleanup_status, reason=cleanup_reason,
                 duration_ms=round((monotonic() - started) * 1000, 2), usage=self.provider.usage.model_copy())
         except (MemoryVectorError, ValueError, sqlite3.Error) as error:
             return VectorStatus(status="unavailable", model=self.provider.identity.model,

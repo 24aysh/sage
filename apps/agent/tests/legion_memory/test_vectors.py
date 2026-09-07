@@ -208,6 +208,56 @@ def test_corrupt_cached_payload_is_replaced_before_publication(fixture_repo, tmp
     assert repaired.vectors.reused == first.vectors.embedded - 1
 
 
+def test_cleanup_deletes_obsolete_vectors_only_after_publication(fixture_repo, tmp_path, monkeypatch):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    first = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    with GraphStore(database, read_only=True) as store:
+        old_ids = [r["point_id"] for r in store.rows("SELECT point_id FROM vector_nodes")]
+    source = fixture_repo / "service.py"
+    source.write_text(source.read_text().replace("def helper():", 'def helper():\n    """Updated documentation."""'))
+    commit_all(fixture_repo, "change embedding generation")
+    prune = QdrantVectorStore.prune
+    def fail_cleanup(self, **kwargs):
+        raise MemoryVectorError("cleanup interrupted")
+    monkeypatch.setattr(QdrantVectorStore, "prune", fail_cleanup)
+    pending = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert pending.vectors.status == "ready"
+    assert pending.vectors.cleanup_status == "pending"
+    assert service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database).vectors.status == "ready"
+    monkeypatch.setattr(QdrantVectorStore, "prune", prune)
+    repaired = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert repaired.vectors.cleanup_status == "complete"
+    assert repaired.vectors.embedded == 0
+    assert repaired.vectors.removed == first.vectors.eligible
+    with GraphStore(database, read_only=True) as store:
+        assert {r["generation"] for r in store.rows("SELECT generation FROM vector_nodes")} == {repaired.vectors.generation}
+        vectors = service.vectors._factory(database, service.vectors._collection(store), False)
+        try:
+            assert vectors.get(old_ids) == {}
+        finally:
+            vectors.close()
+
+
+def test_cleanup_preserves_other_embedding_identities(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    with GraphStore(database, read_only=True) as store:
+        original_collection = service.vectors._collection(store)
+        original_ids = [r["point_id"] for r in store.rows("SELECT point_id FROM vector_nodes")]
+    provider.identity = provider.identity.model_copy(update={"recipe": "another-identity"})
+    result = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert result.vectors.cleanup_status == "complete"
+    original_vectors = service.vectors._factory(database, original_collection, False)
+    try:
+        assert len(original_vectors.get(original_ids)) == len(original_ids)
+    finally:
+        original_vectors.close()
+    with GraphStore(database, read_only=True) as store:
+        assert len(store.rows("SELECT DISTINCT fingerprint FROM vector_nodes")) == 2
+
+
 def test_node_and_deadline_budgets_do_not_break_the_graph(fixture_repo, tmp_path):
     service, provider = vector_service(tmp_path)
     database = tmp_path / "graph.sqlite3"

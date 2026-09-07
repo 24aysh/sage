@@ -676,6 +676,7 @@ def _render_vectors(status: VectorStatus) -> None:
     if status.model:
         print(f"  Embedding model: {status.model} ({status.dimensions} dimensions)")
         print(f"  Vectors: {status.embedded} embedded / {status.reused} reused / {status.eligible} eligible")
+        print(f"  Vector cleanup: {status.cleanup_status} / {status.removed} obsolete points removed")
     if status.reason:
         print(f"  Vector fallback: {_safe_log_value(status.reason, 300)}")
     if status.usage is not None:

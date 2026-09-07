@@ -94,3 +94,17 @@ class QdrantVectorStore:
         if self._client is not None:
             self._client.close()
             self._client = None
+
+    def prune(self, *, keep_generation: str) -> int:
+        """Delete only obsolete points in this repository/identity collection."""
+        from qdrant_client import models
+
+        selection = models.Filter(must_not=[models.FieldCondition(
+            key="generation", match=models.MatchValue(value=keep_generation),
+        )])
+        count = self._call("count", count_filter=selection, exact=True).count
+        if count:
+            self._call("delete", points_selector=models.FilterSelector(filter=selection), wait=True)
+            if self._call("count", count_filter=selection, exact=True).count:
+                raise MemoryVectorError("Obsolete vector cleanup was not acknowledged.")
+        return count
