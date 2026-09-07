@@ -25,6 +25,7 @@ test-legion
 .sage/runs/
 .sage/publication-smoke
 .sage/legion-memory/
+.sage/embeddings
 
 # Editors / OS
 .DS_Store
