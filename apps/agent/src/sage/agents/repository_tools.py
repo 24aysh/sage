@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from langchain_core.tools import BaseTool, tool
@@ -16,7 +17,10 @@ class RepositoryContext(Protocol):
     repository: Repository
 
 
-def build_repository_read_tools(context: RepositoryContext) -> list[BaseTool]:
+def build_repository_read_tools(
+    context: RepositoryContext, *, enrich: Callable[..., str] | None = None,
+    output_chars: int = 12_000,
+) -> list[BaseTool]:
     """Build the repository read tools shared by agent roles."""
 
     @tool
@@ -33,11 +37,15 @@ def build_repository_read_tools(context: RepositoryContext) -> list[BaseTool]:
     ) -> str:
         """Search repository files for an exact literal text value."""
 
-        return context.repository.search_text(
+        result = context.repository.search_text(
             query=query,
             path=path,
             max_results=max_results,
         )
+        if enrich is not None:
+            result += enrich(tool_name="search_text", query=query,
+                             available_chars=max(0, output_chars - len(result)))
+        return result
 
     @tool
     async def read_file(
@@ -47,11 +55,16 @@ def build_repository_read_tools(context: RepositoryContext) -> list[BaseTool]:
     ) -> str:
         """Read at most 300 numbered lines from a repository text file."""
 
-        return context.repository.read_file(
+        result = context.repository.read_file(
             path=path,
             start_line=start_line,
             end_line=end_line,
         )
+        if enrich is not None:
+            result += enrich(tool_name="read_file", path=path, start_line=start_line,
+                             end_line=min(end_line or start_line + 299, start_line + 299),
+                             available_chars=max(0, output_chars - len(result)))
+        return result
 
     return [list_tree, search_text, read_file]
 

@@ -665,6 +665,7 @@ def _render_solve_memory_summary(result: SolveResult) -> None:
         f"{memory.retrieval.returned if memory.retrieval is not None else 0} memories"
     )
     print(f"  Native memory tool calls: {len(memory.tool_calls)}")
+    print(f"  Read/search enrichments: {sum(e.status == 'used' for e in memory.enrichments)} used / {len(memory.enrichments)} attempted")
     print(f"  Fallback: {memory.fallback}")
     print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
     if memory.embedding_usage is not None:

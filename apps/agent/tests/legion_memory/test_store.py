@@ -62,7 +62,7 @@ def test_v1_migration_preserves_existing_graph_rows(tmp_path: Path) -> None:
     with GraphStore(database) as store:
         assert store.get_metadata("repository_id") == "legacy"
         assert store.file_hashes() == {"api.py": "hash"}
-        assert store.get_metadata("schema_version") == "2"
+        assert store.get_metadata("schema_version") == str(SCHEMA_VERSION)
         assert store.get_metadata("memory_namespace")
         assert store.rows("SELECT * FROM vector_nodes") == []
 
@@ -82,6 +82,27 @@ def test_transaction_rolls_back_and_read_only_store_rejects_writes(
         with pytest.raises(ValueError, match="read-only"):
             with store.transaction():
                 pass
+
+
+def test_v2_migration_preserves_edges_and_original_metadata(tmp_path: Path) -> None:
+    from sage.legion_memory.migrations import MIGRATIONS
+
+    database = tmp_path / "legacy-v2.sqlite3"
+    with sqlite3.connect(database) as connection:
+        for migration in MIGRATIONS[:2]:
+            connection.executescript(migration.sql)
+        connection.execute("PRAGMA user_version=2")
+        connection.execute(
+            "INSERT INTO edges(kind,source_qualified,target_qualified,file_path,line,confidence,extra_json,updated_at) "
+            "VALUES ('CALLS','a.py::work','b.py::run','a.py',3,0.8,?, 'date')",
+            ('{"raw_target":"alias"}',),
+        )
+    with GraphStore(database) as store:
+        edge = store.rows("SELECT * FROM edges")[0]
+        assert edge["target_qualified"] == "b.py::run"
+        assert edge["extra_json"] == '{"raw_target":"alias"}'
+        assert edge["raw_key"]
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_store_allows_a_concurrent_read_of_a_ready_graph(tmp_path: Path) -> None:

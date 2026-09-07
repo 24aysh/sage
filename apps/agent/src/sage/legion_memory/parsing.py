@@ -8,6 +8,7 @@ without changing SQLite or tool contracts.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from bisect import bisect_right
 from dataclasses import dataclass, field, replace
@@ -15,12 +16,13 @@ from pathlib import Path, PurePosixPath
 
 from tree_sitter import Node
 from tree_sitter_language_pack import get_parser
-from sage.legion_memory.symbol_metadata import python_metadata
+from sage.legion_memory.symbol_metadata import python_metadata, tree_metadata
 
-PARSER_VERSION = "legion-tree-sitter-v2"
+PARSER_VERSION = "legion-tree-sitter-v3"
 MAX_FILE_BYTES = 2_000_000
 
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
+    ".json": "json",
     ".py": "python",
     ".js": "javascript",
     ".jsx": "javascript",
@@ -223,6 +225,23 @@ class CodeParser:
         tree = parser.parse(content)  # type: ignore[attr-defined]
         extractor = _Extractor(relative, language, content)
         extractor.extract(tree.root_node)
+        file_extra = tree_metadata(tree.root_node, content, language)
+        if language == "json" and PurePosixPath(relative).name.startswith("tsconfig"):
+            try:
+                options = json.loads(content).get("compilerOptions", {})
+                base_url = options.get("baseUrl", ".")
+                paths = options.get("paths", {})
+                if not isinstance(base_url, str) or not isinstance(paths, dict):
+                    raise ValueError("Invalid tsconfig aliases")
+                file_extra["tsconfig"] = {
+                    "baseUrl": base_url[:500],
+                    "paths": {key: values[:10] for key, values in list(paths.items())[:50]
+                              if isinstance(key, str) and key.count("*") <= 1
+                              and isinstance(values, list) and all(isinstance(v, str) and len(v) <= 500 for v in values)},
+                }
+            except (ValueError, AttributeError):
+                file_extra["config_warning"] = "Unsupported tsconfig syntax; aliases may be unresolved."
+        extractor.nodes[0] = replace(extractor.nodes[0], extra=file_extra)
         if language == "python":
             file_extra, metadata = python_metadata(content)
             enriched = []
@@ -315,6 +334,34 @@ class _Extractor:
                         )
                     )
 
+            if node_type in _CALL_TYPES:
+                self._framework_call(node, callable_qn or parent_qualified, line_start)
+            if node_type in {"identifier", "type_identifier"} and callable_qn:
+                parent = node.parent
+                definition = parent.child_by_field_name("name") if parent else None
+                # Declarations and local assignment targets are not references.
+                if definition != node and parent is not None and parent.type not in {
+                    "parameters", "parameter", "formal_parameter", "variable_declarator",
+                    "assignment", "import_specifier", "attribute", "member_expression",
+                }:
+                    self.edges.append(EdgeRecord(
+                        "REFERENCES", callable_qn, node_text, self.file_path, line_start,
+                        confidence=0.6,
+                    ))
+            if node_type in {"attribute", "member_expression", "field_access"} and callable_qn:
+                text = self._text(node)
+                config = re.fullmatch(r"process\.env\.([A-Za-z_][\w]*)", text)
+                if config:
+                    self._virtual_relation("CONSUMES", callable_qn, "config:" + config[1], line_start)
+                if "." in text:
+                    receiver, name = text.rsplit(".", 1)
+                    self.edges.append(EdgeRecord("REFERENCES", callable_qn, name,
+                        self.file_path, line_start, confidence=0.6, extra={"receiver": receiver}))
+            if node_type in {"subscript", "subscript_expression"} and callable_qn:
+                config = re.fullmatch(r"(?:os\.environ|process\.env)\[['\"]([^'\"]+)['\"]\]", node_text)
+                if config:
+                    self._virtual_relation("CONSUMES", callable_qn, "config:" + config[1], line_start)
+
             if node_type in _IMPL_TYPES:
                 impl_name = self._implementation_name(node)
                 child_scopes = (*scopes, impl_name) if impl_name else scopes
@@ -328,7 +375,14 @@ class _Extractor:
                 if kind and name:
                     if kind == "Function" and _is_test(self.file_path, name):
                         kind = "Test"
-                    qn = self._unique_qualified((*scopes, name), line_start)
+                    declaration_scopes = scopes
+                    if self.language == "go" and node_type == "method_declaration":
+                        receiver = self._text(node.child_by_field_name("receiver"))
+                        receiver_type = re.search(r"\w+\s+\*?(\w+)", receiver)
+                        if receiver_type:
+                            declaration_scopes = (*scopes, receiver_type[1])
+                            parent_qualified = self._qualified(declaration_scopes)
+                    qn = self._unique_qualified((*declaration_scopes, name), line_start)
                     record = NodeRecord(
                         kind=kind,
                         name=name,
@@ -343,6 +397,7 @@ class _Extractor:
                         extra=self._metadata(node),
                     )
                     self.nodes.append(record)
+                    self._framework_declaration(node, record)
                     self.edges.append(
                         EdgeRecord(
                             kind="CONTAINS",
@@ -354,9 +409,10 @@ class _Extractor:
                     )
                     if kind in {"Class", "Type"}:
                         for target in _inheritance_targets(self.language, node_text):
+                            implemented = re.search(r"\bimplements\s+[^\n{]*\b" + re.escape(target) + r"\b", node_text.split("{", 1)[0])
                             self.edges.append(
                                 EdgeRecord(
-                                    kind="INHERITS",
+                                    kind="IMPLEMENTS" if implemented else "INHERITS",
                                     source_qualified=qn,
                                     target_qualified=target,
                                     file_path=self.file_path,
@@ -426,18 +482,96 @@ class _Extractor:
 
     def _call_target(self, node: Node) -> str | None:
         target = node.child_by_field_name("function") or node.child_by_field_name("name")
+        if target is not None and target.type in {"attribute", "member_expression", "field_access", "selector_expression"}:
+            target = (target.child_by_field_name("attribute") or target.child_by_field_name("property")
+                      or target.child_by_field_name("field") or target.child_by_field_name("name") or target)
         text = self._text(target) if target is not None else self._text(node)
         text = text.split("(", 1)[0].strip()
         matches = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", text)
         return matches[-1] if matches else None
 
     def _receiver(self, node: Node) -> str:
+        receiver = node.child_by_field_name("object")
+        if receiver is not None:
+            return self._text(receiver)[:200]
         target = node.child_by_field_name("function")
         text = self._text(target)
+        if "::" in text and "." not in text:
+            return text.rsplit("::", 1)[0][:200]
         return text.rsplit(".", 1)[0][:200] if "." in text else ""
 
+    def _virtual_relation(self, kind: str, source: str, target: str, line: int) -> None:
+        self.edges.append(EdgeRecord(kind, source, target, self.file_path, line,
+                                     confidence=0.9, extra={"framework": True}))
+
+    def _endpoint(self, handler: str, method: str, path: str, line: int) -> None:
+        name = f"{method.upper()} {path}"
+        qn = f"{self.file_path}::endpoint:{name}"
+        if qn not in self._qualified_names:
+            self._qualified_names.add(qn)
+            self.nodes.append(NodeRecord("Endpoint", name, qn, self.file_path,
+                line, line, self.language, self.file_path, extra={"route": path, "method": method.upper()}))
+        self._virtual_relation("HANDLES", handler, qn, line)
+
+    def _framework_call(self, node: Node, owner: str, line: int) -> None:
+        target = self._text(node.child_by_field_name("function"))
+        if not target:
+            target = self._receiver(node) + "." + self._text(node.child_by_field_name("name"))
+        arguments = node.child_by_field_name("arguments")
+        children = arguments.named_children if arguments else []
+        literal = self._text(children[0]) if children else ""
+        # Only literal event/config/route names: no evaluation of repository code.
+        match = re.fullmatch(r"['\"]([^'\"\n]{1,200})['\"]", literal)
+        if match:
+            name = match[1]
+            method = target.rsplit(".", 1)[-1]
+            if method in {"emit", "publish", "publishEvent"}:
+                self._virtual_relation("PUBLISHES", owner, "event::" + name, line)
+            elif method in {"on", "once", "subscribe"} and len(children) > 1:
+                callback = children[1]
+                handler = self._text(callback) if callback.type in {"identifier", "attribute", "member_expression"} else f"callback_{callback.start_point.row + 1}"
+                self._virtual_relation("HANDLES", handler, "event::" + name, line)
+            elif method in {"get", "post", "put", "patch", "delete", "all", "use"} and name.startswith("/") and len(children) > 1:
+                callback = children[-1]
+                handler = self._text(callback) if callback.type in {"identifier", "attribute", "member_expression"} else f"callback_{callback.start_point.row + 1}"
+                self._endpoint(handler, method, name, line)
+            if target in {"os.getenv", "os.environ.get", "System.getenv", "System.getProperty"} or target.endswith((".getProperty", ".getenv")):
+                self._virtual_relation("CONSUMES", owner, "config:" + name, line)
+        if target.endswith("publishEvent") and children:
+            event = re.match(r"new\s+([\w.]+)", literal)
+            if event:
+                self._virtual_relation("PUBLISHES", owner, "event::" + event[1], line)
+
+    def _framework_declaration(self, node: Node, record: NodeRecord) -> None:
+        if record.kind not in {"Function", "Test"}:
+            return
+        prefix = self._text(node.parent) if node.parent and node.parent.type == "decorated_definition" else self._text(node)
+        prefix = prefix.split("{", 1)[0] if self.language != "python" else prefix.split("def ", 1)[0]
+        for method, path, options in re.findall(r"@\w+\.(route|get|post|put|patch|delete)\(\s*['\"]([^'\"]+)['\"]([^)]*)\)", prefix):
+            methods = [method] if method != "route" else ["GET"]
+            declared = re.search(r"methods\s*=\s*\[([^]]*)\]", options)
+            if method == "route" and declared:
+                methods = re.findall(r"['\"]([A-Za-z]+)['\"]", declared[1])
+            for http_method in methods:
+                self._endpoint(record.qualified_name, http_method, path, record.line_start)
+        for method, path in re.findall(r"@(Get|Post|Put|Patch|Delete|Request)Mapping\(\s*(?:value\s*=\s*|path\s*=\s*)?['\"]([^'\"]+)['\"]", prefix):
+            self._endpoint(record.qualified_name, "ANY" if method == "Request" else method, path, record.line_start)
+        if "@EventListener" in prefix:
+            parameters = node.child_by_field_name("parameters")
+            if parameters and parameters.named_children:
+                event = self._text(parameters.named_children[0].child_by_field_name("type"))
+                if event:
+                    self._virtual_relation("HANDLES", record.qualified_name, "event::" + event, record.line_start)
+        for key in re.findall(r"@Value\(\s*['\"]\$\{([^}:]+)(?::[^}]*)?\}", prefix):
+            self._virtual_relation("CONSUMES", record.qualified_name, "config:" + key, record.line_start)
+
     def _metadata(self, node: Node) -> dict[str, object]:
-        extra: dict[str, object] = {}
+        extra: dict[str, object] = tree_metadata(node, self.content, self.language)
+        extra["bases"] = list(_inheritance_targets(self.language, self._text(node)))
+        if self.language == "go":
+            receiver = re.search(r"(\w+)\s+\*?(\w+)", self._text(node.child_by_field_name("receiver")))
+            if receiver:
+                extra["receivers"][receiver[1]] = receiver[2]
         for field_name in ("parameters", "return_type"):
             value = node.child_by_field_name(field_name)
             if value is not None:
@@ -546,6 +680,8 @@ def _inheritance_targets(language: str, text: str) -> tuple[str, ...]:
         match = re.search(r"\b(?:extends|implements|inherits)\s+([^:{]+)", header)
         candidates = re.split(r"[,\s]+", match.group(1)) if match else []
     for candidate in candidates:
+        if candidate in {"implements", "extends", "inherits"}:
+            continue
         names = re.findall(r"[A-Za-z_$][A-Za-z0-9_.$]*", candidate)
         if names:
             value = names[-1].split(".")[-1]

@@ -23,6 +23,7 @@ def build_legion_memory_tools(
     memory_file: Path,
     output_chars: int = DEFAULT_MEMORY_TOOL_OUTPUT_CHARS,
     usage_recorder: Callable[[str, dict[str, object], float], None] | None = None,
+    source_reader: Callable[..., str] | None = None,
 ) -> list[BaseTool]:
     """Bind read-only graph tools to one repository and immutable graph path."""
 
@@ -83,7 +84,7 @@ def build_legion_memory_tools(
     @tool
     async def semantic_search_nodes_tool(
         query: str,
-        kind: Literal["File", "Class", "Type", "Function", "Test"] | None = None,
+        kind: Literal["File", "Class", "Type", "Function", "Test", "Endpoint", "Event", "ConfigKey"] | None = None,
         limit: int = 5,
         detail_level: Literal["minimal", "standard"] = "minimal",
     ) -> str:
@@ -108,6 +109,8 @@ def build_legion_memory_tools(
             "children_of",
             "tests_for",
             "inheritors_of",
+            "triggers_of", "triggered_by", "publishers_of", "listeners_of",
+            "handlers_of", "endpoints_for", "consumers_of",
             "file_summary",
         ],
         target: str,
@@ -237,6 +240,48 @@ def build_legion_memory_tools(
 
         return invoke(service.get_knowledge_gaps_tool, max_results=max_results)
 
+    @tool
+    async def find_large_functions_tool(
+        min_lines: int = 50, kind: str | None = None,
+        file_path_pattern: str = "", limit: int = 10,
+    ) -> str:
+        """Locate oversized symbols/files, with exact counts and bounded results."""
+        return invoke(service.find_large_functions_tool, min_lines=min_lines, kind=kind,
+                      file_path_pattern=file_path_pattern, limit=limit)
+
+    @tool
+    async def get_surprising_connections_tool(top_n: int = 10) -> str:
+        """Find cross-community/language coupling and unusual graph connections."""
+        return invoke(service.get_surprising_connections_tool, top_n=top_n)
+
+    @tool
+    async def get_suggested_questions_tool(max_results: int = 10) -> str:
+        """Suggest targeted questions grounded in hubs, bridges and test gaps."""
+        return invoke(service.get_suggested_questions_tool, max_results=max_results)
+
+    @tool
+    async def refactor_tool(
+        mode: Literal["rename", "dead_code", "suggest"] = "dead_code",
+        old_name: str | None = None, new_name: str | None = None, max_results: int = 10,
+    ) -> str:
+        """Preview refactoring candidates only; never modify files or create apply tokens."""
+        return invoke(service.refactor_tool, mode=mode, old_name=old_name,
+                      new_name=new_name, max_results=max_results)
+
+    @tool
+    async def detect_changes_tool(changed_files: list[str] | None = None, max_results: int = 10) -> str:
+        """Map current changes against the accepted graph to risk, flows and test gaps."""
+        return invoke(service.detect_changes_tool, changed_files=changed_files, max_results=max_results)
+
+    @tool
+    async def get_review_context_tool(
+        changed_files: list[str] | None = None, max_results: int = 10,
+        include_source: bool = False,
+    ) -> str:
+        """Get compact change/impact context; optionally read bounded current source snippets."""
+        return invoke(service.get_review_context_tool, changed_files=changed_files,
+                      max_results=max_results, source_reader=source_reader if include_source else None)
+
     return [
         list_graph_stats_tool,
         get_minimal_context_tool,
@@ -253,6 +298,12 @@ def build_legion_memory_tools(
         get_hub_nodes_tool,
         get_bridge_nodes_tool,
         get_knowledge_gaps_tool,
+        find_large_functions_tool,
+        get_surprising_connections_tool,
+        get_suggested_questions_tool,
+        refactor_tool,
+        detect_changes_tool,
+        get_review_context_tool,
     ]
 
 
@@ -268,6 +319,7 @@ def _minimal_result(result: dict[str, object]) -> dict[str, object]:
                 "qualified_name", "file_path", "line_start", "line_end", "kind",
                 "score", "search_modes", "confidence", "distance", "signature",
                 "degree", "betweenness", "caller_count",
+                "line_count", "risk_score", "tests",
             }}
         return {key: project(item) for key, item in value.items()}
     return {**result, "data": project(result.get("data", {}))}

@@ -145,9 +145,9 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
         .splitlines()
     )
 
-    # Phase 4 adds seven focused embedding/graph modules; see architecture.md.
-    assert len(files) <= 91
-    assert nonblank_lines <= 14_300
+    # Phase 4 adds focused embedding, resolution, query and context modules.
+    assert len(files) <= 96
+    assert nonblank_lines <= 15_600
     assert orchestrator_lines <= 400
     for path in files:
         budget = 15 if path == SOURCE_ROOT / "cli.py" else 14

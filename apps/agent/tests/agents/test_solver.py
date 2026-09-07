@@ -34,6 +34,9 @@ class Repository:
         self.mutations = 0
         self.write_modes: list[str] = []
 
+    def read_file(self, **kwargs) -> str:
+        return "1: source"
+
     def replace_text(self, **kwargs) -> str:
         del kwargs
         self.mutations += 1

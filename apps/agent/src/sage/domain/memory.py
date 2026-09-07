@@ -199,6 +199,7 @@ class LegionMemoryRunArtifact(BaseModel):
 
     format_version: int = 1
     embedding_usage: VectorUsage | None = None
+    enrichments: tuple[MemoryToolCallRecord, ...] = ()
     requested_memory_file: Path
     resolved_memory_file: Path
     status: MemoryRetrievalStatus

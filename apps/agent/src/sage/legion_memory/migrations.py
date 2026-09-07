@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -108,6 +108,25 @@ CREATE TABLE vector_nodes (
 CREATE INDEX vector_reuse ON vector_nodes(fingerprint, qualified_name, text_hash);
 INSERT OR IGNORE INTO metadata(key, value) VALUES ('memory_namespace', lower(hex(randomblob(16))));
 INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '2');
+"""),
+    Migration(version=3, sql="""
+CREATE TABLE edges_v3 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL, source_qualified TEXT NOT NULL, target_qualified TEXT NOT NULL,
+    file_path TEXT NOT NULL, line INTEGER NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 1.0, extra_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL, raw_key TEXT NOT NULL DEFAULT '',
+    UNIQUE(kind, source_qualified, target_qualified, file_path, line, raw_key)
+);
+INSERT INTO edges_v3 SELECT id,kind,source_qualified,target_qualified,file_path,line,
+    confidence,extra_json,updated_at,CAST(id AS TEXT) FROM edges;
+DROP TABLE edges;
+ALTER TABLE edges_v3 RENAME TO edges;
+CREATE INDEX idx_edges_source ON edges(source_qualified);
+CREATE INDEX idx_edges_target ON edges(target_qualified);
+CREATE INDEX idx_edges_kind ON edges(kind);
+CREATE INDEX idx_edges_file ON edges(file_path);
+INSERT OR REPLACE INTO metadata(key,value) VALUES ('schema_version','3');
 """),
 )
 

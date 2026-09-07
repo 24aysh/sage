@@ -12,6 +12,7 @@ import json
 import sqlite3
 import subprocess
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from time import perf_counter
 from typing import Any, Literal
@@ -60,16 +61,6 @@ _IGNORED_PARTS = frozenset(
         ".legion-memory",
     }
 )
-_EDGE_PATTERNS: dict[str, tuple[str, Literal["incoming", "outgoing"]]] = {
-    "callers_of": ("CALLS", "incoming"),
-    "callees_of": ("CALLS", "outgoing"),
-    "references_to": ("REFERENCES", "incoming"),
-    "imports_of": ("IMPORTS_FROM", "outgoing"),
-    "importers_of": ("IMPORTS_FROM", "incoming"),
-    "children_of": ("CONTAINS", "outgoing"),
-    "tests_for": ("TESTED_BY", "outgoing"),
-    "inheritors_of": ("INHERITS", "incoming"),
-}
 
 
 class LegionMemoryService:
@@ -421,6 +412,18 @@ class LegionMemoryService:
                 },
             )
 
+    def enrich_repository_read(
+        self, *, repo_root: Path, memory_file: Path, path: str | None = None,
+        query: str | None = None, start_line: int = 1, end_line: int | None = None,
+    ) -> list[dict[str, object]]:
+        from sage.legion_memory.context import structural_context
+
+        with self._ready_store(repo_root, memory_file) as store:
+            return structural_context(
+                store, path=_relative_path(path) if path is not None else None,
+                query=query, start_line=start_line, end_line=end_line,
+            )
+
     def query_graph_tool(
         self,
         *,
@@ -432,59 +435,9 @@ class LegionMemoryService:
     ) -> dict[str, object]:
         max_results = _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
-            if pattern == "file_summary":
-                file_path = _relative_path(target)
-                rows = store.rows(
-                    "SELECT * FROM nodes WHERE file_path = ? ORDER BY line_start, id LIMIT ?",
-                    (file_path, max_results + 1),
-                )
-                results = [_public_node(row) for row in rows[:max_results]]
-                return self._result(
-                    store,
-                    summary=f"Found {len(rows)} node(s) in {target!r}.",
-                    total=len(rows),
-                    returned=len(results),
-                    data={"pattern": pattern, "target": target, "nodes": results},
-                )
-            if pattern not in _EDGE_PATTERNS:
-                raise LegionMemoryQueryError(
-                    "Unknown graph query pattern. Available: "
-                    + ", ".join((*_EDGE_PATTERNS, "file_summary"))
-                )
-            node = store.node(target)
-            resolved = str(node["qualified_name"]) if node else target
-            edge_kind, direction = _EDGE_PATTERNS[pattern]
-            join_key = "source_qualified" if direction == "outgoing" else "target_qualified"
-            result_key = "target_qualified" if direction == "outgoing" else "source_qualified"
-            rows = store.rows(
-                f"""SELECT e.kind AS edge_kind, e.confidence, e.line,
-                            n.kind, n.name, n.qualified_name, n.file_path,
-                            n.line_start, n.line_end, n.language, n.is_test,
-                            n.signature
-                     FROM edges e
-                     LEFT JOIN nodes n ON n.qualified_name=e.{result_key}
-                     WHERE e.kind=? AND e.{join_key}=?
-                     ORDER BY e.confidence DESC, e.id LIMIT ?""",  # nosec B608
-                (edge_kind, resolved, max_results + 1),
-            )
-            results = [_public_relation(row, result_key=result_key) for row in rows[:max_results]]
-            return self._result(
-                store,
-                summary=f"Found {len(rows)} result(s) for {pattern}({target!r}).",
-                total=len(rows),
-                returned=len(results),
-                data={
-                    "pattern": pattern,
-                    "target": target,
-                    "resolved_target": resolved,
-                    "results": results,
-                    "confidence": (
-                        "No statically visible relationship was indexed; verify in source."
-                        if not rows
-                        else "Graph relationships are navigation evidence; verify in source."
-                    ),
-                },
-            )
+            from sage.legion_memory.queries import query_graph
+
+            return self._result(store, **query_graph(store, pattern, target, max_results))
 
     def traverse_graph_tool(
         self,
@@ -814,6 +767,9 @@ class LegionMemoryService:
     ) -> dict[str, object]:
         max_results = _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
+            from sage.legion_memory.analysis import knowledge_gaps
+
+            gaps = knowledge_gaps(store, max_results)
             rows = store.rows(
                 """SELECT n.kind, n.name, n.qualified_name, n.file_path,
                           n.line_start, n.line_end, n.language, n.is_test,
@@ -835,13 +791,21 @@ class LegionMemoryService:
                 _public_node(row) | {"caller_count": int(row["caller_count"])}
                 for row in rows[:max_results]
             ]
-            return self._result(
+            total = store.rows(
+                "SELECT count(*) AS n FROM nodes n WHERE n.kind='Function' AND n.is_test=0 "
+                "AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.kind='TESTED_BY' AND e.source_qualified=n.qualified_name)"
+            )[0]["n"]
+            result = self._result(
                 store,
-                summary=f"Found {len(rows)} untested function hotspot(s).",
-                total=len(rows),
+                summary=f"Found {total} untested function hotspot(s).",
+                total=total,
                 returned=len(visible),
-                data={"untested_functions": visible},
+                data={"untested_functions": visible, **gaps},
             )
+            result["truncated"] = result["truncated"] or any(
+                count > max_results for key, count in gaps.items() if key.endswith("_total")
+            )
+            return result
 
     def _rank_graph_nodes(
         self,
@@ -873,6 +837,91 @@ class LegionMemoryService:
                 returned=len(nodes),
                 data={f"{metric}_nodes": nodes},
             )
+
+    def find_large_functions_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None,
+        min_lines: int = 50, kind: str | None = None, file_path_pattern: str = "", limit: int = 20,
+    ) -> dict[str, object]:
+        from sage.legion_memory.analysis import large_nodes
+
+        _bounded_int(min_lines, "min_lines", maximum=100_000)
+        _bounded_int(limit, "limit", maximum=100)
+        with self._ready_store(repo_root, memory_file) as store:
+            return self._result(store, **large_nodes(store, min_lines, kind, file_path_pattern, limit))
+
+    def get_surprising_connections_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None, top_n: int = 10,
+    ) -> dict[str, object]:
+        from sage.legion_memory.analysis import surprising_connections
+
+        _bounded_int(top_n, "top_n", maximum=100)
+        with self._ready_store(repo_root, memory_file) as store:
+            rows = surprising_connections(store)
+            return self._result(store, summary=f"Found {len(rows)} unexpected coupling(s).",
+                total=len(rows), returned=min(top_n, len(rows)), data={"connections": rows[:top_n]})
+
+    def get_suggested_questions_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None, max_results: int = 10,
+    ) -> dict[str, object]:
+        from sage.legion_memory.analysis import suggested_questions
+
+        _bounded_int(max_results, "max_results", maximum=100)
+        with self._ready_store(repo_root, memory_file) as store:
+            rows = suggested_questions(store)
+            return self._result(store, summary=f"Generated {len(rows)} graph-grounded questions.",
+                total=len(rows), returned=min(max_results, len(rows)), data={"questions": rows[:max_results]})
+
+    def refactor_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None, mode: str = "dead_code",
+        old_name: str | None = None, new_name: str | None = None, max_results: int = 20,
+    ) -> dict[str, object]:
+        from sage.legion_memory.analysis import refactor_preview
+
+        _bounded_int(max_results, "max_results", maximum=100)
+        with self._ready_store(repo_root, memory_file) as store:
+            return self._result(store, **refactor_preview(store, mode, old_name, new_name, max_results))
+
+    def detect_changes_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None,
+        changed_files: list[str] | None = None, max_results: int = 20,
+    ) -> dict[str, object]:
+        from sage.legion_memory.review import change_context
+
+        _bounded_int(max_results, "max_results", maximum=100)
+        with self._ready_store(repo_root, memory_file) as store:
+            # The accepted base is HEAD in a Sage solve workspace, not HEAD~1.
+            files = changed_files
+            if files is None:
+                try:
+                    changed = self._git(repo_root, "diff", "--no-ext-diff", "--name-only", "-z", "HEAD", "--")
+                    untracked = self._git(repo_root, "ls-files", "--others", "--exclude-standard", "-z")
+                    files = sorted({p for p in (changed + untracked).split("\0") if p})
+                except subprocess.SubprocessError as error:
+                    raise LegionMemoryQueryError("Unable to inspect changed paths.") from error
+            normalized = [_relative_path(p) for p in files]
+            data = change_context(store, normalized, max_results)
+            return self._result(store, summary=f"Changed files: {len(normalized)}; static risk: {data['risk_score']:.2f}.",
+                total=data["changed_functions_total"], returned=len(data["changed_functions"]), data=data)
+
+    def get_review_context_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None,
+        changed_files: list[str] | None = None, max_results: int = 20,
+        source_reader: Callable[..., str] | None = None,
+    ) -> dict[str, object]:
+        result = self.detect_changes_tool(repo_root=repo_root, memory_file=memory_file,
+                                         changed_files=changed_files, max_results=max_results)
+        paths = result["data"]["changed_files"]
+        if paths:
+            impact = self.get_impact_radius_tool(repo_root=repo_root, memory_file=memory_file,
+                                                changed_files=paths[:100], max_results=max_results)
+            result["data"]["impact"] = impact["data"]
+            result["truncated"] = result["truncated"] or impact["truncated"]
+        result["data"]["next_tools"] = ["read_file", "query_graph_tool", "get_affected_flows_tool"]
+        if source_reader is not None:
+            from sage.legion_memory.context import source_snippets
+
+            result["data"]["source_snippets"] = source_snippets(result["data"]["changed_functions"], source_reader)
+        return result
 
     def _inventory(self, root: Path) -> dict[str, str]:
         output = self._git_bytes(root, "ls-tree", "-r", "-z", "HEAD")
@@ -1091,25 +1140,6 @@ def _public_node(row: dict[str, object]) -> dict[str, object]:
             "signature",
         )
     }
-
-
-def _public_relation(
-    row: dict[str, object],
-    *,
-    result_key: str,
-) -> dict[str, object]:
-    result = _public_node(row)
-    if result["qualified_name"] is None:
-        result["qualified_name"] = row.get(result_key)
-        result["name"] = row.get(result_key)
-    result.update(
-        {
-            "edge_kind": row["edge_kind"],
-            "confidence": row["confidence"],
-            "edge_line": row["line"],
-        }
-    )
-    return result
 
 
 def _graph_node(graph: nx.DiGraph, name: str, distance: int) -> dict[str, object]:

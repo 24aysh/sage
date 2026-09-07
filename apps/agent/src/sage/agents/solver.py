@@ -62,6 +62,8 @@ class SolverMemorySession(Protocol):
     repo_root: Path
     memory_file: Path
 
+    def enrich(self, **arguments: Any) -> str: ...
+
     def record_tool_call(
         self,
         tool_name: str,
@@ -407,6 +409,7 @@ def build_solver_tools(
             memory_file=context.memory.memory_file,
             output_chars=context.settings.max_tool_output_chars,
             usage_recorder=context.memory.record_tool_call,
+            source_reader=context.repository.read_file,
         )
         if context.memory is not None
         else []
@@ -419,7 +422,10 @@ def build_solver_tools(
         description="Show actual bounded Git status, statistics, and candidate diff.",
     )
     return [
-        *build_repository_read_tools(context),
+        *build_repository_read_tools(
+            context, enrich=context.memory.enrich if context.memory is not None else None,
+            output_chars=context.settings.max_tool_output_chars,
+        ),
         *memory_tools,
         *research_tools,
         save_plan,

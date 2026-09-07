@@ -51,8 +51,8 @@ _STOP_WORDS = frozenset(
         "using", "was", "when", "where", "which", "will", "with", "would",
     }
 )
-_NODE_KINDS = frozenset({"File", "Class", "Type", "Function", "Test"})
-_EDGE_KINDS = ("CALLS", "IMPORTS_FROM", "TESTED_BY", "INHERITS", "CONTAINS")
+_NODE_KINDS = frozenset({"File", "Class", "Type", "Function", "Test", "Endpoint", "Event", "ConfigKey"})
+_EDGE_KINDS = ("CALLS", "REFERENCES", "IMPORTS_FROM", "TESTED_BY", "INHERITS", "IMPLEMENTS", "CONTAINS", "HANDLES", "TRIGGERS", "PUBLISHES", "CONSUMES")
 _MAX_QUERY_TERMS = 24
 
 
@@ -215,7 +215,7 @@ def _retrieve_issue_context(
     )
     limited = useful[: budgets.max_results]
     items = tuple(_retrieval_item(candidate, rank=index) for index, candidate in enumerate(limited, 1))
-    context, rendered_count = _render_context(
+    context, rendered_count, details_truncated = _render_context(
         items,
         indexed_sha=store.get_metadata("indexed_sha"),
         max_chars=budgets.max_chars,
@@ -223,7 +223,7 @@ def _retrieve_issue_context(
     visible = items[:rendered_count]
     total = len(useful)
     omitted = max(0, total - len(visible))
-    truncated = omitted > 0
+    truncated = omitted > 0 or details_truncated
     outcome = (
         MemoryRetrievalOutcome.USEFUL_CONTEXT_TRUNCATED
         if truncated
@@ -235,6 +235,7 @@ def _retrieve_issue_context(
         summary=(
             f"Retrieved {len(visible)} Issue-relevant graph item(s)"
             + (f"; {omitted} omitted by configured budgets." if omitted else ".")
+            + (" Some signature/relationship details omitted by the context budget." if details_truncated else "")
         ),
         memory_file=memory_file,
         repository_id=store.get_metadata("repository_id"),
@@ -526,13 +527,14 @@ def _render_context(
     *,
     indexed_sha: str | None,
     max_chars: int,
-) -> tuple[str, int]:
+) -> tuple[str, int, bool]:
     lines = [
         "Graph-derived navigation context. Verify locations and behavior against source.",
         f"Accepted-base snapshot: {indexed_sha or 'unknown'}",
     ]
     rendered = "\n".join(lines)
     count = 0
+    details_truncated = False
     for item in items:
         location = f"{_clip(item.file_path, 100)}:{item.line_start}-{item.line_end}"
         reasons = _clip(", ".join(item.reasons), 120)
@@ -541,18 +543,26 @@ def _render_context(
             f"({location}) score={item.score:.3f}\n"
             f"  why: {reasons}"
         )
+        if len(rendered) + len(block) > max_chars:
+            break
         if item.signature:
-            block += f"\n  signature: {_clip(item.signature, 180)}"
+            signature = f"\n  signature: {_clip(item.signature, 180)}"
+            if len(rendered) + len(block) + len(signature) <= max_chars:
+                block += signature
+            else:
+                details_truncated = True
         for relationship in item.relationships[:3]:
-            block += (
+            detail = (
                 f"\n  {relationship.reason}: {relationship.relationship} link to "
                 f"{_clip(relationship.seed_qualified_name, 120)}"
             )
-        if len(rendered) + len(block) > max_chars:
-            break
+            if len(rendered) + len(block) + len(detail) <= max_chars:
+                block += detail
+            else:
+                details_truncated = True
         rendered += block
         count += 1
-    return rendered[:max_chars], count
+    return rendered[:max_chars], count, details_truncated
 
 
 def _empty_result(
@@ -629,6 +639,14 @@ def _edge_reason(kind: str, *, outgoing: bool) -> str:
     return {
         ("CALLS", True): "callee_of",
         ("CALLS", False): "caller_of",
+        ("REFERENCES", True): "references",
+        ("REFERENCES", False): "referenced_by",
+        ("IMPLEMENTS", True): "implements",
+        ("IMPLEMENTS", False): "implemented_by",
+        ("HANDLES", True): "handles",
+        ("HANDLES", False): "handled_by",
+        ("TRIGGERS", True): "triggers",
+        ("TRIGGERS", False): "triggered_by",
         ("IMPORTS_FROM", True): "import_of",
         ("IMPORTS_FROM", False): "importer_of",
         ("TESTED_BY", True): "test_for",

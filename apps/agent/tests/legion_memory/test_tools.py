@@ -24,6 +24,9 @@ EXPECTED_TOOLS = {
     "get_hub_nodes_tool",
     "get_bridge_nodes_tool",
     "get_knowledge_gaps_tool",
+    "find_large_functions_tool", "get_surprising_connections_tool",
+    "get_suggested_questions_tool", "refactor_tool",
+    "detect_changes_tool", "get_review_context_tool",
 }
 
 
@@ -79,6 +82,12 @@ def test_every_native_adapter_invokes_and_returns_json(
         "get_hub_nodes_tool": {},
         "get_bridge_nodes_tool": {},
         "get_knowledge_gaps_tool": {},
+        "find_large_functions_tool": {"min_lines": 1},
+        "get_surprising_connections_tool": {},
+        "get_suggested_questions_tool": {},
+        "refactor_tool": {"mode": "dead_code"},
+        "detect_changes_tool": {"changed_files": ["service.py"]},
+        "get_review_context_tool": {"changed_files": ["service.py"]},
     }
 
     for name, arguments in calls.items():

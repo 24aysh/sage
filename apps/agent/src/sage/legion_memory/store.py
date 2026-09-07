@@ -22,6 +22,7 @@ import networkx as nx
 from sage.legion_memory.migrations import SCHEMA_VERSION, apply_migrations
 from sage.legion_memory.parsing import EdgeRecord, NodeRecord, ParsedFile
 from sage.legion_memory.communities import community_groups
+from sage.legion_memory.resolution import resolve_symbol
 
 _MAX_JSON_CHARS = 8_000
 
@@ -242,8 +243,8 @@ class GraphStore:
         self.connection.execute(
             """INSERT OR REPLACE INTO edges(
                 kind, source_qualified, target_qualified, file_path, line,
-                confidence, extra_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                confidence, extra_json, updated_at, raw_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 edge.kind,
                 edge.source_qualified,
@@ -253,17 +254,20 @@ class GraphStore:
                 edge.confidence,
                 _json({**edge.extra, "raw_target": edge.target_qualified}),
                 now,
+                _json((edge.source_qualified, edge.target_qualified, edge.extra.get("receiver", ""))),
             ),
         )
 
     def _resolve_edge_targets(self) -> None:
+        self.connection.execute("DELETE FROM edges WHERE kind='CALLS' AND json_extract(extra_json,'$.event_dispatch')=1")
+        self.connection.execute("DELETE FROM nodes WHERE kind IN ('Event','ConfigKey') AND json_extract(extra_json,'$.derived_memory')=1")
         rows = self.connection.execute(
             "SELECT id, kind, source_qualified, target_qualified, file_path, extra_json FROM edges "
-            "WHERE kind IN ('CALLS', 'INHERITS', 'IMPORTS_FROM')"
+            "WHERE kind IN ('CALLS', 'INHERITS', 'IMPLEMENTS', 'IMPORTS_FROM', 'REFERENCES', 'HANDLES')"
         ).fetchall()
         node_names: dict[str, list[sqlite3.Row]] = {}
         for row in self.connection.execute(
-            "SELECT qualified_name, name, file_path, kind, parent_qualified, extra_json FROM nodes"
+            "SELECT qualified_name, name, file_path, kind, parent_qualified, language, extra_json FROM nodes"
         ):
             node_names.setdefault(str(row["name"]), []).append(row)
         file_paths = {
@@ -272,52 +276,113 @@ class GraphStore:
                 "SELECT file_path, qualified_name FROM nodes WHERE kind='File'"
             )
         }
-        all_nodes = {str(node["qualified_name"]): node for group in node_names.values() for node in group}
+        all_nodes = {str(node["qualified_name"]): dict(node) for group in node_names.values() for node in group}
+        by_name = {name: [all_nodes[str(n["qualified_name"])] for n in group] for name, group in node_names.items()}
+
+        def resolve_module(target: str, *, source_path: str, file_paths: dict[str, str]) -> str | None:
+            if "::" in target:
+                target = target.removeprefix("crate::").replace("::", "/")
+            if not target.startswith("."):
+                configs = sorted((p for p in file_paths if PurePosixPath(p).name.startswith("tsconfig") and p.endswith(".json")),
+                                 key=lambda p: (-len(PurePosixPath(p).parts), p))
+                for config in configs:
+                    directory = PurePosixPath(config).parent
+                    if not PurePosixPath(source_path).is_relative_to(directory):
+                        continue
+                    options = json.loads(all_nodes[config]["extra_json"]).get("tsconfig", {})
+                    base = posixpath.normpath(str(directory / str(options.get("baseUrl", "."))))
+                    matches = []
+                    for pattern, replacements in options.get("paths", {}).items():
+                        prefix, wildcard, suffix = pattern.partition("*")
+                        if (not wildcard and target == pattern) or (wildcard and target.startswith(prefix) and target.endswith(suffix)):
+                            middle = target[len(prefix):len(target) - len(suffix) if suffix else None]
+                            for replacement in replacements:
+                                expanded = posixpath.normpath(base + "/" + replacement.replace("*", middle))
+                                candidate = _resolve_import(expanded, source_path="", file_paths=file_paths)
+                                if candidate:
+                                    matches.append(candidate)
+                    if matches:
+                        return matches[0] if len(set(matches)) == 1 else None
+                    if options.get("baseUrl"):
+                        found = _resolve_import(posixpath.normpath(base + "/" + target), source_path="", file_paths=file_paths)
+                        if found:
+                            return found
+            return _resolve_import(target, source_path=source_path, file_paths=file_paths)
         for row in rows:
             extra = json.loads(row["extra_json"])
             target = str(extra.get("raw_target", row["target_qualified"]))
             resolved: str | None = None
+            if row["kind"] == "HANDLES":
+                raw_source = str(extra.get("raw_source", row["source_qualified"]))
+                source = all_nodes.get(str(row["file_path"]), {})
+                resolved_source = resolve_symbol(raw_source, source=source, nodes=all_nodes,
+                    files=file_paths, resolve_import=resolve_module, by_name=by_name)
+                extra["raw_source"] = raw_source
+                self.connection.execute("UPDATE edges SET source_qualified=?, extra_json=? WHERE id=?",
+                    (resolved_source or raw_source, _json(extra), row["id"]))
+                continue
             if row["kind"] == "IMPORTS_FROM":
-                resolved = _resolve_import(
+                resolved = resolve_module(
                     target,
                     source_path=str(row["file_path"]),
                     file_paths=file_paths,
                 )
             else:
-                candidates = node_names.get(target, [])
-                file_node = all_nodes.get(str(row["file_path"]))
-                imports = json.loads(file_node["extra_json"]).get("imports", {}) if file_node else {}
-                receiver = extra.get("receiver", "")
-                source = all_nodes.get(str(row["source_qualified"]))
-                parent = all_nodes.get(str(source["parent_qualified"])) if source else None
-                source_extra = json.loads(source["extra_json"]) if source else {}
-                parent_extra = json.loads(parent["extra_json"]) if parent else {}
-                receiver_type = source_extra.get("receivers", {}).get(receiver) or parent_extra.get("receivers", {}).get(receiver)
-                imported = imports.get(receiver_type or receiver or target)
-                canonical_type = imported.get("symbol") if receiver_type and imported else receiver_type
-                if receiver == "self" and parent:
-                    candidates = [n for n in candidates if n["parent_qualified"] == parent["qualified_name"]]
-                elif canonical_type:
-                    candidates = [n for n in candidates if str(n["parent_qualified"] or "").endswith("::" + canonical_type.split(".")[-1])]
-                if imported:
-                    module = _resolve_import(imported["module"], source_path=str(row["file_path"]), file_paths=file_paths)
-                    if not receiver and imported["symbol"]:
-                        candidates = node_names.get(imported["symbol"], [])
-                    candidates = [n for n in candidates if n["file_path"] == module]
-                same_file = [
-                    item
-                    for item in candidates
-                    if item["file_path"] == row["file_path"]
-                ]
-                selected = same_file if len(same_file) == 1 else candidates
-                if len(selected) == 1:
-                    resolved = str(selected[0]["qualified_name"])
+                source = all_nodes.get(str(row["source_qualified"]), all_nodes[str(row["file_path"])])
+                resolved = resolve_symbol(target, source=source, nodes=all_nodes,
+                    files=file_paths, resolve_import=resolve_module,
+                    receiver=str(extra.get("receiver", "")), kind=str(row["kind"]), by_name=by_name)
             # Resolve from the original spelling even when an unchanged caller
             # previously pointed at a now-renamed or newly ambiguous symbol.
             self.connection.execute(
                 "UPDATE edges SET target_qualified = ? WHERE id = ?",
                 (resolved or target, row["id"]),
             )
+
+        self.connection.execute("DELETE FROM edges WHERE kind='TRIGGERS'")
+        for event in self.connection.execute("SELECT * FROM edges WHERE kind IN ('HANDLES','PUBLISHES') AND target_qualified LIKE 'event::%'").fetchall():
+            source = all_nodes.get(str(event["source_qualified"]))
+            if not source or source["language"] != "java":
+                continue
+            extra = json.loads(event["extra_json"])
+            raw = str(extra.get("raw_target", event["target_qualified"])).removeprefix("event::")
+            resolved = resolve_symbol(raw, source=source, nodes=all_nodes, files=file_paths, resolve_import=resolve_module, by_name=by_name)
+            target = "event::" + (resolved or f"unresolved:{source['file_path']}:{raw}")
+            self.connection.execute("UPDATE edges SET target_qualified=? WHERE id=?", (target, event["id"]))
+        self.connection.execute(
+            "INSERT OR IGNORE INTO edges(kind, source_qualified, target_qualified, file_path, line, confidence, extra_json, updated_at) "
+            "SELECT 'TRIGGERS', p.source_qualified, h.source_qualified, p.file_path, p.line, 0.9, '{}', p.updated_at "
+            "FROM edges p JOIN edges h ON p.target_qualified=h.target_qualified "
+            "JOIN nodes n ON n.qualified_name=h.source_qualified "
+            "WHERE p.kind='PUBLISHES' AND h.kind='HANDLES' AND p.target_qualified LIKE 'event::%'"
+        )
+        self.connection.execute(
+            "INSERT OR IGNORE INTO edges(kind,source_qualified,target_qualified,file_path,line,confidence,extra_json,updated_at) "
+            "SELECT 'CALLS',source_qualified,target_qualified,file_path,line,confidence,'{\"event_dispatch\":true}',updated_at "
+            "FROM edges WHERE kind='TRIGGERS'"
+        )
+        # Rebuild shared virtual identities globally so deleting their original
+        # owner does not leave orphan event/config nodes or stale source locators.
+        virtual = self.rows(
+            "SELECT target_qualified,file_path,line FROM edges "
+            "WHERE (kind IN ('PUBLISHES','HANDLES') AND target_qualified LIKE 'event::%') "
+            "OR (kind='CONSUMES' AND target_qualified LIKE 'config:%') "
+            "ORDER BY file_path,line,target_qualified"
+        )
+        seen_virtual: set[str] = set()
+        hashes = self.file_hashes()
+        for row in virtual:
+            target = str(row["target_qualified"])
+            owner = all_nodes.get(str(row["file_path"]))
+            if target in seen_virtual or owner is None:
+                continue
+            seen_virtual.add(target)
+            name = target.removeprefix("event::").removeprefix("config:")
+            kind = "Event" if target.startswith("event::") else "ConfigKey"
+            self._insert_node(NodeRecord(kind, name, target, str(row["file_path"]),
+                max(1, int(row["line"])), max(1, int(row["line"])), str(owner["language"]),
+                str(row["file_path"]), extra={"derived_memory": True}),
+                file_hash=hashes[str(row["file_path"])], now=datetime.now(UTC).isoformat())
 
         self.connection.execute(
             """DELETE FROM edges
@@ -390,12 +455,12 @@ class GraphStore:
             )
         for row in self.connection.execute(
             "SELECT source_qualified, target_qualified, kind FROM edges "
-            "WHERE kind IN ('CALLS', 'INHERITS', 'REFERENCES', 'TESTED_BY')"
+            "WHERE kind IN ('CALLS', 'INHERITS', 'IMPLEMENTS', 'REFERENCES', 'TESTED_BY', 'HANDLES', 'PUBLISHES', 'CONSUMES')"
         ):
             source = str(row["source_qualified"])
             target = str(row["target_qualified"])
             if source in graph and target in graph:
-                weight = {"CALLS": 1.0, "INHERITS": 0.8, "TESTED_BY": 0.4}.get(str(row["kind"]), 0.5)
+                weight = {"CALLS": 1.0, "INHERITS": 0.8, "IMPLEMENTS": 0.7, "TESTED_BY": 0.4}.get(str(row["kind"]), 0.5)
                 if not graph.has_edge(source, target) or row["kind"] == "CALLS":
                     graph.add_edge(source, target, kind=str(row["kind"]), weight=weight)
         return graph

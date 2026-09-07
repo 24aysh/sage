@@ -16,6 +16,12 @@ Do not request a starting graph overview that duplicates the initial context.
 Use small targeted graph searches and minimal results first; follow callers,
 callees or a relevant flow only to answer a concrete unresolved question.
 Read source to verify behavior, not to recreate an already supplied file map.
+Memory-enabled read_file and search_text results may include bounded structural
+context (callers, callees, flows, community, tests). Reuse those facts instead of
+requesting the same graph facts again. That context still describes the accepted
+base, not edits made during this run. For uncertain symbol names, use the query's
+qualified-name candidates. Review-context and refactoring tools provide read-only
+navigation/previews, never permission to skip save_plan, verification or review.
 
 First inspect enough repository context to form a safe approach. Then call
 save_plan with a complete typed plan before any mutation. A blocked task still
