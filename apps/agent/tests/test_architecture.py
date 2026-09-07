@@ -145,8 +145,10 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
         .splitlines()
     )
 
-    assert len(files) <= 84
-    assert nonblank_lines <= 13_261
+    # Phase 4 adds seven focused embedding/graph modules; see architecture.md.
+    assert len(files) <= 91
+    assert nonblank_lines <= 14_300
     assert orchestrator_lines <= 400
     for path in files:
-        assert len(_sage_imports(path)) <= 14, path
+        budget = 15 if path == SOURCE_ROOT / "cli.py" else 14
+        assert len(_sage_imports(path)) <= budget, path

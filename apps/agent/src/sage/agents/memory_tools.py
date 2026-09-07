@@ -34,6 +34,7 @@ def build_legion_memory_tools(
         **arguments: object,
     ) -> str:
         started = perf_counter()
+        detail_level = arguments.pop("detail_level", "minimal")
         try:
             result = operation(
                 repo_root=repo_root,
@@ -53,6 +54,8 @@ def build_legion_memory_tools(
                 "truncated": False,
                 "data": {},
             }
+        if detail_level == "minimal":
+            result = _minimal_result(result)
         rendered = _bounded_json(result, max_chars=output_chars)
         if usage_recorder is not None:
             recorded_result = result
@@ -81,13 +84,15 @@ def build_legion_memory_tools(
     async def semantic_search_nodes_tool(
         query: str,
         kind: Literal["File", "Class", "Type", "Function", "Test"] | None = None,
-        limit: int = 20,
+        limit: int = 5,
+        detail_level: Literal["minimal", "standard"] = "minimal",
     ) -> str:
         """Find graph nodes by identifier, path, signature, or task terms."""
 
         return invoke(
             service.semantic_search_nodes_tool,
             query=query,
+            detail_level=detail_level,
             kind=kind,
             limit=limit,
         )
@@ -106,13 +111,15 @@ def build_legion_memory_tools(
             "file_summary",
         ],
         target: str,
-        max_results: int = 50,
+        max_results: int = 15,
+        detail_level: Literal["minimal", "standard"] = "minimal",
     ) -> str:
         """Query a supported relationship or a repository-relative file summary."""
 
         return invoke(
             service.query_graph_tool,
             pattern=pattern,
+            detail_level=detail_level,
             target=target,
             max_results=max_results,
         )
@@ -156,10 +163,11 @@ def build_legion_memory_tools(
         return invoke(service.list_flows_tool, limit=limit)
 
     @tool
-    async def get_flow_tool(flow_id: int, max_steps: int = 100) -> str:
+    async def get_flow_tool(flow_id: int, max_steps: int = 15,
+                            detail_level: Literal["minimal", "standard"] = "minimal") -> str:
         """Inspect one stored execution flow and its member symbols."""
 
-        return invoke(service.get_flow_tool, flow_id=flow_id, max_steps=max_steps)
+        return invoke(service.get_flow_tool, flow_id=flow_id, max_steps=max_steps, detail_level=detail_level)
 
     @tool
     async def get_affected_flows_tool(
@@ -190,13 +198,15 @@ def build_legion_memory_tools(
     @tool
     async def get_community_tool(
         community_id: int,
-        max_members: int = 50,
+        max_members: int = 10,
+        detail_level: Literal["minimal", "standard"] = "minimal",
     ) -> str:
         """Inspect one stored architectural community."""
 
         return invoke(
             service.get_community_tool,
             community_id=community_id,
+            detail_level=detail_level,
             max_members=max_members,
         )
 
@@ -244,6 +254,23 @@ def build_legion_memory_tools(
         get_bridge_nodes_tool,
         get_knowledge_gaps_tool,
     ]
+
+
+def _minimal_result(result: dict[str, object]) -> dict[str, object]:
+    """Drop repeated node metadata, retaining locators and relationship facts."""
+    def project(value: object) -> object:
+        if isinstance(value, list):
+            return [project(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        if "qualified_name" in value and "file_path" in value:
+            return {key: item for key, item in value.items() if key in {
+                "qualified_name", "file_path", "line_start", "line_end", "kind",
+                "score", "search_modes", "confidence", "distance", "signature",
+                "degree", "betweenness", "caller_count",
+            }}
+        return {key: project(item) for key, item in value.items()}
+    return {**result, "data": project(result.get("data", {}))}
 
 
 def _bounded_json(result: dict[str, object], *, max_chars: int) -> str:

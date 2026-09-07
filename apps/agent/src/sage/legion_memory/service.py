@@ -29,6 +29,7 @@ from sage.domain.memory import (
     MemoryStatus,
     MemoryToolResult,
 )
+from sage.domain.embeddings import MemoryVectorError
 from sage.errors import LegionMemoryBuildError, LegionMemoryQueryError
 from sage.legion_memory.parsing import (
     PARSER_VERSION,
@@ -39,6 +40,7 @@ from sage.legion_memory.parsing import (
 )
 from sage.legion_memory.retrieval import retrieve_issue_context as retrieve_context
 from sage.legion_memory.store import GraphStore, SCHEMA_VERSION
+from sage.legion_memory.vectors import VectorIndex, memory_lock
 
 _IGNORED_PARTS = frozenset(
     {
@@ -71,10 +73,11 @@ _EDGE_PATTERNS: dict[str, tuple[str, Literal["incoming", "outgoing"]]] = {
 
 
 class LegionMemoryService:
-    """Sage-owned local graph capability with no model or network calls."""
+    """Local graph capability with explicitly injected optional vector search."""
 
-    def __init__(self, *, data_root: Path | None = None) -> None:
+    def __init__(self, *, data_root: Path | None = None, vectors: VectorIndex | None = None) -> None:
         self._data_root = data_root
+        self.vectors = vectors
 
     def resolve_memory_file(
         self,
@@ -102,6 +105,24 @@ class LegionMemoryService:
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
     def build_or_update_graph_tool(
+        self, *, repo_root: Path, memory_file: Path | None = None,
+        full_rebuild: bool = False,
+    ) -> MemoryBuildResult:
+        database = self.resolve_memory_file(repo_root, memory_file)
+        try:
+            with memory_lock(database):
+                result = self._build_graph(repo_root=repo_root, memory_file=database, full_rebuild=full_rebuild)
+                if self.vectors is not None:
+                    with GraphStore(database) as store:
+                        status = self.vectors.synchronize(store)
+                    result = result.model_copy(update={"vectors": status})
+                return result
+        except MemoryVectorError as error:
+            raise LegionMemoryBuildError(str(error)) from error
+        except OSError as error:
+            raise LegionMemoryBuildError("Unable to access Legion Memory storage.") from error
+
+    def _build_graph(
         self,
         *,
         repo_root: Path,
@@ -290,6 +311,7 @@ class LegionMemoryService:
                     store,
                     memory_file=database,
                     budgets=limits,
+                    vectors=self.vectors,
                 )
         except (
             LegionMemoryBuildError,
@@ -339,14 +361,20 @@ class LegionMemoryService:
         if not query.strip():
             raise LegionMemoryQueryError("Search query cannot be empty.")
         with self._ready_store(repo_root, memory_file) as store:
-            rows, mode = store.search(query, kind=kind, limit=limit)
+            if self.vectors is None:
+                rows, mode = store.search(query, kind=kind, limit=limit)
+                vector_status = None
+            else:
+                from sage.legion_memory.search import hybrid_search
+
+                rows, mode, vector_status = hybrid_search(store, query, vectors=self.vectors, kind=kind, limit=limit)
             return self._result(
                 store,
                 summary=f"Found {len(rows)} graph node(s) for {query!r} via {mode}.",
                 total=len(rows),
                 returned=len(rows),
                 search_mode=mode,
-                data={"nodes": rows},
+                data={"nodes": rows, **({"vectors": vector_status.model_dump()} if vector_status else {})},
             )
 
     def get_minimal_context_tool(
@@ -357,7 +385,12 @@ class LegionMemoryService:
         memory_file: Path | None = None,
     ) -> dict[str, object]:
         with self._ready_store(repo_root, memory_file) as store:
-            nodes, mode = store.search(task, kind=None, limit=5)
+            if self.vectors is None:
+                nodes, mode = store.search(task, kind=None, limit=5)
+            else:
+                from sage.legion_memory.search import hybrid_search
+
+                nodes, mode, _ = hybrid_search(store, task, vectors=self.vectors, limit=5)
             communities = store.rows(
                 "SELECT id, name, size, cohesion, dominant_language "
                 "FROM communities ORDER BY size DESC, id LIMIT 3"

@@ -23,6 +23,9 @@ from sage.domain.memory import (
 )
 from sage.legion_memory.parsing import detect_language
 from sage.legion_memory.store import GraphStore
+from sage.legion_memory.vectors import VectorIndex
+from sage.legion_memory.search import hybrid_search
+from sage.domain.embeddings import VectorStatus
 
 _PATH_RE = re.compile(
     r"(?<![\w/.-])(?:[A-Za-z0-9_.@+-]+/)*"
@@ -109,11 +112,33 @@ def extract_issue_signals(issue_text: str, *, max_chars: int) -> IssueSignals:
 
 
 def retrieve_issue_context(
+    issue_text: str, store: GraphStore, *, memory_file: Path,
+    budgets: MemoryRetrievalBudgets, vectors: VectorIndex | None = None,
+) -> MemoryRetrievalResult:
+    ranked = None
+    mode = "none"
+    status = VectorStatus()
+    if vectors is not None:
+        signals = extract_issue_signals(issue_text, max_chars=budgets.max_issue_chars)
+        rows, mode, status = hybrid_search(store, issue_text, vectors=vectors,
+            limit=budgets.max_results, context_files=signals.paths)
+        if mode in {"hybrid", "semantic"}:
+            ranked = rows
+    result = _retrieve_issue_context(issue_text, store, memory_file=memory_file,
+        budgets=budgets, ranked=ranked, mode=mode)
+    warnings = result.warnings + ((status.reason,) if status.reason else ())
+    return result.model_copy(update={"vectors": status, "warnings": warnings,
+        "semantic_candidates": sum("semantic" in row.get("search_modes", []) for row in (ranked or []))})
+
+
+def _retrieve_issue_context(
     issue_text: str,
     store: GraphStore,
     *,
     memory_file: Path,
     budgets: MemoryRetrievalBudgets,
+    ranked: list[dict[str, object]] | None = None,
+    mode: str = "none",
 ) -> MemoryRetrievalResult:
     """Rank lexical hits, expand the best seeds, and render bounded context."""
 
@@ -121,6 +146,22 @@ def retrieve_issue_context(
     signals = extract_issue_signals(issue_text, max_chars=budgets.max_issue_chars)
     candidates, search_modes = _lexical_candidates(store, signals, budgets)
     lexical_count = len(candidates)
+    if ranked is not None:
+        exact_paths = {key: value for key, value in candidates.items() if "path_match" in value.reasons}
+        candidates = {}
+        for row in ranked:
+            node = _safe_node(row)
+            if node is not None:
+                candidates[str(node["qualified_name"])] = _Candidate(node=node,
+                    score=float(row["score"]), reasons=set(row.get("search_modes", [])), lexical=True)
+        strongest = max((c.score for c in candidates.values()), default=1 / 61)
+        for key, value in exact_paths.items():
+            if key not in candidates:
+                value.score = strongest * 1.5
+                candidates[key] = value
+        # RRF lives on a different scale than the lexical-only scorer.
+        budgets = budgets.model_copy(update={"usefulness_threshold": 0.005})
+        search_modes = ("fts", "semantic") if mode == "hybrid" else ("semantic",)
     seeds = sorted(
         (
             candidate
@@ -156,7 +197,8 @@ def retrieve_issue_context(
         try:
             _expand_edges(store, seed, candidates, budgets.max_related_per_seed)
             _expand_flows(store, seed, candidates, budgets.max_related_per_seed)
-            _expand_community(store, seed, candidates, budgets.max_related_per_seed)
+            if len(candidates) < budgets.max_results:
+                _expand_community(store, seed, candidates, min(2, budgets.max_related_per_seed))
         except sqlite3.Error as error:
             warnings.append(
                 f"Skipped expansion for {_clip(str(seed.node['qualified_name']), 120)}: "
@@ -363,7 +405,7 @@ def _expand_edges(
         _merge_related(
             candidates,
             node,
-            score=seed.score * 0.68 + float(row["confidence"] or 0.0),
+            score=seed.score * (0.68 + 0.1 * float(row["confidence"] or 0.0)),
             reason=reason,
             evidence=evidence,
         )
@@ -499,6 +541,13 @@ def _render_context(
             f"({location}) score={item.score:.3f}\n"
             f"  why: {reasons}"
         )
+        if item.signature:
+            block += f"\n  signature: {_clip(item.signature, 180)}"
+        for relationship in item.relationships[:3]:
+            block += (
+                f"\n  {relationship.reason}: {relationship.relationship} link to "
+                f"{_clip(relationship.seed_qualified_name, 120)}"
+            )
         if len(rendered) + len(block) > max_chars:
             break
         rendered += block

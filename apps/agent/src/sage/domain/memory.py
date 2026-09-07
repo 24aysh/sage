@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
+from sage.domain.embeddings import VectorStatus, VectorUsage
 
 
 class MemoryBuildType(StrEnum):
@@ -84,6 +85,7 @@ class MemoryBuildResult(BaseModel):
     languages: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     duration_ms: float = Field(ge=0)
+    vectors: VectorStatus = Field(default_factory=VectorStatus)
 
 
 class MemoryToolResult(BaseModel):
@@ -162,6 +164,8 @@ class MemoryRetrievalResult(BaseModel):
     search_modes: tuple[str, ...] = ()
     query_terms: tuple[str, ...] = ()
     lexical_candidates: int = Field(default=0, ge=0)
+    semantic_candidates: int = Field(default=0, ge=0)
+    vectors: VectorStatus = Field(default_factory=VectorStatus)
     expanded_candidates: int = Field(default=0, ge=0)
     total_candidates: int = Field(default=0, ge=0)
     returned: int = Field(default=0, ge=0)
@@ -194,6 +198,7 @@ class LegionMemoryRunArtifact(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     format_version: int = 1
+    embedding_usage: VectorUsage | None = None
     requested_memory_file: Path
     resolved_memory_file: Path
     status: MemoryRetrievalStatus

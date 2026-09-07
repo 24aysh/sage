@@ -4,7 +4,12 @@
 
 Legion Memory adapts code-graph schema, incremental reconciliation, FTS,
 flow, community, impact, and native query concepts from `code-review-graph`
-2.3.8 at commit `b586687`.
+2.3.8 (the initial port recorded commit `b586687`). The Phase 4 node text,
+rank fusion, flow criticality, progressive context, and weighted Leiden work
+uses the local reference snapshot fingerprinted in
+`apps/agent/tests/legion_memory/reference_manifest.json`; that copy has no
+independently verifiable Git revision. Sage's native safety, storage and
+provider adaptations are not a claim of complete upstream equivalence.
 
 MIT License
 

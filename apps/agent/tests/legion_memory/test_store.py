@@ -49,6 +49,24 @@ def test_store_creates_schema_wal_indexes_and_search(tmp_path: Path) -> None:
     assert results[0]["name"] == "public_api"
 
 
+def test_v1_migration_preserves_existing_graph_rows(tmp_path: Path) -> None:
+    from sage.legion_memory.migrations import MIGRATIONS
+
+    database = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(MIGRATIONS[0].sql)
+        connection.execute("PRAGMA user_version=1")
+        connection.execute("INSERT INTO metadata VALUES ('schema_version', '1')")
+        connection.execute("INSERT INTO metadata VALUES ('repository_id', 'legacy')")
+        connection.execute("INSERT INTO files VALUES ('api.py', 'hash', 'python', 'date')")
+    with GraphStore(database) as store:
+        assert store.get_metadata("repository_id") == "legacy"
+        assert store.file_hashes() == {"api.py": "hash"}
+        assert store.get_metadata("schema_version") == "2"
+        assert store.get_metadata("memory_namespace")
+        assert store.rows("SELECT * FROM vector_nodes") == []
+
+
 def test_transaction_rolls_back_and_read_only_store_rejects_writes(
     tmp_path: Path,
 ) -> None:

@@ -720,6 +720,108 @@ candidate diff, verification/review evidence, `usage.json`, and the terminal
 usage totals. One lower-token run is useful evidence, not proof that memory
 always improves quality or cost.
 
+## Legion Memory Phase 4: embeddings and compact context
+
+This is the initial local Phase 4 implementation, not a claim of complete
+code-review-graph parity or measured token savings. It adds richer Python
+metadata/resolution, JS/TS arrow-function extraction, improved flows, weighted
+Leiden communities, relationship-rich context, and opt-in hybrid retrieval.
+
+Set `GEMINI_API_KEY` in your existing `.env`. Review the new
+`SAGE_LEGION_*` settings in `.env.example`; do not overwrite your real `.env`.
+Embedding-enabled commands send bounded source-derived symbol text and Issue
+queries to Google. `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=false` prohibits this.
+The model is `gemini-embedding-2`, with 3072 dimensions by default. No OpenAI
+key, chat-model call, or Docker sandbox is required for build/retrieval.
+
+Default Qdrant storage is a persistent `qdrant/` directory beside your SQLite
+file. One process may own that local store at a time. Leave both Qdrant path
+and URL settings blank to use this default; configure `SAGE_LEGION_QDRANT_PATH`
+or `SAGE_LEGION_QDRANT_URL`, never both, to override it. A remote server with
+credentials must use HTTPS. Server deployments use the same adapter but need
+their own integration/concurrency verification before shared production use.
+
+```bash
+# Build graph + vectors (the same command handles existing and new databases).
+make legion-memory REPO=/absolute/repo MEMORY_FILE=/absolute/memory/graph.sqlite3 EMBEDDINGS=on
+
+# Repeat unchanged: expect 0 embedded documents and existing vectors reused.
+make legion-memory REPO=/absolute/repo MEMORY_FILE=/absolute/memory/graph.sqlite3 EMBEDDINGS=on
+
+# Print whether memory matched, what matched, and vector/fallback status.
+make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/memory/graph.sqlite3 EMBEDDINGS=on
+
+# Run the same retrieval without embeddings for comparison.
+make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/memory/graph.sqlite3 EMBEDDINGS=off
+```
+
+`EMBEDDINGS=on|off` overrides `SAGE_LEGION_EMBEDDINGS_ENABLED` from the
+environment. With neither override nor opt-in setting, commands remain
+lexical-only. The three Make targets load the existing configured `ENV_FILE`.
+Direct CLI equivalents accept `--embeddings on|off`; direct CLI callers must
+export their settings or use `uv run --env-file .env` themselves.
+
+Inspect `<database-stem>.context.md` beside SQLite for the bounded retrieved
+context, including signatures and relationship links. Retrieval reports
+lexical and semantic candidate counts, contributing modes and omitted items.
+Vector readiness is separate from `Memory used`: a ready index may have no
+useful match, and unavailable vectors may still produce useful lexical memory.
+The cosine floor defaults to 0.45 and is provisional; use labeled positive
+and unrelated Issues to calibrate `SAGE_LEGION_EMBEDDING_MIN_SIMILARITY`.
+
+An embedding-enabled build exits non-zero if vectors cannot become ready,
+even if its graph build succeeded. A later build resumes acknowledged batches.
+If an initial build reaches the default 300-second or 2,000-symbol budget,
+inspect the counts and raise the explicit budget only if the API cost is
+acceptable. Requests are sequential and individually bounded; unchanged text
+is not re-embedded. Native retrieval never builds document vectors implicitly.
+
+Existing schema-1 SQLite graphs migrate on build. The parser-version change
+also rebuilds metadata/relations from committed source. Direct retrieval of an
+old schema requires running the build first. Qdrant data is separate: copying
+only SQLite does not copy vectors. Deleted/renamed symbols and old generations
+are excluded from queries, but physical old-vector cleanup is still pending;
+account for retained generations when planning disk capacity.
+
+For an A/B/C comparison, replace `SAME_COMMIT` with one fixed SHA and keep
+models, Issue, verification and solve budgets identical:
+
+```bash
+make solve REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=SAME_COMMIT
+make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/memory/graph.sqlite3 BASE_REF=SAME_COMMIT EMBEDDINGS=off
+make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/memory/graph.sqlite3 BASE_REF=SAME_COMMIT EMBEDDINGS=on
+```
+
+`make solve` remains memory-free even if embeddings are enabled in `.env`.
+Preserve all three run directories. The existing total tool calls, executed
+command list and model token totals are unchanged. Memory summaries additionally
+report embedding document/query API calls (including retries), retries, input
+tokens when reported, and Qdrant operations. Embedding token usage currently
+shows `unknown` when Google does not supply it; it is not zero or a characters-
+to-tokens estimate. Inspect `legion-memory.json` for cumulative embedding usage
+and build/retrieval evidence, and `usage.json` for actual agent/model usage.
+
+Only compare efficiency for successful verified/reviewed candidates. Separate
+cold indexing from warm retrieval and repeat comparisons; neither matching
+nodes nor one cheaper run proves a general improvement. No live efficiency
+claim is made by the offline tests below.
+
+```bash
+# Fake Gemini + real temporary local Qdrant; no API keys or network required.
+uv run --project apps/agent pytest apps/agent/tests/legion_memory
+make check
+make graph
+make github-smoke
+make github-doctor
+```
+
+The new tests cover semantic-only matches, no-hit and provider failure fallback,
+unchanged-vector reuse, changed/deleted symbols, interrupted-batch recovery,
+model-recipe isolation, locks, schema migration, native-tool usage, Gemini
+request shape, invalid vectors, and selected parser/flow/community behavior.
+Real Gemini and Qdrant-server checks are separate opt-in checks; these offline
+results do not certify quota availability or shared-server concurrency.
+
 ## Architecture checks
 
 The AST guard verifies package ownership, dependency direction, empty package

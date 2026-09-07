@@ -17,7 +17,8 @@ from langchain_core.tracers.langchain import wait_for_all_tracers
 
 from sage.artifacts.files import write_text_atomic
 from sage.composition import build_legion_memory_service, build_orchestrator
-from sage.config import Settings
+from sage.config import Settings, LegionEmbeddingSettings
+from sage.domain.embeddings import VectorStatus, VectorUsage
 from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
 from sage.errors import (
@@ -199,13 +200,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     publication_smoke_parser.add_argument("--debug", action="store_true")
     publication_smoke_parser.set_defaults(handler=_run_github_publication_smoke)
+    for command_parser in (solve_parser, memory_build_parser, memory_retrieve_parser):
+        command_parser.add_argument("--embeddings", choices=("on", "off"), default=None,
+            help="Explicitly enable Gemini code/Issue embeddings or retain lexical-only memory.")
     return parser
+
+
+def _memory_service(arguments: argparse.Namespace):
+    choice = getattr(arguments, "embeddings", None)
+    settings = LegionEmbeddingSettings.from_env(enabled=None if choice is None else choice == "on")
+    return build_legion_memory_service(embeddings=settings) if settings.enabled else build_legion_memory_service()
 
 
 def _run_memory_build(arguments: argparse.Namespace) -> int:
     """Run the strict standalone graph build command."""
 
-    result = build_legion_memory_service().build_or_update_graph_tool(
+    result = _memory_service(arguments).build_or_update_graph_tool(
         repo_root=arguments.repo,
         memory_file=arguments.memory_file,
         full_rebuild=arguments.full_rebuild,
@@ -223,11 +233,12 @@ def _run_memory_build(arguments: argparse.Namespace) -> int:
     print(f"  Communities: {result.total_communities}")
     print(f"  Languages: {', '.join(result.languages) or 'none'}")
     print(f"  Duration: {result.duration_ms:.2f} ms")
+    _render_vectors(result.vectors)
     if result.warnings:
         print("  Warnings:")
         for warning in result.warnings:
             print(f"    - {warning}")
-    return 0
+    return 1 if result.vectors.status == "unavailable" else 0
 
 
 def _run_memory_status(arguments: argparse.Namespace) -> int:
@@ -266,7 +277,7 @@ def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
         raise LegionMemoryQueryError(
             f"Unable to read Issue file: {type(error).__name__}: {str(error)[:300]}"
         ) from error
-    result = build_legion_memory_service().retrieve_issue_context(
+    result = _memory_service(arguments).retrieve_issue_context(
         issue_text=issue_text,
         repo_root=arguments.repo,
         memory_file=arguments.memory_file,
@@ -332,6 +343,8 @@ def _render_memory_retrieval(
         + (", ".join(_safe_log_value(term, 80) for term in result.query_terms) or "none")
     )
     print(f"  Lexical candidates: {result.lexical_candidates}")
+    print(f"  Semantic candidates: {result.semantic_candidates}")
+    _render_vectors(result.vectors)
     print(f"  Graph-expanded candidates: {result.expanded_candidates}")
     print(f"  Retrieved: {result.returned}/{result.total_candidates}")
     print(f"  Omitted: {result.omitted}")
@@ -391,7 +404,7 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
                 request,
                 orchestrator,
                 settings,
-                memory_service=build_legion_memory_service(),
+                memory_service=_memory_service(arguments),
             )
         )
     else:
@@ -654,6 +667,26 @@ def _render_solve_memory_summary(result: SolveResult) -> None:
     print(f"  Native memory tool calls: {len(memory.tool_calls)}")
     print(f"  Fallback: {memory.fallback}")
     print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
+    if memory.embedding_usage is not None:
+        _render_embedding_usage(memory.embedding_usage)
+
+
+def _render_vectors(status: VectorStatus) -> None:
+    print(f"  Embeddings: {status.status}")
+    if status.model:
+        print(f"  Embedding model: {status.model} ({status.dimensions} dimensions)")
+        print(f"  Vectors: {status.embedded} embedded / {status.reused} reused / {status.eligible} eligible")
+    if status.reason:
+        print(f"  Vector fallback: {_safe_log_value(status.reason, 300)}")
+    if status.usage is not None:
+        _render_embedding_usage(status.usage)
+
+
+def _render_embedding_usage(usage: VectorUsage) -> None:
+    print(f"  Embedding API calls: {usage.document_calls} document / {usage.query_calls} query (including retries)")
+    print(f"  Embedding retries: {usage.retries}")
+    print(f"  Embedding input tokens: {usage.input_tokens if usage.input_tokens is not None else 'unknown'}")
+    print(f"  Qdrant operations: {usage.qdrant_operations}")
 
 
 def _render_solve_usage_summary(result: SolveResult) -> None:

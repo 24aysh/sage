@@ -10,13 +10,14 @@ from __future__ import annotations
 import hashlib
 import re
 from bisect import bisect_right
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 from tree_sitter import Node
 from tree_sitter_language_pack import get_parser
+from sage.legion_memory.symbol_metadata import python_metadata
 
-PARSER_VERSION = "legion-tree-sitter-v1"
+PARSER_VERSION = "legion-tree-sitter-v2"
 MAX_FILE_BYTES = 2_000_000
 
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
@@ -99,6 +100,8 @@ _FUNCTION_TYPES = frozenset(
         "constructor_declaration",
         "local_function_statement",
         "function_signature",
+        "arrow_function",
+        "function_expression",
     }
 )
 _IMPORT_TYPES = frozenset(
@@ -220,6 +223,13 @@ class CodeParser:
         tree = parser.parse(content)  # type: ignore[attr-defined]
         extractor = _Extractor(relative, language, content)
         extractor.extract(tree.root_node)
+        if language == "python":
+            file_extra, metadata = python_metadata(content)
+            enriched = []
+            for n in extractor.nodes:
+                extra = {**n.extra, **(file_extra if n.kind == "File" else metadata.get((n.name, n.line_start), {}))}
+                enriched.append(replace(n, extra=extra, signature=str(extra["signature"])[:500] if "signature" in extra else n.signature))
+            extractor.nodes = enriched
         warnings = (
             (f"Tree-sitter reported syntax errors in {relative}.",)
             if tree.root_node.has_error
@@ -301,6 +311,7 @@ class _Extractor:
                             file_path=self.file_path,
                             line=line_start,
                             confidence=0.8,
+                            extra={"receiver": self._receiver(node)},
                         )
                     )
 
@@ -329,6 +340,7 @@ class _Extractor:
                         parent_qualified=parent_qualified,
                         signature=self._signature(node_text),
                         is_test=_is_test(self.file_path, name),
+                        extra=self._metadata(node),
                     )
                     self.nodes.append(record)
                     self.edges.append(
@@ -388,6 +400,10 @@ class _Extractor:
         return None
 
     def _name(self, node: Node, *, node_text: str) -> str | None:
+        if node.type in {"arrow_function", "function_expression"}:
+            parent = node.parent
+            name = parent.child_by_field_name("name") if parent is not None else None
+            return _clean_name(self._text(name)) if name else f"callback_{node.start_point.row + 1}"
         direct = node.child_by_field_name("name")
         if direct is not None:
             return _clean_name(self._text(direct))
@@ -414,6 +430,28 @@ class _Extractor:
         text = text.split("(", 1)[0].strip()
         matches = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", text)
         return matches[-1] if matches else None
+
+    def _receiver(self, node: Node) -> str:
+        target = node.child_by_field_name("function")
+        text = self._text(target)
+        return text.rsplit(".", 1)[0][:200] if "." in text else ""
+
+    def _metadata(self, node: Node) -> dict[str, object]:
+        extra: dict[str, object] = {}
+        for field_name in ("parameters", "return_type"):
+            value = node.child_by_field_name(field_name)
+            if value is not None:
+                extra["params" if field_name == "parameters" else field_name] = self._text(value)[:1000]
+        previous = node.prev_named_sibling
+        container = node.parent
+        while (previous is None or "comment" not in previous.type) and container is not None and container.type in {
+            "variable_declarator", "lexical_declaration", "export_statement",
+        }:
+            previous = container.prev_named_sibling
+            container = container.parent
+        if previous is not None and "comment" in previous.type:
+            extra["docstring"] = " ".join(self._text(previous).strip("/* ").split())[:1500]
+        return extra
 
     @staticmethod
     def _signature(text: str) -> str:

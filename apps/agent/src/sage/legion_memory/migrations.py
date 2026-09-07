@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -98,6 +98,17 @@ CREATE INDEX IF NOT EXISTS idx_node_communities_community
     ON node_communities(community_id);
 """,
     ),
+    Migration(version=2, sql="""
+CREATE TABLE vector_nodes (
+    generation TEXT NOT NULL, qualified_name TEXT NOT NULL,
+    text_hash TEXT NOT NULL, point_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    PRIMARY KEY(generation, qualified_name)
+);
+CREATE INDEX vector_reuse ON vector_nodes(fingerprint, qualified_name, text_hash);
+INSERT OR IGNORE INTO metadata(key, value) VALUES ('memory_namespace', lower(hex(randomblob(16))));
+INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '2');
+"""),
 )
 
 
@@ -112,6 +123,8 @@ def apply_migrations(connection: sqlite3.Connection) -> None:
     for migration in MIGRATIONS:
         if migration.version <= current:
             continue
-        connection.executescript(migration.sql)
-        connection.execute(f"PRAGMA user_version={migration.version}")  # nosec B608
+        connection.executescript(
+            "BEGIN IMMEDIATE;\n" + migration.sql
+            + f"\nPRAGMA user_version={migration.version};\nCOMMIT;"
+        )
         current = migration.version

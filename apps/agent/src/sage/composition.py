@@ -6,7 +6,10 @@ from langchain_openai import ChatOpenAI
 
 from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent
-from sage.config import Settings
+from sage.config import Settings, LegionEmbeddingSettings
+from sage.integrations.qdrant import QdrantVectorStore
+from sage.legion_memory.vectors import VectorIndex
+from sage.providers.embeddings import GeminiEmbeddingProvider
 from sage.errors import ConfigurationError
 from sage.legion_memory.service import LegionMemoryService
 from sage.orchestration.solve import SolveOrchestrator
@@ -14,10 +17,23 @@ from sage.providers.google import GoogleProvider
 from sage.research.service import build_research_service
 
 
-def build_legion_memory_service(*, data_root: Path | None = None) -> LegionMemoryService:
-    """Construct Sage's local deterministic graph capability."""
+def build_legion_memory_service(*, data_root: Path | None = None,
+                               embeddings: LegionEmbeddingSettings | None = None) -> LegionMemoryService:
+    """Construct optional adapters only for explicitly memory-enabled callers."""
 
-    return LegionMemoryService(data_root=data_root)
+    if embeddings is None or not embeddings.enabled:
+        return LegionMemoryService(data_root=data_root)
+    provider = GeminiEmbeddingProvider(api_key=embeddings.api_key,
+        dimensions=embeddings.dimensions, retries=embeddings.retries)
+
+    def vector_store(database: Path, collection: str, create: bool) -> QdrantVectorStore:
+        return QdrantVectorStore(collection=collection, dimensions=embeddings.dimensions,
+            usage=provider.usage, path=embeddings.qdrant_path or database.parent / "qdrant",
+            url=embeddings.qdrant_url, api_key=embeddings.qdrant_api_key, create=create)
+
+    return LegionMemoryService(data_root=data_root, vectors=VectorIndex(provider, vector_store,
+        max_nodes=embeddings.max_nodes, deadline=embeddings.deadline_seconds,
+        request_timeout=embeddings.request_timeout_seconds, min_similarity=embeddings.min_similarity))
 
 
 def build_orchestrator(settings: Settings) -> SolveOrchestrator:

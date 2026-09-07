@@ -69,6 +69,7 @@ class MemorySession:
         """Snapshot current memory evidence for atomic artifact persistence."""
 
         return LegionMemoryRunArtifact(
+            embedding_usage=(self.service.vectors.provider.usage.model_copy() if self.service.vectors else None),
             requested_memory_file=self.requested_memory_file,
             resolved_memory_file=self.memory_file,
             status=self.retrieval.status,
@@ -88,6 +89,8 @@ class MemorySession:
         """Prevent late usage recording after workflow cleanup."""
 
         self._closed = True
+        if self.service.vectors is not None:
+            self.service.vectors.clear_query_cache()
 
 
 def unavailable_memory_artifact(
@@ -101,6 +104,10 @@ def unavailable_memory_artifact(
     """Build secret-safe fallback evidence without raw exception content."""
 
     return LegionMemoryRunArtifact(
+        embedding_usage=(
+            retrieval.vectors.usage if retrieval and retrieval.vectors.usage
+            else build.vectors.usage if build else None
+        ),
         requested_memory_file=requested_memory_file,
         resolved_memory_file=resolved_memory_file,
         status=MemoryRetrievalStatus.UNAVAILABLE,

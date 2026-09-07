@@ -1,0 +1,26 @@
+{
+  "package": "code-review-graph",
+  "version": "2.3.8",
+  "upstream": "https://github.com/tirth8205/code-review-graph",
+  "audit_date": "2026-09-07",
+  "revision": null,
+  "note": "Local reference snapshot has no independent .git metadata. Tests are self-contained and do not import this snapshot.",
+  "sha256": {
+    "embeddings.py": "1f5a79e692822d608abda77b330f23eb7d206695f451da93eaa8ae1fdb183636",
+    "search.py": "7a9d22505740c50b0b2389149222c2b334107e81924519a527760c84fd2048b9",
+    "parser.py": "e35c74456d26ecdd76d94fedb9f4ec1289b0dd086523813162ea38c20f8077f4",
+    "graph.py": "bba4a080c7e9aa67ca1c91fcf7c335f6ebc1bceb9d59fc31c69562d03a3e8d4b",
+    "flows.py": "5c1cc6f2c630c9e7897d96f95766b2ee52641da3a677780eeb1b4e0293654c10",
+    "communities.py": "0cfef5200c1eebf4af18bb43a2af12197b0dc52765378d5aef467823ae2cb862",
+    "postprocessing.py": "e145000db054f01c959a14e0c644d015c56a398e5463b49fedc6f43a3088596c",
+    "tools/context.py": "39ad49bd7e175f9f1894fe83c7a76de5f3f71361b5ece196bd599eace869aebf",
+    "tools/query.py": "1db2ce1836d0d0f760447bb9fe4fe747b2f5a43204b7ec0fca8c6eb819c3d592",
+    "tools/review.py": "013b21115524a50e173f2bf8d2b274cfcbfea1f923c62f63270c0cf77a7ef391"
+  },
+  "covered": {
+    "test_parity.py": ["Python metadata and typed import-alias receivers", "incremental target disambiguation", "production nontrivial route flows", "named JS arrow functions", "relative import isolation", "seeded weighted Leiden and test reassignment"],
+    "test_vectors.py": ["node documents", "one vector per Gemini request", "rank-only RRF", "semantic-only seeds", "incremental reuse and crash recovery", "query cache and native usage", "safe failure fallback"]
+  },
+  "intentional_adaptations": ["native tools instead of MCP", "accepted committed snapshot", "Gemini Embedding 2", "Qdrant collections instead of SQLite vectors", "bounded flow depth/nodes", "Issue-specific path preservation", "provisional cosine floor", "compact source verification"],
+  "remaining": ["complete supported-language resolver and REFERENCES matrix", "upstream query-pattern and diagnostic-tool parity", "exact community naming/splitting and node/edge population parity", "read/search hook-equivalent enrichment", "physical vector generation cleanup", "real provider/server and held-out solve evaluation"]
+}

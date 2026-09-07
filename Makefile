@@ -377,6 +377,8 @@ legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optiona
 	fi; \
 	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
 	args=(memory build --repo "$(REPO)"); \
+	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
+	if [[ -n "$(EMBEDDINGS)" ]]; then args+=(--embeddings "$(EMBEDDINGS)"); fi; \
 	if [[ -n "$(MEMORY_FILE)" ]]; then args+=(--memory-file "$(MEMORY_FILE)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
@@ -391,9 +393,12 @@ legion-retrieve: ## Retrieve memories for ISSUE from MEMORY, bound to REPO.
 	fi; \
 	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
 	[[ -f "$(ISSUE)" ]] || { echo "ERROR: issue file does not exist: $(ISSUE)" >&2; exit 1; }; \
+	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
+	embedding_args=(); \
+	if [[ -n "$(EMBEDDINGS)" ]]; then embedding_args+=(--embeddings "$(EMBEDDINGS)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage memory retrieve \
-		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)"
+		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)" "$${embedding_args[@]}"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \
@@ -438,6 +443,7 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 			exit 1; \
 		fi; \
 		memory_args=(--memory-file "$(MEMORY)"); \
+		if [[ -n "$(EMBEDDINGS)" ]]; then memory_args+=(--embeddings "$(EMBEDDINGS)"); fi; \
 	fi; \
 	set +e; \
 	uv run --project "$(AGENT_PROJECT)" sage solve \

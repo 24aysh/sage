@@ -7,6 +7,7 @@ MIT-licensed code-review-graph project (copyright 2026 Tirth Kanani).
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import sqlite3
 from collections import Counter, deque
@@ -20,6 +21,7 @@ import networkx as nx
 
 from sage.legion_memory.migrations import SCHEMA_VERSION, apply_migrations
 from sage.legion_memory.parsing import EdgeRecord, NodeRecord, ParsedFile
+from sage.legion_memory.communities import community_groups
 
 _MAX_JSON_CHARS = 8_000
 
@@ -249,19 +251,19 @@ class GraphStore:
                 edge.file_path,
                 edge.line,
                 edge.confidence,
-                _json(edge.extra),
+                _json({**edge.extra, "raw_target": edge.target_qualified}),
                 now,
             ),
         )
 
     def _resolve_edge_targets(self) -> None:
         rows = self.connection.execute(
-            "SELECT id, kind, target_qualified, file_path FROM edges "
+            "SELECT id, kind, source_qualified, target_qualified, file_path, extra_json FROM edges "
             "WHERE kind IN ('CALLS', 'INHERITS', 'IMPORTS_FROM')"
         ).fetchall()
         node_names: dict[str, list[sqlite3.Row]] = {}
         for row in self.connection.execute(
-            "SELECT qualified_name, name, file_path, kind FROM nodes"
+            "SELECT qualified_name, name, file_path, kind, parent_qualified, extra_json FROM nodes"
         ):
             node_names.setdefault(str(row["name"]), []).append(row)
         file_paths = {
@@ -270,14 +272,10 @@ class GraphStore:
                 "SELECT file_path, qualified_name FROM nodes WHERE kind='File'"
             )
         }
-        existing = {
-            str(row[0])
-            for row in self.connection.execute("SELECT qualified_name FROM nodes")
-        }
+        all_nodes = {str(node["qualified_name"]): node for group in node_names.values() for node in group}
         for row in rows:
-            target = str(row["target_qualified"])
-            if target in existing:
-                continue
+            extra = json.loads(row["extra_json"])
+            target = str(extra.get("raw_target", row["target_qualified"]))
             resolved: str | None = None
             if row["kind"] == "IMPORTS_FROM":
                 resolved = _resolve_import(
@@ -287,6 +285,25 @@ class GraphStore:
                 )
             else:
                 candidates = node_names.get(target, [])
+                file_node = all_nodes.get(str(row["file_path"]))
+                imports = json.loads(file_node["extra_json"]).get("imports", {}) if file_node else {}
+                receiver = extra.get("receiver", "")
+                source = all_nodes.get(str(row["source_qualified"]))
+                parent = all_nodes.get(str(source["parent_qualified"])) if source else None
+                source_extra = json.loads(source["extra_json"]) if source else {}
+                parent_extra = json.loads(parent["extra_json"]) if parent else {}
+                receiver_type = source_extra.get("receivers", {}).get(receiver) or parent_extra.get("receivers", {}).get(receiver)
+                imported = imports.get(receiver_type or receiver or target)
+                canonical_type = imported.get("symbol") if receiver_type and imported else receiver_type
+                if receiver == "self" and parent:
+                    candidates = [n for n in candidates if n["parent_qualified"] == parent["qualified_name"]]
+                elif canonical_type:
+                    candidates = [n for n in candidates if str(n["parent_qualified"] or "").endswith("::" + canonical_type.split(".")[-1])]
+                if imported:
+                    module = _resolve_import(imported["module"], source_path=str(row["file_path"]), file_paths=file_paths)
+                    if not receiver and imported["symbol"]:
+                        candidates = node_names.get(imported["symbol"], [])
+                    candidates = [n for n in candidates if n["file_path"] == module]
                 same_file = [
                     item
                     for item in candidates
@@ -295,11 +312,12 @@ class GraphStore:
                 selected = same_file if len(same_file) == 1 else candidates
                 if len(selected) == 1:
                     resolved = str(selected[0]["qualified_name"])
-            if resolved:
-                self.connection.execute(
-                    "UPDATE edges SET target_qualified = ? WHERE id = ?",
-                    (resolved, row["id"]),
-                )
+            # Resolve from the original spelling even when an unchanged caller
+            # previously pointed at a now-renamed or newly ambiguous symbol.
+            self.connection.execute(
+                "UPDATE edges SET target_qualified = ? WHERE id = ?",
+                (resolved or target, row["id"]),
+            )
 
         self.connection.execute(
             """DELETE FROM edges
@@ -358,7 +376,7 @@ class GraphStore:
     def _symbol_graph(self) -> nx.DiGraph:
         graph = nx.DiGraph()
         for row in self.connection.execute(
-            "SELECT qualified_name, name, kind, file_path, language, is_test "
+            "SELECT qualified_name, name, kind, file_path, language, is_test, extra_json "
             "FROM nodes WHERE kind != 'File'"
         ):
             graph.add_node(
@@ -368,6 +386,7 @@ class GraphStore:
                 file_path=str(row["file_path"]),
                 language=str(row["language"]),
                 is_test=bool(row["is_test"]),
+                extra=json.loads(row["extra_json"]),
             )
         for row in self.connection.execute(
             "SELECT source_qualified, target_qualified, kind FROM edges "
@@ -376,7 +395,9 @@ class GraphStore:
             source = str(row["source_qualified"])
             target = str(row["target_qualified"])
             if source in graph and target in graph:
-                graph.add_edge(source, target, kind=str(row["kind"]))
+                weight = {"CALLS": 1.0, "INHERITS": 0.8, "TESTED_BY": 0.4}.get(str(row["kind"]), 0.5)
+                if not graph.has_edge(source, target) or row["kind"] == "CALLS":
+                    graph.add_edge(source, target, kind=str(row["kind"]), weight=weight)
         return graph
 
     def _rebuild_flows(self) -> None:
@@ -396,23 +417,29 @@ class GraphStore:
         entries = [
             node
             for node in call_graph
-            if call_graph.in_degree(node) == 0
-            or _entry_name(str(call_graph.nodes[node].get("name", "")))
+            if not call_graph.nodes[node].get("is_test")
+            and call_graph.nodes[node].get("kind") == "Function"
+            and (call_graph.in_degree(node) == 0
+                 or _entry_name(str(call_graph.nodes[node].get("name", "")))
+                 or any(re.search(r"\.(route|get|post|put|patch|delete)\b", str(d)) for d in call_graph.nodes[node].get("extra", {}).get("decorators", [])))
         ]
         entries.sort(key=lambda item: (call_graph.nodes[item].get("file_path", ""), item))
+        tested = {str(r[0]) for r in self.connection.execute("SELECT DISTINCT source_qualified FROM edges WHERE kind='TESTED_BY'")}
+        external_calls = Counter(str(r[0]) for r in self.connection.execute("SELECT source_qualified, target_qualified FROM edges WHERE kind='CALLS'") if r[1] not in graph)
         for entry in entries[:200]:
-            visited = _bounded_bfs(call_graph, entry, max_depth=8, max_nodes=200)
-            if not visited:
+            visited = _bounded_bfs(call_graph, entry, max_depth=15, max_nodes=200)
+            if len(visited) < 2:
                 continue
             files = {
                 str(call_graph.nodes[node].get("file_path", "")) for node in visited
             }
             depth = max(visited.values())
-            criticality = min(
-                1.0,
-                len(visited) / 50
-                + (0.2 if any(_security_name(node) for node in visited) else 0),
-            )
+            criticality = round(
+                min((len(files) - 1) / 4, 1) * 0.30
+                + min(sum(external_calls[n] for n in visited) / 5, 1) * 0.20
+                + sum(_security_name(n) for n in visited) / len(visited) * 0.25
+                + (1 - len(set(visited) & tested) / len(visited)) * 0.15
+                + min(depth / 10, 1) * 0.10, 6)
             name = str(call_graph.nodes[entry].get("name", entry))
             cursor = self.connection.execute(
                 """INSERT INTO flows(
@@ -445,13 +472,7 @@ class GraphStore:
         graph = directed.to_undirected()
         if not graph:
             return
-        if graph.number_of_edges():
-            groups = nx.community.louvain_communities(graph, seed=42)
-        else:
-            by_file: dict[str, set[str]] = {}
-            for node, data in graph.nodes(data=True):
-                by_file.setdefault(str(data.get("file_path", "")), set()).add(node)
-            groups = list(by_file.values())
+        groups = community_groups(directed)
         ordered = sorted(
             (set(group) for group in groups if group),
             key=lambda group: (-len(group), min(group)),
@@ -468,7 +489,9 @@ class GraphStore:
                 for node in members
                 if PurePosixPath(str(graph.nodes[node].get("file_path", ""))).parts
             )
-            prefix = paths.most_common(1)[0][0] if paths else "root"
+            production = [n for n in members if not graph.nodes[n].get("is_test")]
+            names = Counter(str(graph.nodes[n].get("name", "")) for n in production if graph.nodes[n].get("kind") == "Class")
+            prefix = names.most_common(1)[0][0] if names else paths.most_common(1)[0][0] if paths else "root"
             name = f"{prefix}-{index}"
             sorted_members = sorted(members)
             cursor = self.connection.execute(
@@ -619,6 +642,18 @@ def _resolve_import(
     source_path: str,
     file_paths: dict[str, str],
 ) -> str | None:
+    if target.startswith("."):
+        parent = str(PurePosixPath(source_path).parent)
+        if "/" in target:
+            relative = posixpath.normpath(posixpath.join(parent, target))
+        else:
+            levels = len(target) - len(target.lstrip("."))
+            relative = posixpath.normpath(posixpath.join(parent, *(".." for _ in range(levels - 1)), target.lstrip(".").replace(".", "/")))
+        matches = [path for path in file_paths if path in {
+            relative, *(relative + suffix for suffix in (".py", ".js", ".jsx", ".ts", ".tsx")),
+            relative + "/__init__.py", relative + "/index.js", relative + "/index.ts",
+        }]
+        return file_paths[matches[0]] if len(matches) == 1 else None
     normalized = target.replace("\\", "/").strip("./")
     source_parent = PurePosixPath(source_path).parent
     candidates = [normalized, str(source_parent / normalized)]

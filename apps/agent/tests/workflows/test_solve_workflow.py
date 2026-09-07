@@ -227,6 +227,8 @@ def test_memory_is_prepared_before_sandbox_and_solver(
         return prepared
 
     class MemoryService:
+        vectors = None
+
         def build_or_update_graph_tool(self, **arguments):
             events.append("build")
             assert arguments["repo_root"] == prepared.workspace_dir
@@ -286,6 +288,8 @@ def test_no_match_keeps_memory_tools_available_without_prompt_context(
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
 
     class MemoryService:
+        vectors = None
+
         def build_or_update_graph_tool(self, **_):
             return _memory_build(memory_file, prepared.base_sha)
 
@@ -397,6 +401,8 @@ def test_memory_session_closes_when_solver_fails(
     captured = []
 
     class MemoryService:
+        vectors = None
+
         def build_or_update_graph_tool(self, **_):
             return _memory_build(memory_file, prepared.base_sha)
 

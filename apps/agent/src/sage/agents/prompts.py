@@ -10,6 +10,12 @@ or editing. Start from its relevant symbols and paths. The graph does not
 include edits made during this run. If graph evidence is empty, uncertain, or
 stale, continue with list_tree, search_text, and read_file. Memory evidence
 alone cannot satisfy the saved-plan gate or an acceptance criterion.
+When useful memory already identifies the affected code, go directly to those
+source locations and tests instead of repeating broad repository discovery.
+Do not request a starting graph overview that duplicates the initial context.
+Use small targeted graph searches and minimal results first; follow callers,
+callees or a relevant flow only to answer a concrete unresolved question.
+Read source to verify behavior, not to recreate an already supplied file map.
 
 First inspect enough repository context to form a safe approach. Then call
 save_plan with a complete typed plan before any mutation. A blocked task still

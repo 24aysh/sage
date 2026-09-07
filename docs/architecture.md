@@ -38,8 +38,8 @@ repaired candidate receives a fresh review.
 
 ## Legion Memory
 
-Phases 1 through 3 provide a local, rebuildable repository knowledge graph named
-Legion Memory plus deterministic Issue-relevant retrieval. The graph indexes
+Legion Memory provides a local, rebuildable repository knowledge graph with
+lexical retrieval and opt-in Gemini Embedding 2 / Qdrant retrieval. The graph indexes
 source blobs from the selected repository's committed
 `HEAD`, stores repository-relative symbols and relationships in SQLite, and
 records the repository identity, exact Git SHA, parser version, schema version,
@@ -50,7 +50,13 @@ paths.
 The graph includes FTS5 search, containment, imports, calls, inheritance,
 test links, bounded flows, communities, impact traversal, hubs, bridges, and
 knowledge-gap summaries. Tree-sitter provides grammar parsing and NetworkX
-provides deterministic graph analysis. Supported grammars are Python,
+provides traversal/centrality analysis; igraph provides seeded, weighted Leiden
+communities with test-to-production reassignment. Python metadata includes
+docstrings, signatures, decorators, import aliases and typed receivers;
+JavaScript/TypeScript extraction includes named arrow functions and callbacks.
+Flows omit tests and singletons as entry points, recognize Python route
+decorators, and score spread, external calls, security, test gaps and depth.
+Supported grammars are Python,
 JavaScript, TypeScript/TSX, Go, Rust, Java, C#, Ruby, C/C++/Objective-C,
 Kotlin, Swift, PHP, Scala, Dart, Lua, Bash, Elixir, Zig, Julia, HCL, SQL,
 YAML, Nix, PowerShell, Svelte, Vue, R, Perl, and Solidity.
@@ -70,7 +76,46 @@ initial results are included in an `<untrusted-legion-memory>` envelope;
 `no_match` keeps the tools available for exploration without adding an empty
 prompt section. Unavailable memory binds no graph tools. The Reviewer remains
 unchanged and judges only the actual candidate evidence. No MCP server,
-daemon, watcher, model call, or network service is part of retrieval.
+daemon or watcher is used. Lexical-only retrieval makes no embedding calls.
+
+With embeddings explicitly enabled, `composition.py` injects a Gemini adapter
+and a Qdrant store factory into the existing graph service. `config.py` owns
+the independent `LegionEmbeddingSettings` boundary so memory commands need no
+chat-model credentials. `make solve` never constructs these adapters.
+`make legion-solve` still uses the same solve workflow and gates.
+
+`legion_memory/vectors.py` formats bounded non-File node documents, reuses
+same-text/same-model vectors, and reconciles vectors even on a no-change graph
+build. Schema 2 adds an embedding manifest and persistent memory namespace.
+Qdrant collections are isolated by namespace, repository and embedding identity;
+point IDs additionally include a generation. Only acknowledged, verified
+batches are recorded. A ready generation is published in SQLite after the
+complete index is available. Published provenance includes SHA and parser
+version. A failed index leaves the graph usable for lexical retrieval.
+
+Writers take a nonblocking per-database file lock through graph and vector
+creation; semantic readers take a shared lock. Network requests never hold a
+SQLite write transaction. The Qdrant client is opened/closed within each
+operation, not kept as a singleton. Default storage is a persistent `qdrant/`
+directory beside SQLite; concurrent opens fail safely. A configured server URL
+uses the same adapter, but shared-server concurrency across copied databases
+has not been certified. Old generations are retained for reuse/recovery and
+excluded from searches; automatic physical garbage collection is not yet
+implemented. Copying only SQLite preserves graph-only use, not the vectors.
+
+`legion_memory/search.py` combines phrase-FTS and cosine-ranked vectors using
+RRF (constant 60), query-kind/identifier boosts and a context-file boost.
+The Issue adapter retains explicit-path matches, allows semantic-only seeds,
+and uses a separate RRF-scale threshold. Vector errors fall back to the
+existing lexical Issue scorer. The configurable cosine floor is provisional,
+not a measured universal relevance threshold. A session caches up to 32 query
+vectors. Search modes and separate embedding/Qdrant usage are observable.
+
+Initial context now includes signatures and seed-linked relationship evidence.
+Community expansion is a small fallback after direct/flow evidence. Native
+tools project compact node records; search, relationship queries, flow and
+community inspection allow `detail_level=standard`. Solver instructions ask
+for targeted source verification instead of repeating broad discovery.
 
 The graph remains a snapshot of the accepted base SHA throughout mutations
 and repairs. Solver instructions require current repository reads before
@@ -83,12 +128,19 @@ persisting tool arguments.
 The 15 functions in `agents/memory_tools.py` are the deliberately frozen
 model-callable read-only subset from the Phase 1 specification, not a claim of
 parity with all 30 tools exported by `code-review-graph`. Legion also owns the
-pre-run build operation natively, for 16 implemented upstream-equivalent
-capabilities in total. The omitted upstream set includes embedding, explicit
-post-processing, source-mutating refactors, wiki writes, and multi-repository
-registry operations, as well as read-only review helpers. Adding exact parity
+pre-run build operation natively. Embedding creation is now integrated into
+that operation, not another model-callable tool. The omitted upstream set
+still includes separate post-processing, source-mutating refactors, wiki
+writes, registry operations and read-only review helpers. Adding exact parity
 requires a separate safety and ownership pass; write/build/maintenance tools
 must not be exposed to the Solver merely to make the counts equal.
+
+This is an initial Phase 4 implementation, not full upstream parity. Remaining
+work includes the wider language/resolver and `REFERENCES` matrix, exact
+upstream community naming/splitting and graph populations, additional
+read-only helpers, native read/search enrichment, generation cleanup, and
+held-out/live solve evaluation. The reference fingerprints and implemented
+fixture coverage are recorded in `apps/agent/tests/legion_memory/reference_manifest.json`.
 
 ## Dependency tower
 
@@ -285,21 +337,24 @@ at least two real implementations need that boundary.
 
 ## Refactor measurements
 
-Measured on 4 September 2026 after Legion Memory Phase 3:
+Measured on 7 September 2026 during Legion Memory Phase 4:
 
 | Metric | Before | Current |
 | --- | ---: | ---: |
-| Production Python files | 81 | 84 |
-| Production Python lines | 10,922 | 15,105 |
-| Nonblank production Python lines | 9,383 | 13,180 |
+| Production Python files | 81 | 91 |
+| Production Python lines | 10,922 | approximately 16,200 |
+| Nonblank production Python lines | 9,383 | approximately 14,200 (budget 14,300) |
 | Solve coordinator | 631 lines | 327 lines |
-| Highest internal module fan-out | 21 | 14 |
+| Highest internal module fan-out | 21 | 15 at CLI; 14 elsewhere |
 | Supported solve architectures | 1 behind selectors/factories | 1 constructed directly |
 
 The current increase includes the parser, transactional SQLite store, graph
 algorithms, deterministic retrieval, native tool boundary, run-scoped memory
-session, usage evidence, and typed contracts. Phase 3 extends the existing
-solve lifecycle without adding another orchestration architecture. Compressing
+session, usage evidence, and typed contracts. Phase 4 adds seven focused modules:
+embedding contracts, Gemini and Qdrant adapters, vector lifecycle, hybrid ranking,
+symbol metadata, and weighted communities. The CLI's extra dependency is the
+embedding usage contract. These extend the existing solve lifecycle without
+adding another orchestration architecture. Compressing
 these boundaries would make the system smaller but harder to audit. File
 count, coordinator size, and dependency fan-out carry the intended navigation
 improvement, and the current nonblank size is guarded against regression.
