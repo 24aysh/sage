@@ -20,6 +20,7 @@ from sage.domain.memory import (
     MemoryRetrievalOutcome,
     MemoryRetrievalResult,
     MemoryRetrievalStatus,
+    MemoryCandidateDiagnostic,
 )
 from sage.legion_memory.parsing import detect_language
 from sage.legion_memory.store import GraphStore
@@ -73,6 +74,7 @@ class _Candidate:
     lexical: bool
     reasons: set[str] = field(default_factory=set)
     relationships: list[MemoryRelationshipEvidence] = field(default_factory=list)
+    channel_ranks: dict[str, int] = field(default_factory=dict)
 
 
 def extract_issue_signals(issue_text: str, *, max_chars: int) -> IssueSignals:
@@ -115,19 +117,24 @@ def retrieve_issue_context(
     issue_text: str, store: GraphStore, *, memory_file: Path,
     budgets: MemoryRetrievalBudgets, vectors: VectorIndex | None = None,
 ) -> MemoryRetrievalResult:
+    started = perf_counter()
     ranked = None
     mode = "none"
     status = VectorStatus()
     if vectors is not None:
         signals = extract_issue_signals(issue_text, max_chars=budgets.max_issue_chars)
-        rows, mode, status = hybrid_search(store, issue_text, vectors=vectors,
-            limit=budgets.max_results, context_files=signals.paths)
+        # One bounded semantic intent query; exact Issue evidence is fused below.
+        intent = " ".join((*signals.identifiers[:8], *signals.terms[:16]))[:1200]
+        rows, mode, status = hybrid_search(store, intent, vectors=vectors,
+            limit=budgets.max_results * 3, context_files=signals.paths)
         if mode in {"hybrid", "semantic"}:
             ranked = rows
     result = _retrieve_issue_context(issue_text, store, memory_file=memory_file,
         budgets=budgets, ranked=ranked, mode=mode)
     warnings = result.warnings + ((status.reason,) if status.reason else ())
     return result.model_copy(update={"vectors": status, "warnings": warnings,
+        "ranking_duration_ms": result.duration_ms,
+        "duration_ms": round((perf_counter() - started) * 1000, 2),
         "semantic_candidates": sum("semantic" in row.get("search_modes", []) for row in (ranked or []))})
 
 
@@ -146,22 +153,31 @@ def _retrieve_issue_context(
     signals = extract_issue_signals(issue_text, max_chars=budgets.max_issue_chars)
     candidates, search_modes = _lexical_candidates(store, signals, budgets)
     lexical_count = len(candidates)
+    for rank, candidate in enumerate(sorted(candidates.values(), key=_candidate_sort_key), 1):
+        candidate.channel_ranks["lexical"] = rank
     if ranked is not None:
-        exact_paths = {key: value for key, value in candidates.items() if "path_match" in value.reasons}
-        candidates = {}
-        for row in ranked:
+        # Rank fusion preserves the independent lexical stream. Raw lexical
+        # scores and RRF scores are intentionally never added together.
+        candidates = {key: value for key, value in candidates.items()
+                      if value.score >= budgets.usefulness_threshold}
+        for candidate in candidates.values():
+            candidate.score = 1 / (60 + candidate.channel_ranks["lexical"])
+        for rank, row in enumerate(ranked, 1):
             node = _safe_node(row)
             if node is not None:
-                candidates[str(node["qualified_name"])] = _Candidate(node=node,
-                    score=float(row["score"]), reasons=set(row.get("search_modes", [])), lexical=True)
-        strongest = max((c.score for c in candidates.values()), default=1 / 61)
-        for key, value in exact_paths.items():
-            if key not in candidates:
-                value.score = strongest * 1.5
-                candidates[key] = value
+                key = str(node["qualified_name"])
+                candidate = candidates.setdefault(key, _Candidate(node=node, score=0, lexical=True))
+                candidate.reasons.update(row.get("search_modes", []))
+                for channel in row.get("search_modes", []):
+                    candidate.channel_ranks[str(channel)] = int(row.get("channel_ranks", {}).get(channel, rank))
+                candidate.score = sum(1 / (60 + rank) for rank in candidate.channel_ranks.values())
+        for candidate in candidates.values():
+            if "path_match" in candidate.reasons or _explicit_match(candidate, signals):
+                candidate.score += 2 / 61
+                candidate.reasons.add("explicit_anchor")
         # RRF lives on a different scale than the lexical-only scorer.
         budgets = budgets.model_copy(update={"usefulness_threshold": 0.005})
-        search_modes = ("fts", "semantic") if mode == "hybrid" else ("semantic",)
+        search_modes = tuple(dict.fromkeys((*search_modes, "semantic")))
     seeds = sorted(
         (
             candidate
@@ -193,12 +209,12 @@ def _retrieve_issue_context(
         )
 
     warnings: list[str] = []
+    unresolved = 0
     for seed in seeds:
         try:
-            _expand_edges(store, seed, candidates, budgets.max_related_per_seed)
+            unresolved += _expand_edges(store, seed, candidates, budgets.max_related_per_seed)
             _expand_flows(store, seed, candidates, budgets.max_related_per_seed)
-            if len(candidates) < budgets.max_results:
-                _expand_community(store, seed, candidates, min(2, budgets.max_related_per_seed))
+            _expand_community(store, seed, candidates, min(2, budgets.max_related_per_seed))
         except sqlite3.Error as error:
             warnings.append(
                 f"Skipped expansion for {_clip(str(seed.node['qualified_name']), 120)}: "
@@ -213,7 +229,7 @@ def _retrieve_issue_context(
         ),
         key=_candidate_sort_key,
     )
-    limited = useful[: budgets.max_results]
+    limited = _select_diverse(useful, budgets.max_results)
     items = tuple(_retrieval_item(candidate, rank=index) for index, candidate in enumerate(limited, 1))
     context, rendered_count, details_truncated = _render_context(
         items,
@@ -254,7 +270,60 @@ def _retrieve_issue_context(
         items=visible,
         warnings=tuple(warnings[:20]),
         duration_ms=round((perf_counter() - started) * 1_000, 2),
+        unresolved_edges=unresolved,
+        diagnostics=tuple(MemoryCandidateDiagnostic(
+            qualified_name=str(candidate.node["qualified_name"]),
+            channel_ranks=candidate.channel_ranks, reasons=tuple(sorted(candidate.reasons)),
+            score=candidate.score,
+            selection="displayed" if str(candidate.node["qualified_name"]) in {i.qualified_name for i in visible}
+            else "display_budget" if candidate in limited else "rank_or_diversity_budget",
+        ) for candidate in useful[:200]),
     )
+
+
+def _explicit_match(candidate: _Candidate, signals: IssueSignals) -> bool:
+    qualified = str(candidate.node["qualified_name"]).casefold()
+    symbol = qualified.partition("::")[2]
+    return any(identifier in {qualified, symbol, str(candidate.node["name"]).casefold()}
+               for identifier in signals.identifiers)
+
+
+def _select_diverse(candidates: list[_Candidate], limit: int) -> list[_Candidate]:
+    """Select an evidenced Issue map, then diversify remaining file locators."""
+    if not candidates:
+        return []
+    priority = [candidates[0]]
+    roles = {"behavior_owner"}
+    candidates[0].reasons.add("role:behavior_owner")
+    for candidate in candidates[1:]:
+        if candidate.score < candidates[0].score * 0.45:
+            continue
+        path = PurePosixPath(str(candidate.node["file_path"]))
+        evidence = candidate.reasons
+        role = None
+        if candidate.node["is_test"] and "test_for" in evidence:
+            role = "test"
+        elif candidate.node["kind"] == "Endpoint" or "caller_of" in evidence:
+            role = "entry_or_caller"
+        elif {"callee_of", "same_flow"} & evidence and {"repositories", "repository", "db", "persistence"} & set(path.parts):
+            role = "persistence"
+        if role and role not in roles:
+            roles.add(role)
+            candidate.reasons.add("role:" + role)
+            priority.append(candidate)
+    selected: list[_Candidate] = []
+    deferred: list[_Candidate] = []
+    counts: dict[str, int] = {}
+    for candidate in priority + [c for c in candidates if c not in priority]:
+        path = str(candidate.node["file_path"])
+        wrapper = candidate.node["kind"] in {"File", "Class", "ConfigKey"}
+        anchored = bool({"explicit_anchor", "exact_identifier", "path_match"} & candidate.reasons)
+        if counts.get(path, 0) >= (1 if wrapper else 2) and not anchored:
+            deferred.append(candidate)
+        else:
+            selected.append(candidate)
+            counts[path] = counts.get(path, 0) + 1
+    return (selected + deferred)[:limit]
 
 
 def _lexical_candidates(
@@ -375,29 +444,40 @@ def _expand_edges(
     seed: _Candidate,
     candidates: dict[str, _Candidate],
     limit: int,
-) -> None:
+) -> int:
     qualified = str(seed.node["qualified_name"])
     marks = ",".join("?" for _ in _EDGE_KINDS)
     rows = store.rows(
-        f"""SELECT DISTINCT kind, source_qualified, target_qualified, confidence
-            FROM edges
-            WHERE kind IN ({marks})
-              AND (source_qualified=? OR target_qualified=?)
-            ORDER BY confidence DESC, kind, source_qualified, target_qualified
-            LIMIT ?""",  # nosec B608
-        (*_EDGE_KINDS, qualified, qualified, limit * 3),
+        f"""WITH neighbors AS (
+            SELECT e.kind, source_qualified, target_qualified, confidence,
+                ROW_NUMBER() OVER (PARTITION BY n.qualified_name
+                    ORDER BY confidence DESC, e.kind, source_qualified, target_qualified) AS position
+            FROM edges e JOIN nodes n ON n.qualified_name =
+                CASE WHEN source_qualified=? THEN target_qualified ELSE source_qualified END
+            WHERE e.kind IN ({marks}) AND (source_qualified=? OR target_qualified=?)
+                AND n.qualified_name != ?)
+            SELECT * FROM neighbors WHERE position=1
+            ORDER BY confidence DESC, kind, source_qualified, target_qualified LIMIT ?""",  # nosec B608
+        (qualified, *_EDGE_KINDS, qualified, qualified, qualified, limit),
     )
     seen: set[tuple[str, str]] = set()
+    unresolved = int(store.rows(
+        f"SELECT COUNT(*) AS count FROM edges e WHERE kind IN ({marks}) "
+        "AND (source_qualified=? OR target_qualified=?) AND NOT EXISTS "
+        "(SELECT 1 FROM nodes n WHERE n.qualified_name=CASE WHEN source_qualified=? "
+        "THEN target_qualified ELSE source_qualified END)",
+        (*_EDGE_KINDS, qualified, qualified, qualified),
+    )[0]["count"])
     for row in rows:
         outgoing = str(row["source_qualified"]) == qualified
         related = str(row["target_qualified"] if outgoing else row["source_qualified"])
         reason = _edge_reason(str(row["kind"]), outgoing=outgoing)
         if related == qualified or (related, reason) in seen:
             continue
-        seen.add((related, reason))
-        node = _safe_node(store.node(related))
+        node = _safe_node(store.exact_node(related))
         if node is None:
             continue
+        seen.add((related, reason))
         evidence = MemoryRelationshipEvidence(
             reason=reason,
             relationship=str(row["kind"]),
@@ -412,6 +492,7 @@ def _expand_edges(
         )
         if len(seen) >= limit:
             break
+    return unresolved
 
 
 def _expand_flows(
@@ -459,6 +540,7 @@ def _expand_community(
     rows = store.rows(
         """SELECT n.*, seed_community.community_id AS relation_id
            FROM node_communities seed_community
+           JOIN communities c ON c.id=seed_community.community_id AND c.size>=2 AND c.cohesion>=0.2
            JOIN node_communities related
              ON related.community_id=seed_community.community_id
            JOIN nodes n ON n.qualified_name=related.qualified_name

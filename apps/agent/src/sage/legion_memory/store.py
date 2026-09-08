@@ -23,6 +23,8 @@ from sage.legion_memory.migrations import SCHEMA_VERSION, apply_migrations
 from sage.legion_memory.parsing import EdgeRecord, NodeRecord, ParsedFile
 from sage.legion_memory.communities import community_groups
 from sage.legion_memory.resolution import resolve_symbol
+from sage.legion_memory.composition import infer_composition
+from sage.legion_memory.tsconfig import config_aliases
 
 _MAX_JSON_CHARS = 8_000
 
@@ -267,7 +269,7 @@ class GraphStore:
         ).fetchall()
         node_names: dict[str, list[sqlite3.Row]] = {}
         for row in self.connection.execute(
-            "SELECT qualified_name, name, file_path, kind, parent_qualified, language, extra_json FROM nodes"
+            "SELECT qualified_name, name, file_path, kind, parent_qualified, language, is_test, extra_json FROM nodes"
         ):
             node_names.setdefault(str(row["name"]), []).append(row)
         file_paths = {
@@ -283,21 +285,20 @@ class GraphStore:
             if "::" in target:
                 target = target.removeprefix("crate::").replace("::", "/")
             if not target.startswith("."):
-                configs = sorted((p for p in file_paths if PurePosixPath(p).name.startswith("tsconfig") and p.endswith(".json")),
+                configs = sorted((p for p in file_paths if PurePosixPath(p).name.startswith("tsconfig") and p.endswith((".json", ".jsonc"))),
                                  key=lambda p: (-len(PurePosixPath(p).parts), p))
                 for config in configs:
                     directory = PurePosixPath(config).parent
                     if not PurePosixPath(source_path).is_relative_to(directory):
                         continue
-                    options = json.loads(all_nodes[config]["extra_json"]).get("tsconfig", {})
-                    base = posixpath.normpath(str(directory / str(options.get("baseUrl", "."))))
+                    options = config_aliases(config, all_nodes)
                     matches = []
                     for pattern, replacements in options.get("paths", {}).items():
                         prefix, wildcard, suffix = pattern.partition("*")
                         if (not wildcard and target == pattern) or (wildcard and target.startswith(prefix) and target.endswith(suffix)):
                             middle = target[len(prefix):len(target) - len(suffix) if suffix else None]
                             for replacement in replacements:
-                                expanded = posixpath.normpath(base + "/" + replacement.replace("*", middle))
+                                expanded = posixpath.normpath(replacement.replace("*", middle))
                                 candidate = _resolve_import(expanded, source_path="", file_paths=file_paths)
                                 if candidate:
                                     matches.append(candidate)
@@ -308,8 +309,12 @@ class GraphStore:
                         if found:
                             return found
             return _resolve_import(target, source_path=source_path, file_paths=file_paths)
+        receiver_type = infer_composition(all_nodes, lambda name, source: resolve_symbol(
+            name, source=source, nodes=all_nodes, files=file_paths,
+            resolve_import=resolve_module, by_name=by_name))
         for row in rows:
             extra = json.loads(row["extra_json"])
+            extra.pop("resolution_evidence", None)
             target = str(extra.get("raw_target", row["target_qualified"]))
             resolved: str | None = None
             if row["kind"] == "HANDLES":
@@ -329,14 +334,22 @@ class GraphStore:
                 )
             else:
                 source = all_nodes.get(str(row["source_qualified"]), all_nodes[str(row["file_path"])])
+                receiver = str(extra.get("receiver", ""))
+                inferred = receiver_type(receiver, str(source["qualified_name"])) if receiver else None
+                if inferred:
+                    source = dict(source)
+                    metadata = json.loads(source["extra_json"])
+                    metadata["receivers"] = {**metadata.get("receivers", {}), receiver: inferred}
+                    source["extra_json"] = json.dumps(metadata)
+                    extra["resolution_evidence"] = "static_composition"
                 resolved = resolve_symbol(target, source=source, nodes=all_nodes,
                     files=file_paths, resolve_import=resolve_module,
                     receiver=str(extra.get("receiver", "")), kind=str(row["kind"]), by_name=by_name)
             # Resolve from the original spelling even when an unchanged caller
             # previously pointed at a now-renamed or newly ambiguous symbol.
             self.connection.execute(
-                "UPDATE edges SET target_qualified = ? WHERE id = ?",
-                (resolved or target, row["id"]),
+                "UPDATE edges SET target_qualified = ?, extra_json=? WHERE id = ?",
+                (resolved or target, _json({**extra, "resolved": resolved is not None}), row["id"]),
             )
 
         self.connection.execute("DELETE FROM edges WHERE kind='TRIGGERS'")
@@ -455,12 +468,12 @@ class GraphStore:
             )
         for row in self.connection.execute(
             "SELECT source_qualified, target_qualified, kind FROM edges "
-            "WHERE kind IN ('CALLS', 'INHERITS', 'IMPLEMENTS', 'REFERENCES', 'TESTED_BY', 'HANDLES', 'PUBLISHES', 'CONSUMES')"
+            "WHERE kind IN ('CALLS', 'INHERITS', 'IMPLEMENTS', 'CONTAINS', 'TESTED_BY', 'HANDLES', 'PUBLISHES', 'CONSUMES')"
         ):
             source = str(row["source_qualified"])
             target = str(row["target_qualified"])
             if source in graph and target in graph:
-                weight = {"CALLS": 1.0, "INHERITS": 0.8, "IMPLEMENTS": 0.7, "TESTED_BY": 0.4}.get(str(row["kind"]), 0.5)
+                weight = {"CALLS": 1.0, "INHERITS": 0.8, "IMPLEMENTS": 0.7, "TESTED_BY": 0.4, "CONTAINS": 0.3}.get(str(row["kind"]), 0.5)
                 if not graph.has_edge(source, target) or row["kind"] == "CALLS":
                     graph.add_edge(source, target, kind=str(row["kind"]), weight=weight)
         return graph
@@ -539,13 +552,23 @@ class GraphStore:
             return
         groups = community_groups(directed)
         ordered = sorted(
-            (set(group) for group in groups if group),
+            (set(group) for group in groups if len(group) >= 2),
             key=lambda group: (-len(group), min(group)),
         )
+        membership = {member: index for index, members in enumerate(ordered) for member in members}
+        internal, external = Counter(), Counter()
+        for source, target in directed.edges:
+            a, b = membership.get(source), membership.get(target)
+            if a is not None and a == b:
+                internal[a] += 1
+            else:
+                if a is not None:
+                    external[a] += 1
+                if b is not None:
+                    external[b] += 1
         for index, members in enumerate(ordered, start=1):
-            subgraph = graph.subgraph(members)
-            possible = len(members) * (len(members) - 1) / 2
-            cohesion = subgraph.number_of_edges() / possible if possible else 0.0
+            total = internal[index - 1] + external[index - 1]
+            cohesion = internal[index - 1] / total if total else 0.0
             languages = Counter(
                 str(graph.nodes[node].get("language", "")) for node in members
             )
@@ -554,7 +577,7 @@ class GraphStore:
                 for node in members
                 if PurePosixPath(str(graph.nodes[node].get("file_path", ""))).parts
             )
-            production = [n for n in members if not graph.nodes[n].get("is_test")]
+            production = sorted(n for n in members if not graph.nodes[n].get("is_test"))
             names = Counter(str(graph.nodes[n].get("name", "")) for n in production if graph.nodes[n].get("kind") == "Class")
             prefix = names.most_common(1)[0][0] if names else paths.most_common(1)[0][0] if paths else "root"
             name = f"{prefix}-{index}"
@@ -609,6 +632,13 @@ class GraphStore:
 
     def rows(self, sql: str, parameters: tuple[object, ...] = ()) -> list[dict[str, object]]:
         return [dict(row) for row in self.connection.execute(sql, parameters)]
+
+    def exact_node(self, target: str) -> dict[str, object] | None:
+        """Look up stored identity without resolving an unresolved edge by name."""
+        row = self.connection.execute(
+            "SELECT * FROM nodes WHERE qualified_name = ?", (target,),
+        ).fetchone()
+        return _public_node(row) if row is not None else None
 
     def node(self, target: str) -> dict[str, object] | None:
         row = self.connection.execute(

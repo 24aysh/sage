@@ -61,8 +61,8 @@ def query_graph(store: GraphStore, pattern: str, target: str, limit: int) -> dic
         from sage.legion_memory.review import transitive_tests
 
         names = transitive_tests(store, resolved)
-        results = [{**_public_node(store.node(name)), "edge_kind": "TESTED_BY"}
-                   for name in names[:limit] if store.node(name)]
+        results = [{**_public_node(store.exact_node(name)), "edge_kind": "TESTED_BY"}
+                   for name in names[:limit] if store.exact_node(name)]
         return dict(summary=f"Found {len(names)} directly or transitively linked test(s).",
                     total=len(names), returned=len(results), data={"pattern": pattern,
                     "target": target, "resolved_target": resolved, "results": results,

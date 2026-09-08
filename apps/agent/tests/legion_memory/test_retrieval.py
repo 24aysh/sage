@@ -35,6 +35,16 @@ def _retrieve(
     )
 
 
+@pytest.mark.parametrize("max_chars", [500, 1500, 4000, 12000])
+def test_compact_budget_retains_explicit_behavior_owner(fixture_repo, built_memory, max_chars):
+    result = _retrieve(fixture_repo, built_memory, "Fix `Worker.run` using `helper`.",
+                       budgets=MemoryRetrievalBudgets(max_chars=max_chars))
+    assert result.context_chars == len(result.context) <= max_chars
+    assert result.items[0].qualified_name in {"service.py::Worker.run", "service.py::helper"}
+    if max_chars >= 4000:
+        assert {"service.py::Worker.run", "service.py::helper"} <= {i.qualified_name for i in result.items}
+
+
 def test_issue_signals_extract_paths_identifiers_and_error_tokens() -> None:
     signals = extract_issue_signals(
         "Fix `helper` in service.py after Worker.run raises ProcessFailure.",

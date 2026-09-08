@@ -30,6 +30,8 @@ def python_metadata(content: bytes) -> tuple[dict[str, object], dict[tuple[str, 
         }
         if isinstance(node, ast.ClassDef):
             extra["bases"] = [ast.unparse(base) for base in node.bases[:10]]
+            extra["fields"] = {n.target.id: ast.unparse(n.annotation) for n in node.body
+                               if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)}
         receivers: dict[str, str] = {}
         functions = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))] if isinstance(node, ast.ClassDef) else [node]
         for function in functions:
@@ -51,6 +53,14 @@ def python_metadata(content: bytes) -> tuple[dict[str, object], dict[tuple[str, 
                     receivers[ast.unparse(statement.target)] = ast.unparse(statement.annotation)
         extra["receivers"] = dict(list(receivers.items())[:30])
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            extra["parameters"] = [a.arg for a in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)]
+            extra["assignments"] = [
+                {"target": ast.unparse(target)[:200], "value": ast.unparse(statement.value)[:1000]}
+                for statement in node.body if isinstance(statement, (ast.Assign, ast.AnnAssign)) and statement.value
+                for target in (statement.targets if isinstance(statement, ast.Assign) else [statement.target])
+            ][:30]
+            extra["returns"] = [ast.unparse(n.value)[:1000] for n in node.body
+                                if isinstance(n, ast.Return) and n.value][:10]
             extra["bindings"] = [a.arg for a in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)]
             local_imports = {}
             for statement in node.body:
@@ -63,7 +73,18 @@ def python_metadata(content: bytes) -> tuple[dict[str, object], dict[tuple[str, 
                     extra["bindings"].extend(t.id for t in statement.targets if isinstance(t, ast.Name))
             extra["imports"] = local_imports
         result[(node.name, node.lineno)] = extra
-    return {"imports": dict(list(imports.items())[:50])}, result
+    blueprints = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or not isinstance(statement.value, ast.Call):
+            continue
+        call = statement.value
+        if isinstance(call.func, ast.Name) and call.func.id in imports and imports[call.func.id] == {"module": "flask", "symbol": "Blueprint"}:
+            prefix = next((k.value.value for k in call.keywords if k.arg == "url_prefix"
+                           and isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)), "")
+            for target in statement.targets:
+                if isinstance(target, ast.Name):
+                    blueprints[target.id] = prefix
+    return {"imports": dict(list(imports.items())[:50]), "blueprints": blueprints}, result
 
 
 def tree_metadata(root, content: bytes, language: str) -> dict[str, object]:

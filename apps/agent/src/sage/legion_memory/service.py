@@ -598,12 +598,21 @@ class LegionMemoryService:
             ]
             flow = dict(flows[0])
             flow.pop("path_json", None)
+            gaps = store.rows(
+                "SELECT e.source_qualified,e.target_qualified FROM flow_memberships m "
+                "JOIN edges e ON e.source_qualified=m.qualified_name "
+                "LEFT JOIN nodes n ON n.qualified_name=e.target_qualified "
+                "WHERE m.flow_id=? AND e.kind='CALLS' AND n.id IS NULL "
+                "ORDER BY e.source_qualified,e.target_qualified LIMIT 21", (flow_id,),
+            )
             return self._result(
                 store,
                 summary=f"Flow {flow_id} contains {len(steps)} indexed step(s).",
                 total=len(steps),
                 returned=len(visible),
-                data={"flow": flow, "steps": visible},
+                data={"flow": flow, "steps": visible, "unresolved_calls": gaps[:20],
+                      "unresolved_calls_truncated": len(gaps) > 20,
+                      "scope": "Validated static calls only; unresolved calls may be external or dynamic."},
             )
 
     def get_affected_flows_tool(
@@ -952,7 +961,13 @@ class LegionMemoryService:
             result = self._git(path, "rev-parse", "--show-toplevel").strip()
         except subprocess.SubprocessError as error:
             raise LegionMemoryBuildError(f"Path is not a Git repository: {path}") from error
-        return Path(result).resolve()
+        root = Path(result).resolve()
+        if root != path:
+            raise LegionMemoryBuildError(
+                f"Requested repository {path} belongs to ancestor Git root {root}. "
+                "Pass the intended Git root explicitly; initialize standalone fixtures yourself."
+            )
+        return root
 
     def _repository_identity(self, root: Path) -> str:
         origin = self._git_optional(root, "config", "--get", "remote.origin.url")

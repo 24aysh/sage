@@ -149,6 +149,16 @@ class MemoryRetrievalItem(BaseModel):
     relationships: tuple[MemoryRelationshipEvidence, ...] = ()
 
 
+class MemoryCandidateDiagnostic(BaseModel):
+    """Bounded ranking evidence, not model context or a quality score."""
+
+    qualified_name: str
+    channel_ranks: dict[str, int] = Field(default_factory=dict)
+    reasons: tuple[str, ...] = ()
+    score: float = 0
+    selection: str = "not_selected"
+
+
 class MemoryRetrievalResult(BaseModel):
     """Bounded, explainable result of retrieving memory for one Issue."""
 
@@ -176,6 +186,9 @@ class MemoryRetrievalResult(BaseModel):
     items: tuple[MemoryRetrievalItem, ...] = ()
     warnings: tuple[str, ...] = ()
     duration_ms: float = Field(default=0.0, ge=0.0)
+    ranking_duration_ms: float = Field(default=0.0, ge=0.0)
+    diagnostics: tuple[MemoryCandidateDiagnostic, ...] = Field(default=(), max_length=200)
+    unresolved_edges: int = Field(default=0, ge=0)
 
 
 class MemoryToolCallRecord(BaseModel):
@@ -190,6 +203,26 @@ class MemoryToolCallRecord(BaseModel):
     returned_paths: tuple[str, ...] = Field(default=(), max_length=20)
     duration_ms: float = Field(ge=0.0)
     truncated: bool = False
+    context_chars: int = Field(default=0, ge=0)
+    session_number: int = Field(default=0, ge=0)
+
+
+class MemoryExposure(BaseModel):
+    """Observed exposure only; does not assert causal use or savings."""
+
+    available: bool = False
+    retrieved: bool = False
+    exposed: bool = False
+    queried: bool = False
+    read_enriched: bool = False
+    sessions: int = 0
+    initial_context_chars: int = 0
+    enrichment_chars: int = 0
+    graph_response_chars: int = 0
+    source_read_chars: int = 0
+    tool_schema_chars: int = 0
+    retrieved_paths_read: tuple[str, ...] = ()
+    preflight_duration_ms: float = 0
 
 
 class LegionMemoryRunArtifact(BaseModel):
@@ -198,6 +231,7 @@ class LegionMemoryRunArtifact(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     format_version: int = 1
+    exposure: MemoryExposure = Field(default_factory=MemoryExposure)
     embedding_usage: VectorUsage | None = None
     enrichments: tuple[MemoryToolCallRecord, ...] = ()
     requested_memory_file: Path

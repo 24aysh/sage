@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pytest
 
+
+def pytest_addoption(parser):
+    parser.addoption("--legion-reference", default=None,
+                     help="Optional trusted pinned reference checkout for offline differential tests.")
+
 from sage.legion_memory.service import LegionMemoryService
 
 

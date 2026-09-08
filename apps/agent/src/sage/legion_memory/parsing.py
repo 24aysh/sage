@@ -8,7 +8,6 @@ without changing SQLite or tool contracts.
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from bisect import bisect_right
 from dataclasses import dataclass, field, replace
@@ -17,12 +16,14 @@ from pathlib import Path, PurePosixPath
 from tree_sitter import Node
 from tree_sitter_language_pack import get_parser
 from sage.legion_memory.symbol_metadata import python_metadata, tree_metadata
+from sage.legion_memory.tsconfig import parse_tsconfig
 
-PARSER_VERSION = "legion-tree-sitter-v3"
+PARSER_VERSION = "legion-tree-sitter-v4"
 MAX_FILE_BYTES = 2_000_000
 
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".json": "json",
+    ".jsonc": "json",
     ".py": "python",
     ".js": "javascript",
     ".jsx": "javascript",
@@ -224,21 +225,14 @@ class CodeParser:
             self._parsers[language] = parser
         tree = parser.parse(content)  # type: ignore[attr-defined]
         extractor = _Extractor(relative, language, content)
+        if language == "python":
+            python_file_extra, _ = python_metadata(content)
+            extractor.blueprints = python_file_extra.get("blueprints", {})
         extractor.extract(tree.root_node)
         file_extra = tree_metadata(tree.root_node, content, language)
         if language == "json" and PurePosixPath(relative).name.startswith("tsconfig"):
             try:
-                options = json.loads(content).get("compilerOptions", {})
-                base_url = options.get("baseUrl", ".")
-                paths = options.get("paths", {})
-                if not isinstance(base_url, str) or not isinstance(paths, dict):
-                    raise ValueError("Invalid tsconfig aliases")
-                file_extra["tsconfig"] = {
-                    "baseUrl": base_url[:500],
-                    "paths": {key: values[:10] for key, values in list(paths.items())[:50]
-                              if isinstance(key, str) and key.count("*") <= 1
-                              and isinstance(values, list) and all(isinstance(v, str) and len(v) <= 500 for v in values)},
-                }
+                file_extra["tsconfig"] = parse_tsconfig(content)
             except (ValueError, AttributeError):
                 file_extra["config_warning"] = "Unsupported tsconfig syntax; aliases may be unresolved."
         extractor.nodes[0] = replace(extractor.nodes[0], extra=file_extra)
@@ -267,6 +261,7 @@ class CodeParser:
 class _Extractor:
     def __init__(self, file_path: str, language: str, content: bytes) -> None:
         self.file_path = file_path
+        self.blueprints: dict[str, str] = {}
         self.language = language
         self.content = content
         self._line_starts = [0]
@@ -505,6 +500,8 @@ class _Extractor:
                                      confidence=0.9, extra={"framework": True}))
 
     def _endpoint(self, handler: str, method: str, path: str, line: int) -> None:
+        if _is_test(self.file_path, handler.rsplit("::", 1)[-1]):
+            return
         name = f"{method.upper()} {path}"
         qn = f"{self.file_path}::endpoint:{name}"
         if qn not in self._qualified_names:
@@ -547,7 +544,9 @@ class _Extractor:
             return
         prefix = self._text(node.parent) if node.parent and node.parent.type == "decorated_definition" else self._text(node)
         prefix = prefix.split("{", 1)[0] if self.language != "python" else prefix.split("def ", 1)[0]
-        for method, path, options in re.findall(r"@\w+\.(route|get|post|put|patch|delete)\(\s*['\"]([^'\"]+)['\"]([^)]*)\)", prefix):
+        for owner, method, path, options in re.findall(r"@(\w+)\.(route|get|post|put|patch|delete)\(\s*['\"]([^'\"]+)['\"]([^)]*)\)", prefix):
+            if owner in self.blueprints:
+                path = self.blueprints[owner].rstrip("/") + "/" + path.lstrip("/")
             methods = [method] if method != "route" else ["GET"]
             declared = re.search(r"methods\s*=\s*\[([^]]*)\]", options)
             if method == "route" and declared:

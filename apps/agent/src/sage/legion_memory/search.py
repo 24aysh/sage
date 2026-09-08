@@ -31,7 +31,8 @@ def hybrid_search(
     context_files: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, object]], str, VectorStatus]:
     fetch = limit * 3
-    phrase = '"' + query.replace('"', '""') + '"'
+    terms = list(dict.fromkeys(re.findall(r"[\w]+", query)))[:24]
+    phrase = ' OR '.join('"' + term.replace('"', '""') + '"' for term in terms)
     try:
         matches = store.rows(
             "SELECT n.qualified_name, bm25(nodes_fts) AS rank FROM nodes_fts "
@@ -47,9 +48,11 @@ def hybrid_search(
         nodes, fallback = store.search(query, kind=kind, limit=limit)
         return nodes, fallback, status
     identifiers = re.findall(r"\b[A-Za-z_]\w*(?:\.\w+)+\b|\b\w+_\w+\b|\b[A-Z][a-z]+(?:[A-Z]\w*)+\b", query)
+    channel_ranks = {label: {name: rank for rank, (name, _) in enumerate(ranking, 1)}
+                     for label, ranking in (("fts", lexical), ("semantic", semantic))}
     nodes = []
     for name, score in rrf_merge(lexical, semantic):
-        raw = store.node(name)
+        raw = store.exact_node(name)
         if not raw or (kind and raw["kind"] != kind):
             continue
         boost = 1.0
@@ -64,7 +67,8 @@ def hybrid_search(
         if raw["file_path"] in context_files:
             boost *= 1.5
         node = _public_node(raw)
-        node.update(score=score * boost, search_modes=[label for label, ranking in (("fts", lexical), ("semantic", semantic)) if any(qn == name for qn, _ in ranking)])
+        ranks = {label: ranking[name] for label, ranking in channel_ranks.items() if name in ranking}
+        node.update(score=score * boost, search_modes=list(ranks), channel_ranks=ranks)
         nodes.append(node)
     nodes.sort(key=lambda n: (-float(n["score"]), str(n["qualified_name"])))
     return nodes[:limit], mode, status

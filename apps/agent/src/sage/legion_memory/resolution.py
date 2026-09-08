@@ -26,6 +26,8 @@ def resolve_symbol(
     own = json.loads(source.get("extra_json", "{}"))
     parent = nodes.get(source.get("parent_qualified"), {})
     parent_extra = json.loads(parent.get("extra_json", "{}"))
+    if receiver in own.get("ambiguous_receivers", []) or receiver in parent_extra.get("ambiguous_receivers", []):
+        return None
     imports = {**metadata.get("imports", {}), **own.get("imports", {})}
     # A parameter/local assignment can shadow a file import. Scoped imports
     # remain resolvable; an unrelated global homonym must not win.
@@ -66,7 +68,7 @@ def resolve_symbol(
     receiver_type = receiver_type or parent_extra.get("receivers", {}).get(receiver.removeprefix("this."))
     receiver_type = receiver_type or metadata.get("receivers", {}).get(receiver.removeprefix("this."))
     constructor = re.fullmatch(r"(?:new\s+)?([\w.]+)\([^()]*\)", receiver)
-    if constructor and constructor[1] != "super":
+    if constructor and constructor[1] != "super" and not receiver_type:
         receiver_type = constructor[1]
     if receiver in {"self", "this", "super()", "super"} and parent:
         matches = [n for n in candidates(target) if n.get("parent_qualified") == parent["qualified_name"]]
@@ -83,6 +85,9 @@ def resolve_symbol(
             return inherited[0]["qualified_name"]
         return None
     if receiver_type:
+        if receiver_type in nodes:
+            matches = [n for n in candidates(target) if n.get("parent_qualified") == receiver_type]
+            return str(matches[0]["qualified_name"]) if len(matches) == 1 else None
         names = re.findall(r"[\w.]+", receiver_type)
         receiver_type = next((n for n in names if n in imports), names[-1] if names else "")
         imported = imports.get(receiver_type)

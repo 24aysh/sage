@@ -17,7 +17,7 @@ import networkx as nx
 _LEIDEN_LOCK = Lock()
 
 
-def community_groups(directed: nx.DiGraph) -> list[set[str]]:
+def community_groups(directed: nx.DiGraph, *, _depth: int = 0) -> list[set[str]]:
     names = sorted(directed)
     positions = {name: index for index, name in enumerate(names)}
     weights: dict[tuple[int, int], float] = {}
@@ -45,6 +45,17 @@ def community_groups(directed: nx.DiGraph) -> list[set[str]]:
         finally:
             ig.set_random_number_generator(None)
     groups = [{names[index] for index in group} for group in partition]
+    # A bounded refinement pass prevents a single giant cluster becoming a
+    # repository-wide relevance shortcut. Never manufacture arbitrary chunks.
+    if _depth < 2:
+        threshold = max(10, len(names) // 4)
+        refined = []
+        for group in groups:
+            if threshold < len(group) < len(names):
+                refined.extend(community_groups(directed.subgraph(group).copy(), _depth=_depth + 1))
+            else:
+                refined.append(group)
+        groups = refined
     membership = {name: index for index, group in enumerate(groups) for name in group}
     # A test follows the production community with the strongest TESTED_BY
     # evidence, not a large unrelated cluster formed by shared test helpers.
