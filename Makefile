@@ -329,7 +329,7 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 
 test: ## Run deterministic unit tests (no API call required).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
-		pytest -c "$(AGENT_PROJECT)/pyproject.toml"
+		pytest -c "$(AGENT_PROJECT)/pyproject.toml" "$(AGENT_PROJECT)/tests"
 
 github-test: ## Run deterministic GitHub integration tests (no live API/model call).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \

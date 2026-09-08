@@ -109,16 +109,19 @@ next build, including no-change builds. Other repositories and separately
 configured embedding identities are not deleted. Copying only SQLite preserves
 graph-only use, not the vectors.
 
-`legion_memory/search.py` combines phrase-FTS and cosine-ranked vectors using
+`legion_memory/search.py` combines bounded term-FTS and cosine-ranked vectors using
 RRF (constant 60), query-kind/identifier boosts and a context-file boost.
-The Issue adapter retains explicit-path matches, allows semantic-only seeds,
-and uses a separate RRF-scale threshold. Vector errors fall back to the
+The Issue adapter fuses its independent lexical ranking with FTS and semantic
+channel ranks, retains explicit identifier/path anchors, allows semantic-only
+seeds, and uses a separate RRF-scale threshold. Vector errors fall back to the
 existing lexical Issue scorer. The configurable cosine floor is provisional,
 not a measured universal relevance threshold. A session caches up to 32 query
 vectors. Search modes and separate embedding/Qdrant usage are observable.
 
-Initial context now includes signatures and seed-linked relationship evidence.
-Community expansion is a small fallback after direct/flow evidence. Native
+Initial context includes signatures and seed-linked relationship evidence,
+with cross-file diversity and a configurable 4,000-character solve cap.
+Standalone retrieval retains its explicit larger budget.
+Community expansion contributes at most two neighbors per seed. Native
 tools project compact node records; search, relationship queries, flow and
 community inspection allow `detail_level=standard`. Solver instructions ask
 for targeted source verification instead of repeating broad discovery.
@@ -131,7 +134,10 @@ The provider call ledger separately records every model-requested tool name so
 baseline and memory-assisted runs can compare tool and token totals without
 persisting tool arguments.
 
-The 21 functions in `agents/memory_tools.py` extend the original 15 with
+The complete 21-function native registry remains available. Normal solving
+binds only semantic search, query patterns, flow, community, and impact tools;
+no-match retrieval binds none and performs no enrichment queries.
+The registry extends the original 15 with
 `detect_changes_tool`, `get_review_context_tool`, `find_large_functions_tool`,
 `get_surprising_connections_tool`, `get_suggested_questions_tool`, and a
 read-only `refactor_tool` (rename-location preview, dead-code candidates,
@@ -152,15 +158,27 @@ Their owners and dispatch links are reconciled globally after file deletion.
 `resolution.py` follows scoped imports, aliases, bounded re-export chains and
 typed receivers; unresolved/dynamic dispatch is not assigned arbitrarily to
 a same-named method. The regression matrix covers Python, JS/TS, Java, Go and
-Rust cases, including JSON tsconfig path mappings. tsconfig inheritance/JSONC
-and arbitrary runtime/framework dispatch are not certified by these fixtures.
+Rust cases, including JSONC and bounded relative single-parent tsconfig
+inheritance from indexed files only. Package-based/multiple-parent inheritance
+and arbitrary runtime/framework dispatch are not supported by these fixtures.
+`composition.py` propagates Python constructor arguments, receiver fields,
+factory returns and uniquely evidenced Flask extension bindings without
+executing source. Conflicting bindings remain unresolved. Blueprint prefixes
+are included; test-client calls are not production endpoint declarations.
+Flow queries report unresolved external/dynamic call boundaries. Communities
+use containment rather than noisy reference edges, exclude singleton results,
+measure internal versus boundary edges, and use bounded partition refinement.
 
 `MemorySession.enrich` enriches successful Solver file reads and text searches
 with callers/callees, up to three flows, a community and test links. Search
 enrichment is lexical: ordinary reads never make hidden embedding requests.
 Enrichment respects read ranges, deduplicates emitted symbol-context blocks,
 and stays within both the existing tool-output cap and 3,000-character per-call /
-16,000-character session caps. Failure preserves original source output.
+16,000-character history caps, plus a 48,000-character run enrichment cap.
+Fresh repair histories reset visibility and receive unchanged base locators.
+Structured edits invalidate locators; enrichment suppresses edited symbols
+and native responses mark edited records base-only without old line ranges.
+Identical visible native responses are suppressed. Failure preserves original source output.
 Structured usage is recorded separately as `enrichments` in legion-memory.json;
 these are not fabricated model-requested tool calls. No-memory reads and the
 Reviewer remain unchanged.
@@ -169,10 +187,28 @@ Build, embedding and post-processing remain workflow-owned. MCP/editor hook
 transport, wiki/registry workflows and a second mutation/apply-token path are
 not introduced to match upstream tool counts.
 
-This is an initial Phase 4 implementation, not full upstream parity. Remaining
-work includes exhaustive language/framework parity certification and exact
-upstream community naming/splitting and graph populations. Live evaluation is
-user-managed and was explicitly excluded from this update. The reference fingerprints and implemented
+Memory artifacts distinguish availability, retrieval, exposure, queries and
+read enrichment. Character ledgers distinguish source, initial packets,
+enrichment, native output and schema bindings; these are not billed tokens or
+proof of causal memory use. Query embedding, vector retrieval, ranking, graph
+build, embedding sync and total memory-preflight timing remain separate.
+
+Embedding capacity is logged before hosted calls; over-budget builds embed
+nothing. The Gemini adapter supports 1–8 independent requests concurrently
+(default 1), preserving single-document semantics, bounded retries/deadlines,
+32-node checkpoints and publication-before-cleanup. Repository requests must
+equal their resolved Git root; nested non-repositories are rejected.
+
+Optional verification-environment preflight runs in the actual sandbox before
+model/embedding calls in both local solve modes. It checks configured Python
+test tooling and declared installed distributions without importing repository
+code, running tests, installing dependencies or enabling networking. It is
+tooling readiness, not a test result or hidden grader.
+
+This is targeted A–E coverage, not universal reference parity. Remaining
+certification includes arbitrary language/framework dispatch and exact naming
+and graph populations outside the normalized fixtures. Phase F's benchmark
+harness and live evaluation were not implemented. The reference fingerprints and implemented
 fixture coverage are recorded in `apps/agent/tests/legion_memory/reference_manifest.json`.
 
 ## Dependency tower

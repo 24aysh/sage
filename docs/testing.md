@@ -720,10 +720,16 @@ candidate diff, verification/review evidence, `usage.json`, and the terminal
 usage totals. One lower-token run is useful evidence, not proof that memory
 always improves quality or cost.
 
+The proposed [Legion Memory evaluation plan](../specs/26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md)
+defines quality-first benchmarking with independently tested fixes, held-out
+issues, paired trials, and separate retrieval diagnostics. Its `legion-eval-*`
+commands are planned, not implemented. Tool counts and token totals remain
+useful cost diagnostics, not correctness scores.
+
 ## Legion Memory Phase 4: embeddings and compact context
 
 This is the initial local Phase 4 implementation, not a claim of complete
-code-review-graph parity or measured token savings. It adds richer Python
+reference-behavior parity or measured token savings. It adds richer Python
 metadata/resolution, JS/TS arrow-function extraction, improved flows, weighted
 Leiden communities, relationship-rich context, and opt-in hybrid retrieval.
 
@@ -819,6 +825,94 @@ make graph
 make github-smoke
 make github-doctor
 ```
+
+## Legion retrieval-efficiency changes (spec 26, A–E)
+
+Run offline coverage, including fake embeddings with 2,001 eligible symbols,
+interrupted/resumed builds, semantic distractors, static composition, JSONC,
+repair histories and environment failures:
+
+```bash
+make check
+uv run --project apps/agent pytest apps/agent/tests/legion_memory/test_reference_differential.py --legion-reference code-review-graph
+```
+
+The second command is optional: it verifies pinned source hashes and compares
+normalized nodes, resolved calls, flows, communities and a query on a small
+authored fixture. Ordinary tests use the checked-in golden and skip the checkout
+comparison. This is structural regression coverage, not proof of all-language
+parity or improved issue resolution. Phase F is not implemented.
+
+Use an actual Git root with a committed base; nested folders that resolve to an
+ancestor Git repository are rejected. Sage does not initialize fixtures. Parser
+identity changed, so the next build reparses existing indexes safely.
+
+```bash
+make legion-memory REPO=/absolute/repo
+make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3
+make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3
+```
+
+Retrieval saves `graph.context.md` and `graph.retrieval.json` beside
+`graph.sqlite3`. JSON includes bounded candidate/channel ranks, reasons,
+selection/omission diagnostics, unresolved-edge counts and timing. Re-running
+retrieval replaces these latest-result files; per-run evidence remains in
+`legion-memory.json` under the run directory.
+
+The solve packet defaults to 4,000 characters; change
+`SAGE_LEGION_INITIAL_CONTEXT_CHARS` (500–12,000) deliberately. Offline size
+checks cover 500/1,500/4,000/12,000 characters and retain explicit behavior
+owners on the regression fixture. This is a provisional compact default, not
+a quality-optimal budget established on larger repos. Standalone retrieval's
+`--max-chars` is independent. Normal solving exposes five graph tools instead
+of all 21; no-match exposes none. Repairs receive fresh unchanged locators;
+edited locations require current source reads.
+
+Interpret the final exposure fields literally:
+
+- `available=yes, retrieved=no`: ready graph, no useful initial match; normal inspection.
+- `retrieved=yes, exposed=yes, queried=no`: initial context reached the model; no native query needed.
+- `read_enriched=yes`: graph facts accompanied source reads/searches.
+- `unavailable`: logged fallback, not an assertion that the agent cannot solve.
+
+Path overlap is observational, not proof that memory caused a better fix.
+Character counts are serialized/body sizes, not token estimates. Schema sizes
+sum bindings, not every model request. Provider token totals remain authoritative;
+embedding usage and build cost stay separate. No savings claim has been measured.
+
+For larger indexes, review capacity/cost before enabling hosted work:
+
+```dotenv
+SAGE_LEGION_EMBEDDING_MAX_NODES=10000
+SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS=1800
+SAGE_LEGION_EMBEDDING_CONCURRENCY=4
+SAGE_LEGION_EMBEDDING_RETRIES=1
+```
+
+Then use `make legion-memory REPO=... EMBEDDINGS=on`. Defaults remain 2,000
+nodes, 300 seconds and concurrency 1. Counts/limits are logged before requests;
+no arbitrary prefix is published when over capacity. Retry an interrupted build
+to reuse acknowledged 32-node checkpoints. A partly completed batch may need
+re-embedding. Concurrency does not bypass rate limits. Separate requests avoid
+Gemini Embedding 2's multi-input aggregation
+([Google embedding contract](https://ai.google.dev/gemini-api/docs/embeddings)).
+
+To catch missing Python tooling before spending model calls, configure the
+same opt-in preflight for both `make solve` and `make legion-solve`:
+
+```dotenv
+SAGE_VERIFICATION_PREFLIGHT=true
+SAGE_VERIFICATION_COMMANDS_JSON=[{"id":"tests","command":"python3 -m pytest -q","required":true}]
+SAGE_VERIFICATION_PREFLIGHT_DEPENDENCIES_JSON=["flask","pymongo"]
+```
+
+Use your prepared `SANDBOX_IMAGE`. A failed probe stops before model/embedding
+calls and writes `verification-preflight.json`; sandbox cleanup still runs.
+This checks interpreter/distribution availability only, not test collection,
+application imports, dependency compatibility or correctness. Supported commands
+are `python[3] -m pytest` and `pytest` (the latter probes Python 3 tooling).
+Other runners are rejected when preflight is enabled. No packages are installed
+and networking remains disabled. Keep preflight settings identical between arms.
 
 The new tests cover semantic-only matches, no-hit and provider failure fallback,
 unchanged-vector reuse, changed/deleted symbols, interrupted-batch recovery,
