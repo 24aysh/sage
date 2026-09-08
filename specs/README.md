@@ -15,7 +15,8 @@ under `docs/` for present behavior and commands.
 
 | Document | Status |
 | --- | --- |
-| [`25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Phase 1 native SQLite graph and tools implemented; retrieval and local Solver integration remain proposed; GitHub Actions integration is deferred |
+| [`25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Native graph, retrieval, local Solver integration, and initial embeddings implemented; complete parity and measured savings remain open; GitHub Actions integration is deferred |
+| [`26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md`](26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md) | Implementation-ready correctness fixes and quality-first evaluation design: held-out tasks, independent grading, matched trials, ablations, and statistical release gates; no live benchmark results yet |
 
 ## Implemented consolidation
 
