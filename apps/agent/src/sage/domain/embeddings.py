@@ -53,6 +53,7 @@ class VectorStatus(BaseModel):
     cleanup_status: str = "not_run"
     reason: str | None = None
     duration_ms: float = 0
+    query_embedding_duration_ms: float = 0
     usage: VectorUsage | None = None
 
 

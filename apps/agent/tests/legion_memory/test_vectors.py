@@ -139,6 +139,77 @@ def test_partial_failure_is_unpublished_and_restart_reuses_acknowledged_batches(
     assert repaired.vectors.reused >= 32
 
 
+def test_large_index_budget_resume_reuse_and_query(tmp_path):
+    from sage.legion_memory.parsing import CodeParser, PARSER_VERSION
+    provider = FakeEmbeddings()
+    points = {}
+    class Store:
+        def get(self, ids):
+            return {key: points[key] for key in ids if key in points}
+        def upsert(self, batch):
+            points.update({point.point_id: point for point in batch})
+        def prune(self, *, keep_generation):
+            obsolete = [key for key, value in points.items() if value.generation != keep_generation]
+            for key in obsolete:
+                del points[key]
+            return len(obsolete)
+        def search(self, vector, *, generation, limit):
+            return [(point.qualified_name, 1.) for point in points.values() if point.generation == generation][:limit]
+        def close(self):
+            pass
+    factory = lambda *_: Store()
+    with GraphStore(tmp_path / "graph.sqlite3") as graph:
+        graph.apply_update(parsed_files=[CodeParser().parse_bytes(
+            "\n".join(f"def work_{n}():\n    pass\n" for n in range(2001)).encode(), relative_path="many.py")],
+            removed_files=[], repository_id="test", indexed_sha="sha", parser_version=PARSER_VERSION,
+            build_type="full", full_rebuild=True)
+        denied = VectorIndex(provider, factory).synchronize(graph)
+        assert denied.eligible == 2001 and denied.status == "unavailable"
+        assert provider.usage.document_calls == 0 and not points
+        original = provider.embed
+        def interrupted(text, **kwargs):
+            if provider.usage.document_calls >= 34:
+                raise MemoryVectorError("interrupt")
+            return original(text, **kwargs)
+        provider.embed = interrupted
+        index = VectorIndex(provider, factory, max_nodes=2100)
+        assert index.synchronize(graph).status == "unavailable"
+        assert len(points) == 32
+        provider.embed = original
+        resumed = index.synchronize(graph)
+        assert resumed.status == "ready" and resumed.reused == 32
+        assert resumed.embedded == 1969
+        reused = index.synchronize(graph)
+        assert reused.embedded == 0 and reused.reused == 2001
+        with memory_lock(graph.path):
+            pass
+        hits, status = index.search(graph, "work", limit=3)
+        assert status.status == "ready" and len(hits) == 3
+
+
+def test_provider_concurrency_is_bounded_and_preserves_order(monkeypatch):
+    from threading import Barrier, Lock
+    from time import monotonic
+    provider = GeminiEmbeddingProvider(api_key="test", dimensions=3, concurrency=2)
+    lock, barrier = Lock(), Barrier(2)
+    active = maximum = 0
+    def embed(text, **kwargs):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+        barrier.wait(timeout=3)
+        with lock:
+            active -= 1
+        return [float(text), 1., 0.]
+    monkeypatch.setattr(provider, "embed", embed)
+    values = provider.embed_many(["1", "2", "3", "4"], timeout=3, deadline=monotonic() + 10)
+    assert [v[0] for v in values] == [1, 2, 3, 4]
+    assert maximum == 2
+    with pytest.raises(MemoryVectorError, match="deadline"):
+        provider.embed_many(["1"], timeout=3, deadline=monotonic() - 1)
+
+
 def test_index_identity_and_lock_boundaries(fixture_repo, tmp_path):
     service, provider = vector_service(tmp_path)
     database = tmp_path / "graph.sqlite3"

@@ -12,6 +12,7 @@ import json
 import math
 import re
 import sqlite3
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +28,8 @@ from sage.domain.embeddings import (
     validate_vector,
 )
 from sage.legion_memory.store import GraphStore
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -107,13 +110,18 @@ class VectorIndex:
         eligible = embedded = reused = 0
         vectors = None
         try:
+            eligible = int(store.rows("SELECT COUNT(*) AS count FROM nodes WHERE kind != 'File'")[0]["count"])
+            logger.info("Legion Memory embedding preflight: %s eligible nodes; limit=%s; deadline=%ss",
+                        eligible, self._max_nodes, self._deadline)
             nodes = store.rows(
                 "SELECT * FROM nodes WHERE kind != 'File' "
                 "ORDER BY qualified_name LIMIT ?", (self._max_nodes + 1,),
             )
-            eligible = len(nodes)
             if eligible > self._max_nodes:
-                raise MemoryVectorError("Embedding node budget exceeded; raise the explicit limit.")
+                raise MemoryVectorError(
+                    f"Embedding node budget exceeded ({eligible} > {self._max_nodes}); "
+                    "set SAGE_LEGION_EMBEDDING_MAX_NODES explicitly after reviewing cost."
+                )
             identity = self.provider.identity.fingerprint
             sha = store.get_metadata("indexed_sha")
             parser = store.get_metadata("parser_version")
@@ -145,23 +153,33 @@ class VectorIndex:
                     old_id = str(old[0]["point_id"]) if old else None
                     pending.append((qn, text, text_hash, old_id))
                 cached_points = vectors.get([old_id for _, _, _, old_id in pending if old_id])
+                ready = {}
+                for qn, text, text_hash, old_id in pending:
+                    cached = cached_points.get(old_id)
+                    if cached and cached.qualified_name == qn and cached.text_hash == text_hash:
+                        try:
+                            ready[qn] = validate_vector(cached.vector, self.provider.identity.dimensions)
+                        except MemoryVectorError:
+                            pass
+                missing = [(qn, text) for qn, text, _, _ in pending if qn not in ready]
+                generated = {}
+                embed_many = getattr(self.provider, "embed_many", None)
+                if missing and embed_many is not None:
+                    values = embed_many([text for _, text in missing], timeout=self._timeout,
+                                        deadline=started + self._deadline)
+                    if len(values) != len(missing):
+                        raise MemoryVectorError("Embedding batch returned an invalid vector count.")
+                    generated = dict(zip((qn for qn, _ in missing), values, strict=True))
                 for qn, text, text_hash, old_id in pending:
                     remaining = self._deadline - (monotonic() - started)
                     if remaining <= 0:
                         raise MemoryVectorError("Embedding build deadline exceeded.")
-                    cached = cached_points.get(old_id) if old_id else None
-                    if cached and cached.qualified_name == qn and cached.text_hash == text_hash:
-                        try:
-                            vector = validate_vector(cached.vector, self.provider.identity.dimensions)
-                        except MemoryVectorError:
-                            cached = None
-                    else:
-                        cached = None
-                    if cached is not None:
+                    if qn in ready:
+                        vector = ready[qn]
                         reused += 1
                     else:
                         vector = validate_vector(
-                            self.provider.embed(
+                            generated[qn] if qn in generated else self.provider.embed(
                                 text, query=False, timeout=min(self._timeout, remaining),
                             ),
                             self.provider.identity.dimensions,
@@ -229,6 +247,7 @@ class VectorIndex:
     ) -> tuple[list[tuple[str, float]], VectorStatus]:
         vectors = None
         started = monotonic()
+        query_duration_ms = 0.0
         try:
             with memory_lock(store.path, shared=True):
                 raw = store.get_metadata(f"vectors:{self.provider.identity.fingerprint}")
@@ -255,7 +274,11 @@ class VectorIndex:
                 vectors = self._factory(store.path, self._collection(store), False)
                 text = "task: code retrieval | query: " + bounded_text(query)
                 if text not in self._queries:
-                    value = self.provider.embed(text, query=True, timeout=self._timeout)
+                    query_started = monotonic()
+                    try:
+                        value = self.provider.embed(text, query=True, timeout=self._timeout)
+                    finally:
+                        query_duration_ms = round((monotonic() - query_started) * 1000, 2)
                     if len(self._queries) >= 32:
                         self._queries.pop(next(iter(self._queries)))
                     self._queries[text] = validate_vector(value, self.provider.identity.dimensions)
@@ -274,11 +297,13 @@ class VectorIndex:
                 return hits, VectorStatus(status="ready", model=self.provider.identity.model,
                     dimensions=self.provider.identity.dimensions, generation=manifest["generation"],
                     eligible=manifest["count"],
+                    query_embedding_duration_ms=query_duration_ms,
                     duration_ms=round((monotonic() - started) * 1000, 2), usage=self.provider.usage.model_copy())
         except (MemoryVectorError, ValueError, OSError, sqlite3.Error):
             return [], VectorStatus(status="unavailable", model=self.provider.identity.model,
                 dimensions=self.provider.identity.dimensions,
                 reason="Vector retrieval unavailable; using lexical search. Run an embedding-enabled build to check readiness.",
+                query_embedding_duration_ms=query_duration_ms,
                 duration_ms=round((monotonic() - started) * 1000, 2), usage=self.provider.usage.model_copy())
         finally:
             if vectors is not None:

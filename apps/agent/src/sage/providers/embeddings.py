@@ -5,6 +5,8 @@ from __future__ import annotations
 from math import isfinite
 from time import monotonic, sleep
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 from sage.domain.embeddings import (
     EmbeddingIdentity, MemoryVectorError, VectorUsage, validate_vector,
@@ -12,11 +14,38 @@ from sage.domain.embeddings import (
 
 
 class GeminiEmbeddingProvider:
-    def __init__(self, *, api_key: str | None, dimensions: int, retries: int = 1) -> None:
+    def __init__(self, *, api_key: str | None, dimensions: int, retries: int = 1, concurrency: int = 1) -> None:
         self.identity = EmbeddingIdentity(dimensions=dimensions)
         self.usage = VectorUsage()
         self._api_key = api_key
         self._retries = retries
+        if not 1 <= concurrency <= 8:
+            raise ValueError("Embedding concurrency must be between 1 and 8.")
+        self._concurrency = concurrency
+        self._usage_lock = Lock()
+
+    def embed_many(self, texts: list[str], *, timeout: float, deadline: float) -> list[list[float]]:
+        """Independent requests, never model-2 multi-input aggregation.
+
+        The caller supplies one checkpoint-sized batch and an absolute monotonic
+        deadline. Queued work is cancelled on failure; in-flight requests retain
+        their deadline and bounded retries.
+        """
+        def embed_one(text: str) -> list[float]:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise MemoryVectorError("Embedding build deadline exceeded.")
+            return self.embed(text, query=False, timeout=min(timeout, remaining))
+
+        executor = ThreadPoolExecutor(max_workers=self._concurrency)
+        futures = []
+        try:
+            futures = [executor.submit(embed_one, text) for text in texts]
+            return [future.result() for future in futures]
+        finally:
+            for future in futures:
+                future.cancel()
+            executor.shutdown(wait=True, cancel_futures=True)
 
     def embed(self, text: str, *, query: bool, timeout: float) -> list[float]:
         from google import genai
@@ -30,10 +59,11 @@ class GeminiEmbeddingProvider:
             remaining = deadline - monotonic()
             if remaining <= 0:
                 raise MemoryVectorError("Embedding request deadline exceeded.")
-            if query:
-                self.usage.query_calls += 1
-            else:
-                self.usage.document_calls += 1
+            with self._usage_lock:
+                if query:
+                    self.usage.query_calls += 1
+                else:
+                    self.usage.document_calls += 1
             try:
                 # One string per request avoids model-2 multi-input aggregation.
                 with genai.Client(api_key=self._api_key, http_options=types.HttpOptions(
@@ -62,7 +92,8 @@ class GeminiEmbeddingProvider:
                     pass
                 if delay >= deadline - monotonic():
                     raise MemoryVectorError("Embedding retry exceeds request deadline.") from None
-                self.usage.retries += 1
+                with self._usage_lock:
+                    self.usage.retries += 1
                 sleep(delay)
             except (httpx.HTTPError, OSError):
                 raise MemoryVectorError("Gemini embedding connection failed.") from None

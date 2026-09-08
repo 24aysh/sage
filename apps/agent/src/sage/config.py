@@ -60,6 +60,7 @@ class LegionEmbeddingSettings(BaseModel):
     deadline_seconds: int = Field(default=300, ge=1, le=3600)
     request_timeout_seconds: int = Field(default=30, ge=1, le=60)
     retries: int = Field(default=1, ge=0, le=3)
+    concurrency: int = Field(default=1, ge=1, le=8)
     min_similarity: float = Field(default=0.45, ge=0, le=1)
 
     @model_validator(mode="after")
@@ -99,6 +100,8 @@ class LegionEmbeddingSettings(BaseModel):
                 max_nodes=values.get("SAGE_LEGION_EMBEDDING_MAX_NODES", "2000"),
                 deadline_seconds=values.get("SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS", "300"),
                 request_timeout_seconds=values.get("SAGE_LEGION_EMBEDDING_TIMEOUT_SECONDS", "30"),
+                concurrency=values.get("SAGE_LEGION_EMBEDDING_CONCURRENCY", "1"),
+                retries=values.get("SAGE_LEGION_EMBEDDING_RETRIES", "1"),
                 min_similarity=values.get("SAGE_LEGION_EMBEDDING_MIN_SIMILARITY", "0.45"),
             )
         except (ValueError, ValidationError):
@@ -151,10 +154,13 @@ class Settings(BaseModel):
     run_deadline_seconds: int = Field(default=4_800, ge=600, le=5_100)
     finalization_reserve_seconds: int = Field(default=300, ge=60, le=900)
     solver_input_chars: int = Field(default=96_000, ge=8_000, le=200_000)
+    legion_initial_context_chars: int = Field(default=4000, ge=500, le=12_000)
     reviewer_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     repair_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     max_candidate_diff_chars: int = Field(default=96_000, ge=4_000, le=200_000)
     max_verification_log_chars: int = Field(default=24_000, ge=2_000, le=100_000)
+    verification_preflight: bool = False
+    verification_preflight_dependencies: tuple[str, ...] = Field(default=(), max_length=32)
     verification_commands: tuple[ConfiguredVerificationCommand, ...] = Field(
         default=(),
         max_length=3,
@@ -288,6 +294,7 @@ class Settings(BaseModel):
                     "SAGE_FINALIZATION_RESERVE_SECONDS", "300"
                 ),
                 solver_input_chars=values.get("SAGE_SOLVER_INPUT_CHARS", "96000"),
+                legion_initial_context_chars=values.get("SAGE_LEGION_INITIAL_CONTEXT_CHARS", "4000"),
                 reviewer_input_chars=values.get(
                     "SAGE_REVIEWER_INPUT_CHARS", "48000"
                 ),
@@ -299,8 +306,10 @@ class Settings(BaseModel):
                     "SAGE_MAX_VERIFICATION_LOG_CHARS", "24000"
                 ),
                 verification_commands=verification_commands,
+                verification_preflight=_parse_bool(values.get("SAGE_VERIFICATION_PREFLIGHT", "false"), name="SAGE_VERIFICATION_PREFLIGHT"),
+                verification_preflight_dependencies=json.loads(values.get("SAGE_VERIFICATION_PREFLIGHT_DEPENDENCIES_JSON", "[]")),
             )
-        except ValidationError as error:
+        except (ValidationError, json.JSONDecodeError) as error:
             raise ConfigurationError(f"Invalid Sage configuration: {error}") from error
 
 

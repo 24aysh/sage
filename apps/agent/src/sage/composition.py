@@ -24,7 +24,7 @@ def build_legion_memory_service(*, data_root: Path | None = None,
     if embeddings is None or not embeddings.enabled:
         return LegionMemoryService(data_root=data_root)
     provider = GeminiEmbeddingProvider(api_key=embeddings.api_key,
-        dimensions=embeddings.dimensions, retries=embeddings.retries)
+        dimensions=embeddings.dimensions, retries=embeddings.retries, concurrency=embeddings.concurrency)
 
     def vector_store(database: Path, collection: str, create: bool) -> QdrantVectorStore:
         return QdrantVectorStore(collection=collection, dimensions=embeddings.dimensions,
