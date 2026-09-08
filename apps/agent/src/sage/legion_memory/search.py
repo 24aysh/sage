@@ -1,4 +1,4 @@
-"""Rank fusion adapted from MIT code-review-graph search.py (Tirth Kanani)."""
+"""Rank fusion"""
 
 from __future__ import annotations
 

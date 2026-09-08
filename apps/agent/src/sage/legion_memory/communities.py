@@ -1,4 +1,4 @@
-"""Weighted Leiden communities adapted from code-review-graph (MIT).
+"""Weighted Leiden communities.
 
 The lock only protects igraph's process-wide RNG adapter during a seeded
 partition; it holds no repository or cross-run memory state.

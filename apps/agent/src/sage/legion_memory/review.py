@@ -1,4 +1,4 @@
-"""Change-scoped risk and test context adapted from code-review-graph (MIT)."""
+"""Change-scoped risk and test context"""
 
 from __future__ import annotations
 

@@ -1,7 +1,6 @@
 """Deterministic Issue retrieval over one validated Legion Memory snapshot.
 
-Identifier extraction and lexical-plus-graph ranking are adapted from the
-MIT-licensed code-review-graph project (copyright 2026 Tirth Kanani).
+Identifier extraction and lexical-plus-graph ranking
 """
 
 from __future__ import annotations

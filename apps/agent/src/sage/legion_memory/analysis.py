@@ -1,4 +1,4 @@
-"""Bounded read-only diagnostics adapted from code-review-graph (MIT)."""
+"""Bounded read-only diagnostics"""
 
 from __future__ import annotations
 

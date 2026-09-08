@@ -1,4 +1,4 @@
-"""Bounded structural read/search enrichment adapted from MIT code-review-graph."""
+"""Bounded structural read/search enrichment"""
 
 from __future__ import annotations
 

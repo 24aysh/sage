@@ -1,4 +1,4 @@
-"""Tree-sitter structural extraction adapted from code-review-graph.
+"""Tree-sitter structural extraction.
 
 The port intentionally keeps a compact, grammar-driven common denominator.
 Language-specific enrichment can be added behind this normalized boundary

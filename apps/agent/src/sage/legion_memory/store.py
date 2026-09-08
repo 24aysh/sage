@@ -1,7 +1,4 @@
 """SQLite storage for the Legion Memory code graph.
-
-The schema and transactional replacement model are adapted from the
-MIT-licensed code-review-graph project (copyright 2026 Tirth Kanani).
 """
 
 from __future__ import annotations

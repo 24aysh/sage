@@ -1,9 +1,4 @@
-"""Build, provenance, and bounded query service for Legion Memory.
-
-The graph model, incremental reconciliation, FTS ranking, impact analysis,
-flows, and community concepts are adapted from the MIT-licensed
-code-review-graph project (copyright 2026 Tirth Kanani).
-"""
+"""Build, provenance, and bounded query service for Legion Memory."""
 
 from __future__ import annotations
 

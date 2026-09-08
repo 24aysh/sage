@@ -1,6 +1,5 @@
 """Evidence-backed aliases, re-exports and receiver resolution for graph edges.
 
-Adapted from code-review-graph's scoped/Python resolution concepts (MIT).
 Ambiguity is retained; this module never imports or executes repository code.
 """
 

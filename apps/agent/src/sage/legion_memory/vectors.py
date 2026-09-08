@@ -1,8 +1,4 @@
-"""Content-addressed embedding generations with explicit SQLite publication.
-
-Node text composition is adapted from code-review-graph's MIT-licensed
-embeddings.py (Tirth Kanani, 2026). Graph structure remains authoritative.
-"""
+"""Content-addressed embedding generations with explicit SQLite publication."""
 
 from __future__ import annotations
 

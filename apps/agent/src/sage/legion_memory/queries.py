@@ -1,4 +1,4 @@
-"""Predefined read-only query patterns adapted from code-review-graph (MIT)."""
+"""Predefined read-only query patterns"""
 
 from __future__ import annotations
 
