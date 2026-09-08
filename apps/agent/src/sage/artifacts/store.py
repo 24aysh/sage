@@ -133,14 +133,17 @@ class RunArtifacts:
     def write_legion_memory(self, value: LegionMemoryRunArtifact) -> Path:
         return self._json("legion-memory.json", value)
 
+    def write_verification_preflight(self, value: dict[str, object]) -> Path:
+        return self._json("verification-preflight.json", value)
+
     def write_terminal(self, value: BaseModel) -> Path:
         return self._json("terminal.json", value)
 
-    def _json(self, relative: str | Path, value: BaseModel) -> Path:
+    def _json(self, relative: str | Path, value: BaseModel | dict[str, object]) -> Path:
         path = self._run_dir / relative
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            write_json_atomic(path, value.model_dump(mode="json"))
+            write_json_atomic(path, value.model_dump(mode="json") if isinstance(value, BaseModel) else value)
         except OSError as error:
             raise ArtifactError(f"Unable to persist artifact: {path.name}") from error
         return path

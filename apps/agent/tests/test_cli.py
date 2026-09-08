@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import sage.cli as cli
 from sage.cli import _build_parser, _render_result
@@ -243,6 +244,8 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
     assert "- Status: `used`" in saved_context
     assert "- Context characters: 15" in saved_context
     assert "bounded context" in saved_context
+    diagnostic = json.loads((tmp_path / "graph.retrieval.json").read_text())
+    assert diagnostic["context"] == "bounded context"
 
 
 def test_memory_retrieve_context_replaces_a_stale_result(tmp_path: Path) -> None:

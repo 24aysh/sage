@@ -70,6 +70,39 @@ def _build(memory_file: Path) -> MemoryBuildResult:
     )
 
 
+def test_history_reset_native_dedup_and_edited_locators(tmp_path):
+    path = tmp_path / "graph.sqlite3"
+    from sage.domain.memory import MemoryRetrievalItem
+    retrieval = _retrieval(path).model_copy(update={
+        "status": MemoryRetrievalStatus.USED,
+        "context": "app.py::work (app.py:2)",
+        "items": (MemoryRetrievalItem(qualified_name="app.py::work", name="work", kind="Function",
+                    file_path="app.py", language="python", line_start=2, line_end=4, score=1, rank=1),),
+    })
+    session = MemorySession(LegionMemoryService(), tmp_path, path, path, _build(path), retrieval)
+    assert session.begin_session(initial_visible=True) == retrieval.context
+    response = {"status": "ok", "returned": 1, "total": 1, "data": {"nodes": [
+        {"qualified_name": "app.py::work", "file_path": "app.py", "line_start": 2, "line_end": 4}]}}
+    session.record_tool_call("query_graph_tool", response, 1)
+    assert session.filter_response(response)["deduplicated"]
+    assert "app.py::work" in session.begin_session(initial_visible=False)
+    assert not session.filter_response(response).get("deduplicated")
+    session.invalidate("app.py")
+    assert "line_start" not in session.filter_response(response)["data"]["nodes"][0]
+    assert session.begin_session(initial_visible=False) == ""
+    assert session.artifact().exposure.sessions == 3
+
+
+def test_no_match_has_no_tools_or_enrichment_queries(tmp_path):
+    path = tmp_path / "graph.sqlite3"
+    session = MemorySession(LegionMemoryService(), tmp_path, path, path, _build(path), _retrieval(path))
+    assert not session.tools_enabled
+    assert session.begin_session(initial_visible=True) == ""
+    assert session.enrich(tool_name="read_file", path="app.py", available_chars=3000, source_chars=50) == ""
+    assert not session.artifact().exposure.exposed
+    assert session.artifact().exposure.source_read_chars == 50
+
+
 def _retrieval(memory_file: Path) -> MemoryRetrievalResult:
     return MemoryRetrievalResult(
         status=MemoryRetrievalStatus.NO_MATCH,

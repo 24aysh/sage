@@ -24,6 +24,8 @@ def build_legion_memory_tools(
     output_chars: int = DEFAULT_MEMORY_TOOL_OUTPUT_CHARS,
     usage_recorder: Callable[[str, dict[str, object], float], None] | None = None,
     source_reader: Callable[..., str] | None = None,
+    profile: Literal["all", "solve"] = "all",
+    response_filter: Callable[[dict[str, object]], dict[str, object]] | None = None,
 ) -> list[BaseTool]:
     """Bind read-only graph tools to one repository and immutable graph path."""
 
@@ -57,11 +59,11 @@ def build_legion_memory_tools(
             }
         if detail_level == "minimal":
             result = _minimal_result(result)
+        if response_filter is not None:
+            result = response_filter(result)
         rendered = _bounded_json(result, max_chars=output_chars)
         if usage_recorder is not None:
-            recorded_result = result
-            if '"truncated":true' in rendered:
-                recorded_result = {**result, "truncated": True}
+            recorded_result = json.loads(rendered)
             usage_recorder(
                 operation.__name__,
                 recorded_result,
@@ -282,7 +284,7 @@ def build_legion_memory_tools(
         return invoke(service.get_review_context_tool, changed_files=changed_files,
                       max_results=max_results, source_reader=source_reader if include_source else None)
 
-    return [
+    tools = [
         list_graph_stats_tool,
         get_minimal_context_tool,
         semantic_search_nodes_tool,
@@ -305,6 +307,11 @@ def build_legion_memory_tools(
         detect_changes_tool,
         get_review_context_tool,
     ]
+    if profile == "solve":
+        names = {"semantic_search_nodes_tool", "query_graph_tool", "get_flow_tool",
+                 "get_community_tool", "get_impact_radius_tool"}
+        return [item for item in tools if item.name in names]
+    return tools
 
 
 def _minimal_result(result: dict[str, object]) -> dict[str, object]:
@@ -321,14 +328,31 @@ def _minimal_result(result: dict[str, object]) -> dict[str, object]:
                 "degree", "betweenness", "caller_count",
                 "line_count", "risk_score", "tests",
             }}
-        return {key: project(item) for key, item in value.items()}
-    return {**result, "data": project(result.get("data", {}))}
+        return {key: project(item) for key, item in value.items() if key != "supported_patterns"}
+    return {**{key: value for key, value in result.items() if key not in {"repository_id", "last_updated"}},
+            "data": project(result.get("data", {}))}
 
 
 def _bounded_json(result: dict[str, object], *, max_chars: int) -> str:
     rendered = json.dumps(result, sort_keys=True, separators=(",", ":"))
     if len(rendered) <= max_chars:
         return rendered
+    bounded = json.loads(rendered)
+    data = bounded.get("data", {})
+    # Keep a useful prefix of the main result collection instead of dropping
+    # every item and forcing the model to repeat a narrower query.
+    for key in ("results", "nodes", "key_entities", "flows", "communities", "steps", "edges"):
+        rows = data.get(key) if isinstance(data, dict) else None
+        if not isinstance(rows, list) or not rows:
+            continue
+        original = len(rows)
+        while rows:
+            rows.pop()
+            bounded.update(truncated=True, returned=max(0, int(result.get("returned", original)) - (original - len(rows))),
+                           omitted=int(result.get("omitted", 0)) + original - len(rows))
+            rendered = json.dumps(bounded, sort_keys=True, separators=(",", ":"))
+            if len(rendered) <= max_chars:
+                return rendered
     bounded = {
         key: value
         for key, value in result.items()
@@ -346,4 +370,7 @@ def _bounded_json(result: dict[str, object], *, max_chars: int) -> str:
         }
     )
     rendered = json.dumps(bounded, sort_keys=True, separators=(",", ":"))
-    return rendered[:max_chars]
+    if len(rendered) <= max_chars:
+        return rendered
+    return json.dumps({"status": str(result.get("status", "unknown"))[:40], "returned": 0, "truncated": True,
+                       "summary": "Metadata exceeds budget; narrow the query."})

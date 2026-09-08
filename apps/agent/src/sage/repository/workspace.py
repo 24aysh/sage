@@ -88,7 +88,13 @@ def _validate_source_repository(requested_path: Path) -> Path:
     )
     if result.returncode != 0:
         raise WorkspaceError(f"Path is not a Git repository: {path}")
-    return Path(result.stdout.strip()).resolve()
+    root = Path(result.stdout.strip()).resolve()
+    if root != path:
+        raise WorkspaceError(
+            f"Requested repository {path} belongs to ancestor Git root {root}. "
+            "Pass the intended Git root explicitly; no workspace was cloned."
+        )
+    return root
 
 
 def _resolve_base_sha(source_repo: Path, base_ref: str) -> str:

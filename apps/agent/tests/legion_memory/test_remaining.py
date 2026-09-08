@@ -189,6 +189,11 @@ def test_enrichment_preserves_source_deduplicates_and_records_usage(fixture_repo
     assert session.artifact().enrichments[0].hit_count == 1
     assert session.artifact().enrichments[1].status == "skipped"
     assert not session.artifact().tool_calls
+    session.begin_session(initial_visible=False)
+    third = asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 8, "end_line": 9}))
+    assert "Called by:" in third
+    session.invalidate("service.py")
+    assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""
     assert session.enrich(tool_name="read_file", path="service.py", available_chars=100) == ""
     session.close()
     assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""

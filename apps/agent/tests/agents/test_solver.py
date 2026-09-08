@@ -311,7 +311,8 @@ def test_memory_context_and_tools_are_added_only_for_a_valid_session(
     )
 
     assert "semantic_search_nodes_tool" in tools
-    assert "get_architecture_overview_tool" in tools
+    assert "get_architecture_overview_tool" not in tools
+    assert {"query_graph_tool", "get_flow_tool", "get_community_tool", "get_impact_radius_tool"} <= tools
     assert "<untrusted-legion-memory>" in message
     assert "Function helper at app.py:1-2" in message
     assert "</untrusted-legion-memory>" in message

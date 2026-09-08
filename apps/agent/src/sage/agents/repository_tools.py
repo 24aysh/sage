@@ -44,6 +44,7 @@ def build_repository_read_tools(
         )
         if enrich is not None:
             result += enrich(tool_name="search_text", query=query,
+                             source_chars=len(result),
                              available_chars=max(0, output_chars - len(result)))
         return result
 
@@ -62,6 +63,7 @@ def build_repository_read_tools(
         )
         if enrich is not None:
             result += enrich(tool_name="read_file", path=path, start_line=start_line,
+                             source_chars=len(result),
                              end_line=min(end_line or start_line + 299, start_line + 299),
                              available_chars=max(0, output_chars - len(result)))
         return result

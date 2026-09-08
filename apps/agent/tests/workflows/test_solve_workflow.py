@@ -211,7 +211,7 @@ def test_solve_issue_rejects_no_change_result_with_candidate(
     assert sandbox.stopped is True
 
 
-def test_memory_is_prepared_before_sandbox_and_solver(
+def test_memory_is_prepared_after_sandbox_start_before_solver(
     tmp_path: Path,
     monkeypatch,
     caplog,
@@ -267,7 +267,7 @@ def test_memory_is_prepared_before_sandbox_and_solver(
         )
     )
 
-    assert events == ["workspace", "build", "retrieve", "sandbox", "solver"]
+    assert events == ["workspace", "sandbox", "build", "retrieve", "solver"]
     assert result.memory is not None
     assert result.memory.status is MemoryRetrievalStatus.USED
     assert result.memory.indexed_sha == prepared.base_sha
@@ -428,6 +428,36 @@ def test_memory_session_closes_when_solver_fails(
         )
 
     assert captured[0].closed is True
+
+
+@pytest.mark.parametrize("with_memory", [False, True])
+def test_preflight_failure_stops_both_modes_before_memory_or_model(tmp_path, monkeypatch, with_memory):
+    from sage.config import ConfiguredVerificationCommand
+    from sage.sandbox.base import CommandResult
+    request, prepared, settings = _run_values(tmp_path)
+    if with_memory:
+        request = request.model_copy(update={"memory_file": tmp_path / "graph.sqlite3"})
+    settings = settings.model_copy(update={"verification_preflight": True,
+        "verification_commands": (ConfiguredVerificationCommand(id="tests", command="python3 -m pytest"),)})
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
+    class MissingPython(FakeSandbox):
+        def exec(self, command, **kwargs):
+            return CommandResult(command, 127, "", "python unavailable")
+    class Store(FakeStore):
+        def write_verification_preflight(self, report):
+            self.report = report
+    class MustNotRun:
+        def build_or_update_graph_tool(self, **kwargs):
+            raise AssertionError("Memory must not build on failed preflight")
+        async def solve(self, **kwargs):
+            raise AssertionError("Models must not run on failed preflight")
+    sandbox, store = MissingPython(), Store()
+    with pytest.raises(WorkspaceError, match="before model calls"):
+        asyncio.run(solve_issue(request, MustNotRun(), settings,
+            sandbox_factory=lambda *_: sandbox, artifacts=store, memory_service=MustNotRun()))
+    assert sandbox.stopped
+    assert store.report["status"] == "unavailable"
+    assert store.report["model_calls_started"] is False
 
 
 def _run_values(tmp_path: Path) -> tuple[SolveRequest, PreparedRun, Settings]:

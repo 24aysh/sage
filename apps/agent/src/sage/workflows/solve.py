@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from collections.abc import Callable
 
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
-from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus
+from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus, MemoryRetrievalBudgets
 from sage.domain.solve import PreparedRun, SolveOutcome, SolveRequest, SolveResult
 from sage.errors import LegionMemoryBuildError, LegionMemoryError, WorkspaceError
 from sage.legion_memory.service import LegionMemoryService
@@ -18,6 +19,7 @@ from sage.repository.service import Repository
 from sage.repository.workspace import prepare_run
 from sage.sandbox.base import Sandbox
 from sage.sandbox.docker import DockerSandbox
+from sage.verification.preflight import verification_environment_preflight
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +59,29 @@ async def solve_issue(
     memory_artifact: LegionMemoryRunArtifact | None = None
     sandbox: Sandbox | None = None
     try:
+        build_sandbox = sandbox_factory or _build_docker_sandbox
+        sandbox = build_sandbox(prepared, effective_settings)
+        sandbox.start()
+        if effective_settings.verification_preflight:
+            try:
+                report = verification_environment_preflight(sandbox, effective_settings)
+            except WorkspaceError as error:
+                run_artifacts.write_verification_preflight(
+                    {"status": "unavailable", "reason": str(error), "model_calls_started": False})
+                raise
+            run_artifacts.write_verification_preflight(report)
+            logger.info("Verification environment preflight: ready (tooling only; tests not executed)")
         if request.memory_file is not None:
             memory_session, memory_artifact = _prepare_memory(
                 request=request,
                 prepared=prepared,
                 issue_text=issue_text,
                 service=memory_service,
+                context_chars=effective_settings.legion_initial_context_chars,
             )
             run_artifacts.write_legion_memory(memory_artifact)
             log_legion_memory(logger, memory_artifact)
 
-        build_sandbox = sandbox_factory or _build_docker_sandbox
-        sandbox = build_sandbox(prepared, effective_settings)
-        sandbox.start()
         build_repository = repository_factory or _build_repository
         repository = build_repository(prepared, sandbox, effective_settings)
         context = SolveContext(
@@ -125,10 +137,12 @@ def _prepare_memory(
     prepared: PreparedRun,
     issue_text: str,
     service: LegionMemoryService | None,
+    context_chars: int = 4000,
 ) -> tuple[MemorySession | None, LegionMemoryRunArtifact]:
     """Build and retrieve one base-SHA graph, or return a visible fallback."""
 
     assert request.memory_file is not None
+    started = perf_counter()
     requested = request.memory_file.expanduser().resolve()
     if service is None:
         return None, unavailable_memory_artifact(
@@ -149,6 +163,7 @@ def _prepare_memory(
             issue_text=issue_text,
             repo_root=prepared.workspace_dir,
             memory_file=build.memory_file,
+            budgets=MemoryRetrievalBudgets(max_chars=context_chars),
         )
         if retrieval.status is MemoryRetrievalStatus.UNAVAILABLE:
             return None, unavailable_memory_artifact(
@@ -174,6 +189,7 @@ def _prepare_memory(
             memory_file=build.memory_file,
             build=build,
             retrieval=retrieval,
+            preflight_duration_ms=round((perf_counter() - started) * 1000, 2),
         )
         return session, session.artifact()
     except LegionMemoryError as error:

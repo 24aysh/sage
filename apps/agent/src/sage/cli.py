@@ -15,7 +15,7 @@ from pathlib import Path
 
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
-from sage.artifacts.files import write_text_atomic
+from sage.artifacts.files import write_json_atomic, write_text_atomic
 from sage.composition import build_legion_memory_service, build_orchestrator
 from sage.config import Settings, LegionEmbeddingSettings
 from sage.domain.embeddings import VectorStatus, VectorUsage
@@ -316,6 +316,7 @@ def _write_memory_retrieval_context(
     )
     try:
         write_text_atomic(context_file, document)
+        write_json_atomic(result.memory_file.with_suffix(".retrieval.json"), result.model_dump(mode="json"))
     except OSError as error:
         raise LegionMemoryQueryError(
             "Unable to save retrieved context: "
@@ -350,6 +351,10 @@ def _render_memory_retrieval(
     print(f"  Omitted: {result.omitted}")
     print(f"  Truncated: {'yes' if result.truncated else 'no'}")
     print(f"  Context characters: {result.context_chars}")
+    print("  Usage meaning: retrieved context, not measured improvement")
+    print(f"  Unresolved relationships skipped: {result.unresolved_edges}")
+    print(f"  Ranking duration: {result.ranking_duration_ms:.2f} ms")
+    print(f"  Query embedding duration: {result.vectors.query_embedding_duration_ms:.2f} ms")
     if context_file is not None:
         print(f"  Context file: {context_file}")
     print(f"  Duration: {result.duration_ms:.2f} ms")
@@ -665,6 +670,14 @@ def _render_solve_memory_summary(result: SolveResult) -> None:
         f"{memory.retrieval.returned if memory.retrieval is not None else 0} memories"
     )
     print(f"  Native memory tool calls: {len(memory.tool_calls)}")
+    exposure = memory.exposure
+    print("  Exposure: " + ", ".join(f"{name}={'yes' if getattr(exposure, name) else 'no'}"
+          for name in ("available", "retrieved", "exposed", "queried", "read_enriched")))
+    print(f"  Memory characters (across {exposure.sessions} histories): initial={exposure.initial_context_chars}, "
+          f"enrichment={exposure.enrichment_chars}, graph responses={exposure.graph_response_chars}")
+    print(f"  Source-read characters: {exposure.source_read_chars}; schema characters per binding summed: {exposure.tool_schema_chars}")
+    print(f"  Memory preflight: {exposure.preflight_duration_ms:.2f} ms")
+    print(f"  Retrieved paths later read: {len(exposure.retrieved_paths_read)} (overlap, not causal use)")
     print(f"  Read/search enrichments: {sum(e.status == 'used' for e in memory.enrichments)} used / {len(memory.enrichments)} attempted")
     print(f"  Fallback: {memory.fallback}")
     print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")

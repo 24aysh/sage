@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
@@ -10,6 +11,7 @@ from typing import Any, Literal, Protocol, TypeVar
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool, tool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel
 
 from sage.agents.loop import build_graph as build_tool_graph
@@ -61,8 +63,13 @@ class SolverMemorySession(Protocol):
     service: Any
     repo_root: Path
     memory_file: Path
+    tools_enabled: bool
 
     def enrich(self, **arguments: Any) -> str: ...
+    def begin_session(self, *, initial_visible: bool) -> str: ...
+    def invalidate(self, *paths: str) -> None: ...
+    def record_schemas(self, characters: int) -> None: ...
+    def filter_response(self, result: dict[str, object]) -> dict[str, object]: ...
 
     def record_tool_call(
         self,
@@ -89,6 +96,10 @@ class SolverAgent:
         calls: ModelCalls,
         research: ResearchToolService,
     ) -> SolverFinalResult:
+        if context.memory is not None:
+            packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
+            if stage == "solver-repair" and packet:
+                message += "\n\n<legion-repair-context>\n" + packet + "\n</legion-repair-context>"
         input_cap = (
             self._settings.repair_input_chars
             if stage == "solver-repair"
@@ -337,12 +348,15 @@ def build_solver_tools(
         """Replace exact UTF-8 text after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        return context.repository.replace_text(
+        result = context.repository.replace_text(
             path=path,
             old_text=old_text,
             new_text=new_text,
             expected_occurrences=expected_occurrences,
         )
+        if context.memory is not None:
+            context.memory.invalidate(path)
+        return result
 
     @tool
     async def write_file(
@@ -353,28 +367,37 @@ def build_solver_tools(
         """Create or replace one UTF-8 file after enforcing the plan gate."""
 
         plans.require_implementable()
-        return context.repository.write_file(
+        result = context.repository.write_file(
             path=path,
             content=content,
             mode=mode,
         )
+        if context.memory is not None:
+            context.memory.invalidate(path)
+        return result
 
     @tool
     async def delete_file(path: str) -> str:
         """Delete one regular file after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        return context.repository.delete_file(path=path)
+        result = context.repository.delete_file(path=path)
+        if context.memory is not None:
+            context.memory.invalidate(path)
+        return result
 
     @tool
     async def move_file(source_path: str, destination_path: str) -> str:
         """Move one file without overwrite after enforcing the plan gate."""
 
         plans.require_implementable()
-        return context.repository.move_file(
+        result = context.repository.move_file(
             source_path=source_path,
             destination_path=destination_path,
         )
+        if context.memory is not None:
+            context.memory.invalidate(source_path, destination_path)
+        return result
 
     @tool
     async def run_command(command: str, timeout_seconds: int | None = None) -> str:
@@ -410,10 +433,15 @@ def build_solver_tools(
             output_chars=context.settings.max_tool_output_chars,
             usage_recorder=context.memory.record_tool_call,
             source_reader=context.repository.read_file,
+            profile="solve",
+            response_filter=context.memory.filter_response,
         )
-        if context.memory is not None
+        if context.memory is not None and context.memory.tools_enabled
         else []
     )
+    if context.memory is not None and memory_tools:
+        context.memory.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in memory_tools],
+                                                    separators=(",", ":"))))
     research_tools = (
         build_solver_research_tools(research) if research is not None else []
     )
