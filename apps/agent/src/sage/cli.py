@@ -474,6 +474,9 @@ def _run_github_solve(arguments: argparse.Namespace) -> int:
             status_comment_id=arguments.status_comment_id,
             orchestrator_factory=build_orchestrator,
             settings_factory=lambda: Settings.from_env(environment),
+            memory_service_factory=lambda: build_legion_memory_service(
+                embeddings=LegionEmbeddingSettings.from_github_env(environment)
+            ),
         )
     )
     print(f"GitHub solve outcome: {result.outcome.value}")

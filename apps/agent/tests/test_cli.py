@@ -560,7 +560,17 @@ def test_github_solve_wires_runner_paths_and_status_id(
     monkeypatch.setenv("SAGE_GITHUB_TOKEN", "github-token")
     monkeypatch.setenv("OPENAI_API_KEY", "model-token")
     monkeypatch.setenv("GEMINI_API_KEY", "reviewer-token")
+    monkeypatch.setenv("SAGE_LEGION_QDRANT_URL", "https://qdrant.example.com")
+    monkeypatch.setenv("SAGE_LEGION_QDRANT_API_KEY", "qdrant-token")
     monkeypatch.setattr(cli, "RestGitHubClient", lambda settings: fake_client)
+    memory_service = object()
+
+    def build_memory_service(*, embeddings):
+        assert embeddings.enabled is True
+        assert embeddings.qdrant_url == "https://qdrant.example.com"
+        return memory_service
+
+    monkeypatch.setattr(cli, "build_legion_memory_service", build_memory_service)
 
     async def fake_run(invocation, client, settings, **kwargs):
         assert client is fake_client
@@ -571,6 +581,7 @@ def test_github_solve_wires_runner_paths_and_status_id(
         assert kwargs["status_comment_id"] == 7001
         loaded = kwargs["settings_factory"]()
         assert loaded.openai_api_key == "model-token"
+        assert kwargs["memory_service_factory"]() is memory_service
         return GitHubWorkflowResult(outcome=GitHubWorkflowOutcome.NO_CHANGES)
 
     monkeypatch.setattr(cli, "run_github_issue", fake_run)
