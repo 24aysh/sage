@@ -1,450 +1,229 @@
 # Sage architecture
 
-## What Sage is
+Sage turns an authorized Issue into a verified, independently reviewed draft
+pull request. One OpenAI-backed Solver plans and edits; one Gemini-backed
+Reviewer judges the candidate. Deterministic Python controls the lifecycle.
+There is one solve architecture and no runtime selector.
 
-Sage is a production-oriented issue-to-draft-PR system. It gives one
-OpenAI-backed Solver a bounded set of repository tools, verifies the resulting
-Git candidate deterministically, and asks an independent Gemini-backed
-Reviewer to judge the actual diff. Sage may repair and re-review a candidate,
-but it never merges or marks a draft pull request ready.
-
-There is one supported solve architecture. It is constructed directly; there
-is no runtime selector, version factory, or dormant implementation path.
-
-## End-to-end sequence
+## Read the system through one solve
 
 ```text
-CLI or GitHub Action
-  -> use-case workflow
-    -> clean checkout at the accepted base SHA
-    -> optional Legion Memory build/update and Issue retrieval
-    -> network-disabled Docker sandbox
-    -> deterministic SolveOrchestrator
-      -> fresh Solver tool session
-        -> inspect repository
-        -> persist a complete plan
-        -> mutate through structured file tools
-      -> derive candidate from Git
-      -> run deterministic verification
-      -> independent read-only Reviewer
-      -> completed result, bounded repair, or terminal outcome
-    -> persist authoritative artifacts
-    -> optionally publish a creation-only branch and draft PR
+CLI / trusted GitHub Action
+  -> workflow: accept Issue and base SHA, prepare clean checkout
+  -> start isolated sandbox; optional verification-tooling preflight
+  -> optional memory: index accepted HEAD, retrieve bounded navigation context
+  -> orchestrator:
+       Solver session -> Git candidate -> verification -> Reviewer
+            ^                                               |
+            +------------- bounded fresh-session repair ----+
+  -> final base-SHA and diff-digest guard
+  -> persist terminal evidence; close sandbox and memory session
+  -> GitHub only: creation-only branch and draft PR
 ```
 
-The outer loop is normal Python, not an agent graph. LangGraph is used only for
-one bounded Solver tool session. Every repair starts a fresh session, and every
-repaired candidate receives a fresh review.
+The outer controller is ordinary Python. LangGraph implements only the
+bounded model/tool loop within a Solver session. A repair gets a fresh session
+and a fresh review. Sage never merges or marks a draft ready.
 
-## Legion Memory
+Three different facts must stay distinct:
 
-Legion Memory provides a local, rebuildable repository knowledge graph with
-lexical retrieval and opt-in Gemini Embedding 2 / Qdrant retrieval. The graph indexes
-source blobs from the selected repository's committed
-`HEAD`, stores repository-relative symbols and relationships in SQLite, and
-records the repository identity, exact Git SHA, parser version, schema version,
-and build state. One `build_or_update_graph_tool` operation chooses a full,
-incremental, or no-change build; callers do not implement separate cold/warm
-paths.
+| Fact | Authority | Consumer |
+| --- | --- | --- |
+| What should change | Issue and persisted Solver plan | Solver, verifier, Reviewer |
+| What actually changed | Git at the accepted base SHA | Candidate guard, artifacts, publication |
+| Where to look | Current source reads, optional base-snapshot memory, bounded research | Solver |
 
-The graph includes FTS5 search, containment, imports, calls, inheritance,
-test links, bounded flows, communities, impact traversal, hubs, bridges, and
-knowledge-gap summaries. Tree-sitter provides grammar parsing and NetworkX
-provides traversal/centrality analysis; igraph provides seeded, weighted Leiden
-communities with test-to-production reassignment. Python metadata includes
-docstrings, signatures, decorators, import aliases and typed receivers;
-JavaScript/TypeScript extraction includes named arrow functions and callbacks.
-Flows omit tests and singletons as entry points, recognize Python route
-decorators, and score spread, external calls, security, test gaps and depth.
-Supported grammars are Python,
-JavaScript, TypeScript/TSX, Go, Rust, Java, C#, Ruby, C/C++/Objective-C,
-Kotlin, Swift, PHP, Scala, Dart, Lua, Bash, Elixir, Zig, Julia, HCL, SQL,
-YAML, Nix, PowerShell, Svelte, Vue, R, Perl, and Solidity.
+Memory cannot satisfy acceptance criteria, grant mutation authority, or replace
+current source. Model summaries cannot define a diff or changed-file list.
 
-The LangChain adapters are native, read-only, repository-bound tools;
-they accept neither a database path nor arbitrary SQL from the model. A memory
-solve builds or updates the graph against the clean workspace after sandbox
-startup but before the first model call, retrieves bounded Issue context, and
-creates a run-scoped memory session. Local callers explicitly select memory.
-Every accepted GitHub solve selects it automatically and creates a new SQLite
-graph under runner-owned temporary storage; that graph is neither cached nor
-uploaded. Phase 2 retrieval
-extracts bounded Issue paths, identifiers, error tokens, and terms, ranks exact
-and FTS5 hits, expands the best seeds through relationships, flows, and
-communities, and returns explainable source locators under result and character
-budgets. A stale, foreign, missing, corrupt, or incompatible graph returns an
-explicit unavailable result so the normal Solver can continue without memory.
-A valid session binds 21 native read-only tools to the Solver. Useful
-initial results are included in an `<untrusted-legion-memory>` envelope;
-`no_match` keeps the tools available for exploration without adding an empty
-prompt section. Unavailable memory binds no graph tools. The Reviewer remains
-unchanged and judges only the actual candidate evidence. No MCP server,
-daemon or watcher is used. Lexical-only retrieval makes no embedding calls.
+## Find the owner before changing code
 
-With embeddings enabled, `composition.py` injects a Gemini adapter and a Qdrant
-store factory into the existing graph service. `config.py` owns the independent
-`LegionEmbeddingSettings` boundary so memory commands need no chat-model
-credentials. Local memory commands remain opt-in, while GitHub solves default
-embeddings on and require remote HTTPS Qdrant configuration. The optional
-GitHub secret `SAGE_LEGION_EMBEDDINGS_ENABLED=false` retains lexical memory and
-constructs neither embedding nor Qdrant adapters. `make solve` never constructs
-these adapters. `make legion-solve` still uses the same solve workflow and
-gates.
+All production Python paths below are relative to `apps/agent/src/sage/`.
+Tests mirror owners under `apps/agent/tests/`.
 
-`legion_memory/vectors.py` formats bounded non-File node documents, reuses
-same-text/same-model vectors, and reconciles vectors even on a no-change graph
-build. Schema 2 added the SQLite publication manifest; schema 3 preserves
-original edge identities when distinct aliases converge on the same resolved
-target. Parser v3 rebuilds committed metadata on upgrade. Qdrant collection
-identity is now a hash of repository and embedding identity rather than the
-random namespace in one SQLite file. Each collection contains immutable
-content-cache points and graph-generation snapshot points. This lets a newly
-built GitHub SQLite graph reuse verified vectors from a prior solve. Searches
-filter the exact generation published by the current accepted-SHA graph. Only
-acknowledged, identity-validated batches are recorded, and SQLite publishes a
-ready generation only after the complete snapshot is available. A failed index
-leaves the graph usable for lexical retrieval.
+| Change or question | Start here | Boundary to preserve |
+| --- | --- | --- |
+| Command flags, dispatch, exit policy | `cli/app.py`, `cli/solve.py`, `cli/memory.py`, `cli/github.py` | CLI names and installed `sage.cli:main` entrypoint |
+| Terminal output | `cli/output.py` | Stable output and redaction |
+| Concrete dependency wiring | `composition.py` | Construct adapters explicitly |
+| Environment/settings | `config.py`, `integrations/github/config.py` | Existing settings loaders; no environment reads in capabilities |
+| Resource startup/cleanup | `workflows/solve.py`, `workflows/github.py` | Cleanup on success, failure, and cancellation |
+| Solve/repair decisions | `orchestration/solve.py`, `validation.py` | Bounded routing independent of provider wire formats |
+| Candidate truth | `orchestration/candidate.py` | Git-derived paths/diff and final digest guard |
+| Solver role and mutation gate | `agents/solver.py`, `prompts.py` | Persist implementable plan before mutation |
+| Tool/session execution | `agents/loop.py`, `repository_tools.py`, `memory_tools.py` | Typed, bounded capabilities |
+| Reviewer packet and contract | `agents/reviewer.py`, `domain/review.py` | Independent judgment and complete criterion coverage |
+| File, search, Git, command operations | `repository/` | Validated paths, command allowlist, bounded output |
+| Verification | `verification/` | Deterministic checks; preflight is tooling readiness, not test evidence |
+| Research | `research/` | Safe URLs, provenance, cache and budgets |
+| Models and call accounting | `providers/` | Bounded retries, typed outputs and usage |
+| Run evidence | `artifacts/store.py`, `artifacts/files.py` | Atomic run-scoped writes |
+| GitHub transport/publication | `integrations/github/` | Authorization, credential isolation, creation-only publication |
+| Sandbox | `sandbox/` | Disposable, resource-bounded, network-disabled execution |
+| Web presentation | `apps/web/DESIGN.md` from repository root | Independent of backend solve control |
 
-Writers take a nonblocking per-database file lock through graph and vector
-creation; semantic readers take a shared lock. Network requests never hold a
-SQLite write transaction. The Qdrant client is opened/closed within each
-operation, not kept as a singleton. Default local storage is a persistent
-`qdrant/` directory beside SQLite; concurrent opens fail safely. GitHub requires
-a configured HTTPS server URL and API key and never falls back to that local
-directory. Deterministic point IDs and idempotent upserts isolate concurrent
-same-repository solves without serializing Issues. Cleanup retains snapshot
-points for at least 24 hours and reusable content points for at least 30 days;
-it never deletes the current generation. Failed publication never prunes
-recovery data. Failed cleanup leaves the current generation usable and retries
-on the next build. Other repositories and separately configured embedding
-identities are not deleted. Copying only SQLite preserves graph-only use, not
-the vectors; rebuilding SQLite with access to the corresponding Qdrant scope
-recovers verified vectors.
+`domain/` holds typed contracts; `orchestration/context.py` carries run-scoped
+dependencies. Package names describe responsibilities. A generic helper or
+another runtime layer is not needed to connect them.
 
-`legion_memory/search.py` combines bounded term-FTS and cosine-ranked vectors using
-RRF (constant 60), query-kind/identifier boosts and a context-file boost.
-The Issue adapter fuses its independent lexical ranking with FTS and semantic
-channel ranks, retains explicit identifier/path anchors, allows semantic-only
-seeds, and uses a separate RRF-scale threshold. Vector errors fall back to the
-existing lexical Issue scorer. The configurable cosine floor is provisional,
-not a measured universal relevance threshold. A session caches up to 32 query
-vectors. Search modes and separate embedding/Qdrant usage are observable.
+## Memory has four distinct responsibilities
 
-Initial context includes signatures and seed-linked relationship evidence,
-with cross-file diversity and a configurable 4,000-character solve cap.
-Standalone retrieval retains its explicit larger budget.
-Community expansion contributes at most two neighbors per seed. Native
-tools project compact node records; search, relationship queries, flow and
-community inspection allow `detail_level=standard`. Solver instructions ask
-for targeted source verification instead of repeating broad discovery.
+`LegionMemoryService` remains the public repository-bound capability. Its
+implementation delegates committed-source indexing to `RepositoryIndex`,
+using the existing parser, store, and vector index.
 
-The graph remains a snapshot of the accepted base SHA throughout mutations
-and repairs. Solver instructions require current repository reads before
-planning or editing. Every native memory call records only its name, status,
-hit count, returned repository-relative paths, duration, and truncation state.
-The provider call ledger separately records every model-requested tool name so
-baseline and memory-assisted runs can compare tool and token totals without
-persisting tool arguments.
-
-The complete 21-function native registry remains available. Normal solving
-binds only semantic search, query patterns, flow, community, and impact tools;
-no-match retrieval binds none and performs no enrichment queries.
-The registry extends the original 15 with
-`detect_changes_tool`, `get_review_context_tool`, `find_large_functions_tool`,
-`get_surprising_connections_tool`, `get_suggested_questions_tool`, and a
-read-only `refactor_tool` (rename-location preview, dead-code candidates,
-structural suggestions). Optional review snippets go through the existing
-repository read capability, never direct graph-supplied filesystem reads.
-Change detection compares the current workspace against accepted HEAD, not
-upstream's HEAD~1 default, and includes untracked paths without staging files.
-It conservatively maps changed files to accepted-base symbols and reports
-flows, direct/transitive tests, test gaps and static risk. It does not replace
-the independent Reviewer or grant mutation authority.
-
-`queries.py` provides all 16 reference query-pattern names, exact result counts,
-qualified-name disambiguation, unresolved locators and explicit confidence
-limitations. New relations include REFERENCES, IMPLEMENTS, HANDLES, PUBLISHES,
-CONSUMES and derived TRIGGERS/event-dispatch CALLS. Endpoint nodes locate routes;
-shared Event/ConfigKey nodes make literal identities searchable and embeddable.
-Their owners and dispatch links are reconciled globally after file deletion.
-`resolution.py` follows scoped imports, aliases, bounded re-export chains and
-typed receivers; unresolved/dynamic dispatch is not assigned arbitrarily to
-a same-named method. The regression matrix covers Python, JS/TS, Java, Go and
-Rust cases, including JSONC and bounded relative single-parent tsconfig
-inheritance from indexed files only. Package-based/multiple-parent inheritance
-and arbitrary runtime/framework dispatch are not supported by these fixtures.
-`composition.py` propagates Python constructor arguments, receiver fields,
-factory returns and uniquely evidenced Flask extension bindings without
-executing source. Conflicting bindings remain unresolved. Blueprint prefixes
-are included; test-client calls are not production endpoint declarations.
-Flow queries report unresolved external/dynamic call boundaries. Communities
-use containment rather than noisy reference edges, exclude singleton results,
-measure internal versus boundary edges, and use bounded partition refinement.
-
-`MemorySession.enrich` enriches successful Solver file reads and text searches
-with callers/callees, up to three flows, a community and test links. Search
-enrichment is lexical: ordinary reads never make hidden embedding requests.
-Enrichment respects read ranges, deduplicates emitted symbol-context blocks,
-and stays within both the existing tool-output cap and 3,000-character per-call /
-16,000-character history caps, plus a 48,000-character run enrichment cap.
-Fresh repair histories reset visibility and receive unchanged base locators.
-Structured edits invalidate locators; enrichment suppresses edited symbols
-and native responses mark edited records base-only without old line ranges.
-Identical visible native responses are suppressed. Failure preserves original source output.
-Structured usage is recorded separately as `enrichments` in legion-memory.json;
-these are not fabricated model-requested tool calls. No-memory reads and the
-Reviewer remain unchanged.
-
-Build, embedding and post-processing remain workflow-owned. MCP/editor hook
-transport, wiki/registry workflows and a second mutation/apply-token path are
-not introduced to match upstream tool counts.
-
-Memory artifacts distinguish availability, retrieval, exposure, queries and
-read enrichment. Character ledgers distinguish source, initial packets,
-enrichment, native output and schema bindings; these are not billed tokens or
-proof of causal memory use. Query embedding, vector retrieval, ranking, graph
-build, embedding sync and total memory-preflight timing remain separate.
-
-Embedding capacity is logged before hosted calls; over-budget builds embed
-nothing. The Gemini adapter supports 1–8 independent requests concurrently
-(default 1), preserving single-document semantics, bounded retries/deadlines,
-32-node checkpoints and publication-before-cleanup. Repository requests must
-equal their resolved Git root; nested non-repositories are rejected.
-
-Optional verification-environment preflight runs in the actual sandbox before
-model/embedding calls in both local solve modes. It checks configured Python
-test tooling and declared installed distributions without importing repository
-code, running tests, installing dependencies or enabling networking. It is
-tooling readiness, not a test result or hidden grader.
-
-This is targeted A–E coverage, not universal reference parity. Remaining
-certification includes arbitrary language/framework dispatch and exact naming
-and graph populations outside the normalized fixtures. Phase F's benchmark
-harness and live evaluation were not implemented. The reference fingerprints and implemented
-fixture coverage are recorded in `apps/agent/tests/legion_memory/reference_manifest.json`.
-
-## Dependency tower
-
-Dependencies point toward stable contracts:
-
-```text
-interfaces (CLI, Actions)
-  -> workflows
-    -> composition and orchestration
-      -> agents
-        -> deterministic capabilities
-          -> providers/adapters
-            -> typed domain contracts
-```
-
-The enforced rules are:
-
-- `domain` imports only standard-library, Pydantic, and other domain modules;
-- agents do not import CLI, workflows, GitHub integration, orchestration, or
-  Docker implementations;
-- orchestration does not import CLI, workflows, GitHub integration, or Docker;
-- provider adapters do not import agents, orchestration, workflows, repository,
-  research, verification, or sandbox packages;
-- `legion_memory` does not import agents, CLI, composition, orchestration,
-  workflows, integrations, providers, or sandbox packages;
-- package `__init__.py` files document ownership and contain no implementation;
-- non-composition modules have at most 14 internal module dependencies; and
-- removed architecture and state-engine packages cannot reappear unnoticed.
-
-These rules are executable in
-[`test_architecture.py`](../apps/agent/tests/test_architecture.py).
-
-## Ownership map
-
-| Responsibility | Canonical owner |
+| Responsibility | Owner in `legion_memory/` |
 | --- | --- |
-| CLI and exit policy | `sage/cli.py` |
-| Production construction | `sage/composition.py` |
-| Environment loading | `sage/config.py` |
-| Solver role, tools, plan gate | `sage/agents/solver.py` |
-| Reviewer packet and contract | `sage/agents/reviewer.py` |
-| Bounded model tool loop | `sage/agents/loop.py` |
-| Solve/verify/review/repair routing | `sage/orchestration/solve.py` |
-| Candidate derivation and final guard | `sage/orchestration/candidate.py` |
-| Run-scoped dependency contract | `sage/orchestration/context.py` |
-| Cross-role validation and outcome policy | `sage/orchestration/validation.py` |
-| Repository capabilities | `sage/repository/service.py` |
-| Safe file operations | `sage/repository/filesystem.py` |
-| Deterministic verification | `sage/verification/` |
-| Research budgets and cache | `sage/research/service.py` |
-| Legion Memory build and query boundary | `sage/legion_memory/service.py` |
-| Legion Memory parsing and SQLite graph | `sage/legion_memory/parsing.py`, `store.py` |
-| Legion Memory Issue ranking and graph expansion | `sage/legion_memory/retrieval.py` |
-| Run-scoped Legion Memory binding and usage evidence | `sage/legion_memory/session.py` |
-| Native read-only memory adapters | `sage/agents/memory_tools.py` |
-| Model adapters and call accounting | `sage/providers/` |
-| Atomic run evidence | `sage/artifacts/store.py` |
-| Local solve resource lifecycle | `sage/workflows/solve.py` |
-| GitHub lifecycle | `sage/workflows/github.py` |
-| GitHub API and transport | `sage/integrations/github/client.py`, `transport.py` |
-| GitHub publication policy and Git transaction | `sage/integrations/github/publication.py`, `git_publish.py` |
+| Git root, identity, source inventory, full/incremental/no-change build | `indexing.py` |
+| Grammar extraction and symbol metadata | `parsing.py`, `symbol_metadata.py` |
+| Scoped imports, aliases, typed receivers | `resolution.py`, `bindings.py`, `tsconfig.py` |
+| SQLite transactions, migrations, graph reconciliation | `store.py`, `migrations.py` |
+| Communities and structural diagnostics | `communities.py`, `analysis.py` |
+| Validated read operations and result provenance | `service.py`, `queries.py`, `review.py` |
+| Issue signals, ranking, expansion, bounded packet | `retrieval.py`, `search.py` |
+| Content vectors, publication and retention | `vectors.py` |
+| Run/session visibility, deduplication and edit invalidation | `session.py`, `context.py` |
 
-Tests mirror these responsibility names under `apps/agent/tests/`.
+`bindings.py` infers dependency bindings from parsed source. It never constructs
+Sage services; production construction belongs to `sage/composition.py`.
 
-## Agent boundaries
+### Committed source and storage
 
-### Solver
+Indexing reads blobs from committed `HEAD`, not dirty files. The requested
+repository must equal its resolved Git root. SQLite records repository identity,
+exact SHA, schema/parser versions and readiness. One operation selects full,
+incremental, or no-change processing. Full and incremental results use the same
+result assembly. Directory exclusions reuse `repository/selection.py`, with
+memory-specific exclusions added explicitly.
 
-The Solver receives the Issue and accepted base SHA. It can list the tree,
-search exact text, read bounded file ranges, request bounded research, persist
-or revise a typed plan, edit files through structured operations, show the
-actual Git diff, and run allowlisted verification commands.
+Tree-sitter supplies grammar extraction, NetworkX graph analysis, and igraph
+seeded weighted Leiden communities. The supported language table lives in
+`parsing.py`. Stored relationships include containment, imports, calls,
+inheritance, tests, references, routes, events and configuration keys. Updates
+reconcile aliases and shared identities after deletion. Ambiguous or dynamic
+dispatch remains unresolved. Indexed JSONC/relative single-parent tsconfig
+inheritance is bounded; package-based or multiple-parent inheritance is unsupported.
 
-For an explicit memory-assisted local run, the Solver also receives bounded
-untrusted base-snapshot locators and read-only graph tools. It must verify
-those locators with current repository reads. A graph result cannot unlock
-mutation or satisfy an acceptance criterion.
+### Retrieval and exposure
 
-Mutation is locked until the Solver persists an implementable plan. The Solver
-cannot use a raw patch tool, arbitrary mutation shell, Git commit or push,
-credentials, or direct network access.
+Local `make solve` is memory-free. Explicit `legion-solve` requests memory.
+Accepted GitHub solves always build a fresh SQLite graph under runner temporary
+storage; that database is not cached or uploaded.
 
-### Reviewer
+The workflow builds after sandbox startup and optional tooling preflight, before
+model calls. Retrieval uses bounded Issue paths, identifiers and terms, exact/FTS
+ranking, and bounded relationship/flow/community expansion. Hybrid retrieval adds
+vectors with reciprocal-rank fusion (constant 60), preserves explicit anchors,
+and falls back to the lexical scorer on vector errors. The cosine floor is
+provisional, not evidence of universal relevance.
 
-The Reviewer receives the complete Issue, latest plan, Git-derived changed
-paths and bounded diff, deterministic verification evidence, Solver summary,
-and safe research provenance. It has no repository or mutation capability.
-Passing review must cover every acceptance criterion exactly once and mark it
-satisfied.
+| Retrieval result | Solver exposure |
+| --- | --- |
+| `used` | Untrusted context packet and five solve-profile tools |
+| `no_match` | No initial packet, graph tools, or enrichment queries |
+| `unavailable` | Normal source inspection with an explicit fallback artifact |
 
-### Orchestrator
+The five solve tools are semantic search, query patterns, flow, community, and
+impact. The full native registry retains 21 operations for explicit use. All are
+read-only, accept neither arbitrary SQL nor a database path from the model, and
+retain existing schemas/defaults/order. The Reviewer receives candidate evidence
+without memory tools.
 
-`SolveOrchestrator` owns model-call order, candidate snapshots, verification,
-review routing, repair progress fingerprints, final candidate guards, and
-terminal outcomes. It does not define role prompts, repository mechanics,
-provider wire formats, or GitHub publication.
+Initial solve context defaults to 4,000 characters. Read/search enrichment is
+lexical and makes no hidden embedding calls. It respects source ranges, tool
+output limits, and 3,000-character per-call, 16,000-character history and
+48,000-character run caps. Session resets restore base locators; edits suppress
+stale enrichment and remove old line ranges from native responses. Duplicate
+visible responses are suppressed. Source output survives enrichment failures.
 
-## Candidate and artifact truth
+### Optional vectors
 
-The candidate is always derived from Git at the accepted base SHA. Model claims
-never define changed files or patch content. After a passing review, Sage checks
-the base SHA and diff digest again before returning `completed`.
+`composition.py` injects Gemini and Qdrant adapters; independent
+`LegionEmbeddingSettings` needs no chat credentials for standalone commands.
+Local memory defaults to lexical retrieval. GitHub embeddings default on and
+require remote Qdrant configuration; disabling embeddings preserves lexical
+memory and constructs neither adapter.
 
-One `RunArtifacts` instance owns all evidence for a run. Writes are atomic.
-The stable top-level set is:
+SQLite schema 3 and parser v3 preserve existing migration/rebuild behavior.
+Qdrant collections derive identity from repository plus embedding identity.
+Immutable content-cache points permit reuse across fresh SQLite graphs; snapshot
+points restrict search to the generation published for the accepted SHA.
+Only acknowledged, identity-validated batches enter the publication manifest.
 
-```text
-request.json
-metadata.json
-issue.md
-solver-plan.json
-solver-final.json
-candidate-snapshot.json
-verification-summary.json
-review.json
-usage.json
-legion-memory.json              # memory-assisted local and GitHub runs
-terminal.json
-agent-final.json
-changed-files.json
-diff.patch
-```
+Writers take a nonblocking per-database file lock; semantic readers take a shared
+lock. Network calls never hold SQLite write transactions. Qdrant clients close
+after each operation. Local storage defaults beside SQLite and permits one owner;
+GitHub uses a configured remote service. Bounded embedding concurrency is 1–8
+(default 1), with existing deadlines, retries and 32-node checkpoints.
 
-Immutable histories live under `solver-plans/`, `verification/`, and
-`reviews/`. `changed-files.json` and `diff.patch` are authoritative. Persisted
-metadata and trace labels retain their current format identifiers so existing
-run consumers and operational trace history remain compatible.
+Publish the complete generation before cleanup. Retain snapshots for at least
+24 hours and content cache for at least 30 days; never prune the current
+generation or another repository/embedding identity. Failed indexing preserves
+recovery data. Failed cleanup leaves a ready generation and retries next build.
+Copying SQLite alone preserves lexical use, not vectors.
 
-`usage.json` includes provider-reported input, output, and cached tokens, the
-names of model-requested tools, and the ordered commands accepted by the
-Solver's `run_command` execution boundary. Other tool arguments are omitted.
-`legion-memory.json` records build,
-retrieval, fallback, and native memory-tool summaries without raw tool
-arguments or source bodies.
+## Dependency rules
 
-Standalone `sage memory retrieve` writes the latest bounded prompt context as
-`<memory-stem>.context.md` beside the selected SQLite graph. It is an atomic,
-human-readable overwrite with graph SHA and retrieval status; an unavailable
-graph does not produce a context artifact.
+Interfaces call workflows. Workflows own resource lifetimes and use the
+orchestrator/capabilities. Agents and orchestration depend on typed capabilities;
+external adapters implement those boundaries. Domain contracts form the stable
+foundation. This is a directed dependency graph, not a requirement that every
+operation pass through every layer.
 
-## Security boundaries
+Executable guards in `tests/test_architecture.py` enforce:
 
-- The source checkout is never the candidate workspace.
-- Repository commands run only in a disposable, network-disabled Docker
-  sandbox with bounded resources and timeouts.
-- Host Git is limited to workspace preparation and the trusted publication
-  transaction.
-- Legion Memory is read-only to the model, repository-bound, SHA-validated,
-  and always treated as untrusted navigation evidence.
-- GitHub credentials are scoped to the controller and temporary publication
-  environment; they never enter prompts, artifacts, the target sandbox, or Git
-  command arguments.
-- GitHub HTTP has bounded responses, pagination, retry delay, and normalized
-  errors.
-- Publication requires a completed, non-empty, verified, reviewed candidate at
-  the exact accepted base.
-- Branch push is creation-only, names remain `sage/issue-<number>`, pull
-  requests are drafts, and duplicate/orphan states are reconciled safely.
-- Diagnostic upload is an explicit file allowlist and never includes the
-  checkout or Issue body.
+- Domain imports only standard-library, Pydantic, and domain contracts.
+- Agents/orchestration never reach into CLI, workflows, GitHub or concrete Docker.
+- Providers and deterministic capabilities never reach back into agent control.
+- Memory never imports CLI, orchestration, providers, integrations or workflows.
+- Internal module imports are acyclic, including imports through package names.
+- Initializers contain no implementation; the CLI only re-exports `main` for
+  entrypoint compatibility.
+- Source size and dependency counts stay bounded; command and indexing extraction
+  does not justify unrelated framework growth.
 
-## Configuration
+## Evidence and failure diagnosis
 
-`Settings.from_env` is the only environment-loading boundary. The two public
-model settings remain `SAGE_V2_SOLVER_MODEL` and `SAGE_V2_REVIEWER_MODEL` for
-operator compatibility. They map directly to the unversioned Python fields
-`solver_model` and `reviewer_model`.
+One `RunArtifacts` instance owns atomic evidence for one run:
 
-The canonical sandbox image is `sage-sandbox:v2`. The canonical LangSmith
-project may remain `sage-v2` so trace history stays continuous. There is no
-environment setting that selects another solve implementation.
+| Evidence | Question it answers |
+| --- | --- |
+| `request.json`, `metadata.json`, `issue.md` | What was accepted, and at which base? |
+| `solver-plan.json`, `solver-final.json` | What did the Solver intend and report? |
+| `candidate-snapshot.json`, `changed-files.json`, `diff.patch` | What did Git observe? |
+| `verification-summary.json`, `review.json` | Which checks and criteria passed? |
+| `usage.json` | Which model/tool calls and accepted commands consumed resources? |
+| `legion-memory.json` when requested | Was memory available, retrieved, exposed, queried or enriched? |
+| `terminal.json`, `agent-final.json` | Why did the run stop? |
 
-## Extending the system
+Immutable histories live under `solver-plans/`, `verification/`, and `reviews/`.
+Persisted format identifiers, trace labels, model environment names
+(`SAGE_V2_SOLVER_MODEL`, `SAGE_V2_REVIEWER_MODEL`) and `sage-sandbox:v2` remain
+compatible. Character ledgers and path overlap do not prove causal memory use or
+billed token savings. Query embedding, retrieval, graph build and preflight
+timings remain separate.
 
-To add a Solver tool:
+Repository failures and invalid tool arguments provide bounded correction
+feedback. Provider failures, repair limits and candidate guard failures have
+explicit terminal outcomes. Publication requires completed, nonempty, verified,
+reviewed evidence at the accepted base. Host credentials never enter prompts,
+candidate sandbox or uploaded diagnostics. GitHub uploads use a fixed allowlist
+and remove rendered memory context.
 
-1. put deterministic behavior in the owning repository, research, or
-   verification service;
-2. expose a narrow typed adapter from `agents/solver.py`;
-3. preserve the plan-before-mutation gate for mutation tools; and
-4. add direct service tests plus agent capability tests.
+## Make improvements accumulate
 
-To add an agent role:
+For a new capability, locate its deterministic owner, extend its typed contract,
+expose a thin agent adapter if needed, and wire it in composition. For a new
+decision, change the orchestrator and its routing tests. For new evidence, extend
+the artifact contract and its producer/consumer together.
 
-1. create one role module with its packet, instructions, capability set, and
-   typed output boundary;
-2. construct it explicitly in `composition.py`;
-3. add an explicit transition in the orchestrator;
-4. add role-contract and routing tests; and
-5. update this document and the testing guide.
+Keep the regression demonstrating a failure beside its owner. Share repeated
+fixture setup, not unrelated assertions. Test names describe behavior rather than
+implementation phases. Update this map and the [testing guide](testing.md) in the
+same change. Preserve numbered specifications as historical rationale; the
+[refactor plan](refactor-plan.md) records current simplification and verification.
 
-Do not add a generic registry, provider abstraction, or package directory until
-at least two real implementations need that boundary.
-
-## Refactor measurements
-
-Measured on 7 September 2026 during Legion Memory Phase 4:
-
-| Metric | Before | Current |
-| --- | ---: | ---: |
-| Production Python files | 81 | 96 |
-| Production Python lines | 10,922 | approximately 17,400 |
-| Nonblank production Python lines | 9,383 | 16,231 (budget 16,300) |
-| Solve coordinator | 631 lines | 327 lines |
-| Highest internal module fan-out | 21 | 15 at CLI; 14 elsewhere |
-| Supported solve architectures | 1 behind selectors/factories | 1 constructed directly |
-
-The current increase includes the parser, transactional SQLite store, graph
-algorithms, deterministic retrieval, native tool boundary, run-scoped memory
-session, usage evidence, and typed contracts. Phase 4 adds seven focused modules:
-embedding contracts, Gemini and Qdrant adapters, vector lifecycle, hybrid ranking,
-symbol metadata, and weighted communities. Five further focused modules own
-structural enrichment, symbol resolution, predefined queries, diagnostics and
-change-risk context. The CLI's extra dependency is the
-embedding usage contract. These extend the existing solve lifecycle without
-adding another orchestration architecture. Compressing
-these boundaries would make the system smaller but harder to audit. The GitHub
-Legion integration adds durable-vector identity validation, retention, trusted
-workflow construction, and redacted diagnostics without a new module or
-dependency. File count, coordinator size, and dependency fan-out carry the
-intended navigation improvement, and the current nonblank size is guarded
-against regression.
-
-The detailed migration rationale and compatibility decisions are linked from
-[`refactor-plan.md`](refactor-plan.md). Verification commands are in
-[`testing.md`](testing.md).
+Static graph coverage is targeted, not universal language/framework parity.
+The pinned [reference manifest](../apps/agent/tests/legion_memory/reference_manifest.json)
+records coverage. The benchmark harness and live evaluation in specification 26
+remain planned; no efficiency improvement is inferred from offline tests.
