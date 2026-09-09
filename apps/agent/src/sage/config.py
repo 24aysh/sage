@@ -91,12 +91,15 @@ class LegionEmbeddingSettings(BaseModel):
             raise ConfigurationError("Google context sharing is disabled.")
         try:
             return cls(
-                enabled=True, api_key=values.get("GEMINI_API_KEY") or None,
+                enabled=True,
+                api_key=values.get("GEMINI_API_KEY", "").strip() or None,
                 model=values.get("SAGE_LEGION_EMBEDDING_MODEL", "gemini-embedding-2"),
                 dimensions=int(values.get("SAGE_LEGION_EMBEDDING_DIMENSIONS", "3072")),
-                qdrant_path=values.get("SAGE_LEGION_QDRANT_PATH") or None,
-                qdrant_url=values.get("SAGE_LEGION_QDRANT_URL") or None,
-                qdrant_api_key=values.get("SAGE_LEGION_QDRANT_API_KEY") or None,
+                qdrant_path=values.get("SAGE_LEGION_QDRANT_PATH", "").strip() or None,
+                qdrant_url=values.get("SAGE_LEGION_QDRANT_URL", "").strip() or None,
+                qdrant_api_key=(
+                    values.get("SAGE_LEGION_QDRANT_API_KEY", "").strip() or None
+                ),
                 max_nodes=values.get("SAGE_LEGION_EMBEDDING_MAX_NODES", "2000"),
                 deadline_seconds=values.get("SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS", "300"),
                 request_timeout_seconds=values.get("SAGE_LEGION_EMBEDDING_TIMEOUT_SECONDS", "30"),
@@ -106,6 +109,35 @@ class LegionEmbeddingSettings(BaseModel):
             )
         except (ValueError, ValidationError):
             raise ConfigurationError("Invalid Legion embedding settings; check model, dimensions, budgets and Qdrant configuration.") from None
+
+    @classmethod
+    def from_github_env(
+        cls,
+        environ: Mapping[str, str] | None = None,
+    ) -> LegionEmbeddingSettings:
+        """Load the default-on, remote-only GitHub embedding policy."""
+
+        values = os.environ if environ is None else environ
+        active = _parse_bool(
+            values.get("SAGE_LEGION_EMBEDDINGS_ENABLED", "true"),
+            name="SAGE_LEGION_EMBEDDINGS_ENABLED",
+        )
+        settings = cls.from_env(values, enabled=active)
+        if not settings.enabled:
+            return settings
+        if settings.qdrant_path is not None:
+            raise ConfigurationError(
+                "GitHub Legion embeddings require remote Qdrant storage."
+            )
+        if settings.qdrant_url is None or not settings.qdrant_api_key:
+            raise ConfigurationError(
+                "GitHub Legion embeddings require a Qdrant URL and API key."
+            )
+        if not settings.api_key:
+            raise ConfigurationError(
+                "GEMINI_API_KEY is required for GitHub Legion embeddings."
+            )
+        return settings
 
 
 class Settings(BaseModel):
