@@ -33,10 +33,13 @@ See [architecture](docs/architecture.md) for system ownership and
 
 | I need to change… | Start here |
 | --- | --- |
+| CLI flags, output, or exit policy | `apps/agent/src/sage/cli/` |
 | Solver behavior or tools | `apps/agent/src/sage/agents/solver.py` |
 | Reviewer criteria | `apps/agent/src/sage/agents/reviewer.py` |
 | Solve/repair routing | `apps/agent/src/sage/orchestration/solve.py` |
 | Repository capability | `apps/agent/src/sage/repository/service.py` |
+| Memory indexing or source binding | `apps/agent/src/sage/legion_memory/indexing.py` and `bindings.py` |
+| Memory ranking or session exposure | `apps/agent/src/sage/legion_memory/retrieval.py` and `session.py` |
 | Model/provider behavior | `apps/agent/src/sage/providers/` |
 | GitHub trigger/publication | `apps/agent/src/sage/integrations/github/` and `apps/agent/src/sage/workflows/github.py` |
 | Settings | `apps/agent/src/sage/config.py` and `.env.example` |

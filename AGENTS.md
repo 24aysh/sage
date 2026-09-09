@@ -106,7 +106,12 @@ cross-run state engine.
 - `sage/orchestration/` — deterministic solve/verify/review/repair control;
 - `sage/workflows/` — local and GitHub use-case resource lifecycles;
 - `sage/domain/` — provider-neutral typed contracts;
+- `sage/cli/` — command parsing, output, and exit policy; `__init__.py` only
+  re-exports `main` to preserve the installed entrypoint;
 - `sage/repository/`, `sage/research/`, `sage/verification/` — deterministic capabilities;
+- `sage/legion_memory/` — rebuildable committed-source navigation: `indexing.py`
+  owns provenance/builds, `service.py` validated queries, `retrieval.py` Issue
+  ranking, and `session.py` run visibility; `bindings.py` infers source bindings;
 - `sage/providers/`, `sage/integrations/`, `sage/sandbox/` — external adapters;
 - `sage/artifacts/` — atomic evidence for one run;
 - `sage/composition.py` — the only production construction map; and
@@ -119,6 +124,9 @@ Pydantic, and other domain modules. Agents and orchestration must not import
 CLI, GitHub workflow, publication, or concrete Docker implementations.
 
 See `docs/architecture.md` for the complete ownership and extension map.
+Keep tests grouped by those responsibilities; extend shared graph fixtures in
+`tests/legion_memory/conftest.py` instead of importing another test module or
+adding chronology-named suites such as `remaining` or `efficiency_gaps`.
 
 ## 4. New features
 
