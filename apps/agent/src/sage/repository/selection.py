@@ -11,19 +11,7 @@ IGNORED_GLOBS = (
     "__pycache__/**",
     ".venv/**",
 )
-IGNORED_NAMES = frozenset(
-    {
-        ".git",
-        ".next",
-        ".venv",
-        "__pycache__",
-        "build",
-        "dist",
-        "node_modules",
-        "target",
-        "vendor",
-    }
-)
+IGNORED_NAMES = frozenset(pattern.removesuffix("/**") for pattern in IGNORED_GLOBS)
 
 # Keep untracked execution/dependency noise outside the authoritative candidate
 # while still allowing tracked files under these names to be modified.
