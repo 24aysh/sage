@@ -27,9 +27,12 @@ def build_legion_memory_service(*, data_root: Path | None = None,
         dimensions=embeddings.dimensions, retries=embeddings.retries, concurrency=embeddings.concurrency)
 
     def vector_store(database: Path, collection: str, create: bool) -> QdrantVectorStore:
+        local_path = None
+        if embeddings.qdrant_url is None:
+            local_path = embeddings.qdrant_path or database.parent / "qdrant"
         return QdrantVectorStore(collection=collection, dimensions=embeddings.dimensions,
-            usage=provider.usage, path=embeddings.qdrant_path or database.parent / "qdrant",
-            url=embeddings.qdrant_url, api_key=embeddings.qdrant_api_key, create=create)
+            usage=provider.usage, path=local_path, url=embeddings.qdrant_url,
+            api_key=embeddings.qdrant_api_key, create=create)
 
     return LegionMemoryService(data_root=data_root, vectors=VectorIndex(provider, vector_store,
         max_nodes=embeddings.max_nodes, deadline=embeddings.deadline_seconds,
