@@ -12,7 +12,7 @@ import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from time import monotonic
+from time import monotonic, time
 from uuid import NAMESPACE_URL, uuid5
 
 from sage.domain.embeddings import (
@@ -26,6 +26,10 @@ from sage.domain.embeddings import (
 from sage.legion_memory.store import GraphStore
 
 logger = logging.getLogger(__name__)
+
+_CACHE_GENERATION = "content-cache-v1"
+_SNAPSHOT_RETENTION_SECONDS = 24 * 60 * 60
+_CACHE_RETENTION_SECONDS = 30 * 24 * 60 * 60
 
 
 @contextmanager
@@ -68,6 +72,43 @@ def node_text(node: dict[str, object]) -> str:
     return bounded_text(f"title: {name} | text: {' '.join(parts)}")
 
 
+def vector_collection(repository_id: str, fingerprint: str) -> str:
+    """Return a stable, non-identifying collection for one repository/model."""
+
+    if not repository_id or not fingerprint:
+        raise MemoryVectorError("Memory repository and embedding identity are required.")
+    scope = hashlib.sha256(
+        json.dumps([repository_id, fingerprint], separators=(",", ":")).encode()
+    ).hexdigest()[:32]
+    return f"legion_{scope}"
+
+
+def cache_point_id(collection: str, qualified_name: str, text_hash: str) -> str:
+    """Return the durable identity for one exact node representation."""
+
+    return str(
+        uuid5(
+            NAMESPACE_URL,
+            f"{collection}:cache:{qualified_name}:{text_hash}",
+        )
+    )
+
+
+def snapshot_point_id(
+    collection: str,
+    generation: str,
+    qualified_name: str,
+) -> str:
+    """Return the immutable identity for a node in one graph generation."""
+
+    return str(
+        uuid5(
+            NAMESPACE_URL,
+            f"{collection}:snapshot:{generation}:{qualified_name}",
+        )
+    )
+
+
 class VectorIndex:
     """One run/CLI-owned vector capability with a bounded query cache."""
 
@@ -93,13 +134,8 @@ class VectorIndex:
         self._queries.clear()
 
     def _collection(self, store: GraphStore) -> str:
-        namespace = store.get_metadata("memory_namespace")
-        if not namespace:
-            raise MemoryVectorError("Memory schema requires a build before embedding.")
-        # Namespace plus repository prevents a foreign DB from sharing points.
-        repository = str(store.get_metadata("repository_id"))
-        scope = hashlib.sha256((namespace + repository).encode()).hexdigest()[:24]
-        return f"legion_{scope}_{self.provider.identity.fingerprint}"
+        repository = store.get_metadata("repository_id") or ""
+        return vector_collection(repository, self.provider.identity.fingerprint)
 
     def synchronize(self, store: GraphStore) -> VectorStatus:
         started = monotonic()
@@ -119,8 +155,10 @@ class VectorIndex:
                     "set SAGE_LEGION_EMBEDDING_MAX_NODES explicitly after reviewing cost."
                 )
             identity = self.provider.identity.fingerprint
-            sha = store.get_metadata("indexed_sha")
-            parser = store.get_metadata("parser_version")
+            repository = store.get_metadata("repository_id") or ""
+            sha = store.get_metadata("indexed_sha") or ""
+            parser = store.get_metadata("parser_version") or ""
+            collection = self._collection(store)
             with store.transaction():
                 store.set_metadata(f"vectors:{identity}", "{}")
             documents = [(n, node_text(n)) for n in nodes]
@@ -130,35 +168,63 @@ class VectorIndex:
                 for (node, _), text_hash in zip(documents, hashes, strict=True)
             ]
             generation = hashlib.sha256(
-                json.dumps([sha, identity, content_identity]).encode()
+                json.dumps(
+                    [sha, parser, identity, content_identity],
+                    separators=(",", ":"),
+                ).encode()
             ).hexdigest()
-            vectors = self._factory(store.path, self._collection(store), True)
+            vectors = self._factory(store.path, collection, True)
             for offset in range(0, eligible, 32):
-                batch: list[VectorPoint] = []
-                pending = []
+                pending: list[tuple[str, str, str, str, str]] = []
                 for (node, text), text_hash in zip(
                     documents[offset:offset + 32], hashes[offset:offset + 32], strict=True,
                 ):
                     qn = str(node["qualified_name"])
-                    old = store.rows(
-                        "SELECT point_id FROM vector_nodes WHERE fingerprint=? "
-                        "AND qualified_name=? AND text_hash=? "
-                        "ORDER BY generation=? DESC LIMIT 1",
-                        (identity, qn, text_hash, generation),
+                    pending.append(
+                        (
+                            qn,
+                            text,
+                            text_hash,
+                            cache_point_id(collection, qn, text_hash),
+                            snapshot_point_id(collection, generation, qn),
+                        )
                     )
-                    old_id = str(old[0]["point_id"]) if old else None
-                    pending.append((qn, text, text_hash, old_id))
-                cached_points = vectors.get([old_id for _, _, _, old_id in pending if old_id])
-                ready = {}
-                for qn, text, text_hash, old_id in pending:
-                    cached = cached_points.get(old_id)
-                    if cached and cached.qualified_name == qn and cached.text_hash == text_hash:
+                found = vectors.get(
+                    [
+                        point_id
+                        for _, _, _, cache_id, snapshot_id in pending
+                        for point_id in (snapshot_id, cache_id)
+                    ]
+                )
+                ready: dict[str, list[float]] = {}
+                for qn, _, text_hash, cache_id, snapshot_id in pending:
+                    for point_id, record_type, expected_generation in (
+                        (snapshot_id, "snapshot", generation),
+                        (cache_id, "cache", _CACHE_GENERATION),
+                    ):
+                        candidate = found.get(point_id)
+                        if not _matches_point(
+                            candidate,
+                            qualified_name=qn,
+                            text_hash=text_hash,
+                            generation=expected_generation,
+                            record_type=record_type,
+                            repository_id=repository,
+                            fingerprint=identity,
+                        ):
+                            continue
                         try:
-                            ready[qn] = validate_vector(cached.vector, self.provider.identity.dimensions)
+                            ready[qn] = validate_vector(
+                                candidate.vector,
+                                self.provider.identity.dimensions,
+                            )
                         except MemoryVectorError:
-                            pass
-                missing = [(qn, text) for qn, text, _, _ in pending if qn not in ready]
-                generated = {}
+                            continue
+                        break
+                missing = [
+                    (qn, text) for qn, text, _, _, _ in pending if qn not in ready
+                ]
+                generated: dict[str, list[float]] = {}
                 embed_many = getattr(self.provider, "embed_many", None)
                 if missing and embed_many is not None:
                     values = embed_many([text for _, text in missing], timeout=self._timeout,
@@ -166,7 +232,9 @@ class VectorIndex:
                     if len(values) != len(missing):
                         raise MemoryVectorError("Embedding batch returned an invalid vector count.")
                     generated = dict(zip((qn for qn, _ in missing), values, strict=True))
-                for qn, text, text_hash, old_id in pending:
+                cache_batch: list[VectorPoint] = []
+                snapshot_batch: list[VectorPoint] = []
+                for qn, text, text_hash, cache_id, snapshot_id in pending:
                     remaining = self._deadline - (monotonic() - started)
                     if remaining <= 0:
                         raise MemoryVectorError("Embedding build deadline exceeded.")
@@ -181,24 +249,59 @@ class VectorIndex:
                             self.provider.identity.dimensions,
                         )
                         embedded += 1
-                    point_id = str(uuid5(NAMESPACE_URL, f"{self._collection(store)}:{generation}:{qn}"))
-                    batch.append(VectorPoint(point_id, qn, text_hash, vector, generation))
-                changed = [p for p in batch if cached_points.get(p.point_id) != p]
-                verified = dict(cached_points)
-                if changed:
-                    vectors.upsert(changed)
-                    verified.update(vectors.get([p.point_id for p in changed]))
-                if any(p.point_id not in verified or (
-                    verified[p.point_id].text_hash != p.text_hash
-                    or verified[p.point_id].qualified_name != p.qualified_name
-                    or verified[p.point_id].generation != generation
-                ) for p in batch):
+                    cache_batch.append(
+                        VectorPoint(
+                            cache_id,
+                            qn,
+                            text_hash,
+                            vector,
+                            _CACHE_GENERATION,
+                            record_type="cache",
+                            repository_id=repository,
+                            fingerprint=identity,
+                        )
+                    )
+                    snapshot_batch.append(
+                        VectorPoint(
+                            snapshot_id,
+                            qn,
+                            text_hash,
+                            vector,
+                            generation,
+                            repository_id=repository,
+                            fingerprint=identity,
+                        )
+                    )
+                # Refresh last_seen for reused cache/snapshot records before
+                # retention cleanup. Upserts are deterministic and idempotent.
+                vectors.upsert([*cache_batch, *snapshot_batch])
+                verified = vectors.get([point.point_id for point in snapshot_batch])
+                if any(
+                    not _matches_point(
+                        verified.get(point.point_id),
+                        qualified_name=point.qualified_name,
+                        text_hash=point.text_hash,
+                        generation=generation,
+                        record_type="snapshot",
+                        repository_id=repository,
+                        fingerprint=identity,
+                    )
+                    for point in snapshot_batch
+                ):
                     raise MemoryVectorError("Vector upsert verification failed.")
                 with store.transaction():
                     store.connection.executemany(
                         "INSERT OR REPLACE INTO vector_nodes VALUES (?, ?, ?, ?, ?)",
-                        [(generation, p.qualified_name, p.text_hash, p.point_id, identity)
-                         for p in batch],
+                        [
+                            (
+                                generation,
+                                point.qualified_name,
+                                point.text_hash,
+                                point.point_id,
+                                identity,
+                            )
+                            for point in snapshot_batch
+                        ],
                     )
             if monotonic() - started >= self._deadline:
                 raise MemoryVectorError("Embedding build deadline exceeded.")
@@ -215,7 +318,12 @@ class VectorIndex:
             cleanup_status = "complete"
             cleanup_reason = None
             try:
-                removed = vectors.prune(keep_generation=generation)
+                now = time()
+                removed = vectors.prune(
+                    keep_generation=generation,
+                    snapshot_before=now - _SNAPSHOT_RETENTION_SECONDS,
+                    cache_before=now - _CACHE_RETENTION_SECONDS,
+                )
                 with store.transaction():
                     store.connection.execute(
                         "DELETE FROM vector_nodes WHERE fingerprint=? AND generation!=?",
@@ -281,13 +389,22 @@ class VectorIndex:
                 hits = vectors.search(self._queries[text], generation=manifest["generation"], limit=limit)
                 # Payloads are locators only, never trusted nodes from another graph.
                 hits = [
-                    (qn, score) for qn, score in hits
-                    if math.isfinite(score) and score >= self.min_similarity
+                    (hit.qualified_name, hit.score) for hit in hits
+                    if math.isfinite(hit.score) and hit.score >= self.min_similarity
+                    and hit.generation == manifest["generation"]
+                    and hit.repository_id == store.get_metadata("repository_id")
+                    and hit.fingerprint == self.provider.identity.fingerprint
                     and store.rows(
                         "SELECT 1 FROM vector_nodes v JOIN nodes n "
                         "ON n.qualified_name=v.qualified_name "
-                        "WHERE v.generation=? AND v.fingerprint=? AND v.qualified_name=?",
-                        (manifest["generation"], self.provider.identity.fingerprint, qn),
+                        "WHERE v.generation=? AND v.fingerprint=? "
+                        "AND v.qualified_name=? AND v.text_hash=?",
+                        (
+                            manifest["generation"],
+                            self.provider.identity.fingerprint,
+                            hit.qualified_name,
+                            hit.text_hash,
+                        ),
                     )
                 ][:limit]
                 return hits, VectorStatus(status="ready", model=self.provider.identity.model,
@@ -304,3 +421,26 @@ class VectorIndex:
         finally:
             if vectors is not None:
                 vectors.close()
+
+
+def _matches_point(
+    point: VectorPoint | None,
+    *,
+    qualified_name: str,
+    text_hash: str,
+    generation: str,
+    record_type: str,
+    repository_id: str,
+    fingerprint: str,
+) -> bool:
+    """Validate every identity field before a durable vector is reused."""
+
+    return bool(
+        point is not None
+        and point.qualified_name == qualified_name
+        and point.text_hash == text_hash
+        and point.generation == generation
+        and point.record_type == record_type
+        and point.repository_id == repository_id
+        and point.fingerprint == fingerprint
+    )

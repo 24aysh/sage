@@ -145,9 +145,9 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
         .splitlines()
     )
 
-    # A–E add focused static-composition, JSONC and tooling-preflight modules.
+    # Legion Actions adds durable-vector identity and trusted workflow wiring.
     assert len(files) <= 99
-    assert nonblank_lines <= 16_000
+    assert nonblank_lines <= 16_300
     assert orchestrator_lines <= 400
     for path in files:
         budget = 15 if path == SOURCE_ROOT / "cli.py" else 14
