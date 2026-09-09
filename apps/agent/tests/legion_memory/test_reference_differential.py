@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from sage.legion_memory.store import GraphStore
-from .test_parity import build
+from .conftest import apply_files
 
 HERE = Path(__file__).parent
 
@@ -34,7 +34,7 @@ def native_snapshot(store):
 def test_offline_navigation_golden(tmp_path):
     data = fixture()
     with GraphStore(tmp_path / "graph.sqlite3") as store:
-        build(store, data["files"])
+        apply_files(store, data["files"])
         assert native_snapshot(store) == data["expected"]
 
 

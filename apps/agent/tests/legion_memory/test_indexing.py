@@ -13,20 +13,7 @@ from sage.legion_memory.store import GraphStore
 
 
 
-def git(repository: Path, *arguments: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(repository), *arguments],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
-
-
-def commit_all(repository: Path, message: str) -> str:
-    git(repository, "add", "--all")
-    git(repository, "commit", "-m", message)
-    return git(repository, "rev-parse", "HEAD")
+from .conftest import commit_all, git
 
 
 def test_build_handles_full_no_change_and_ignores_dirty_worktree(
@@ -241,3 +228,14 @@ def test_failed_postprocessing_preserves_the_previous_ready_graph(
         assert store.get_metadata("build_state") == "ready"
         assert store.get_metadata("indexed_sha") == built.indexed_sha
         assert store.stats()["nodes"] == prior_nodes
+
+
+def test_nested_fixture_does_not_index_ancestor(fixture_repo):
+    import pytest
+    from sage.errors import LegionMemoryBuildError
+    from sage.legion_memory.service import LegionMemoryService
+    nested = fixture_repo / "standalone"
+    nested.mkdir()
+    with pytest.raises(LegionMemoryBuildError, match="ancestor Git root"):
+        LegionMemoryService().build_or_update_graph_tool(repo_root=nested)
+    assert not (nested / ".git").exists()

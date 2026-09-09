@@ -7,16 +7,17 @@ from pathlib import Path
 
 import pytest
 
+from sage.domain.embeddings import VectorStatus
 from sage.domain.memory import (
     MemoryRetrievalBudgets,
     MemoryRetrievalOutcome,
     MemoryRetrievalStatus,
 )
-from sage.legion_memory.retrieval import extract_issue_signals
+from sage.legion_memory.retrieval import extract_issue_signals, retrieve_issue_context
 from sage.legion_memory.service import LegionMemoryService
 from sage.legion_memory.store import GraphStore
 
-from .conftest import commit_all
+from .conftest import apply_files, commit_all
 
 
 def _retrieve(
@@ -356,3 +357,33 @@ def test_one_failed_expansion_preserves_primary_hits(
     assert result.status is MemoryRetrievalStatus.USED
     assert any(item.name == "helper" for item in result.items)
     assert result.warnings
+
+
+def test_semantic_distractor_does_not_evict_explicit_symbol(tmp_path: Path):
+    class Vectors:
+        def search(self, store, query, *, limit):
+            assert len(query) <= 1200
+            return [("config.py::settings", .8)], VectorStatus(status="ready")
+
+    with GraphStore(tmp_path / "graph.sqlite3") as store:
+        apply_files(store, {"service.py": "class WebhookService:\n    def process(self):\n        pass\n",
+                      "config.py": "def settings():\n    return 1\n"})
+        result = retrieve_issue_context("Fix `WebhookService.process` retry handling.", store,
+            memory_file=store.path, budgets=MemoryRetrievalBudgets(), vectors=Vectors())
+        assert result.items[0].qualified_name == "service.py::WebhookService.process"
+        assert "semantic" in result.search_modes
+        assert any(d.channel_ranks.get("lexical") for d in result.diagnostics)
+        assert result.duration_ms >= result.ranking_duration_ms
+
+
+def test_unresolved_edge_is_not_rebound_to_a_test_double(tmp_path: Path):
+    with GraphStore(tmp_path / "graph.sqlite3") as store:
+        apply_files(store, {"repo.py": "class Repo:\n    def claim(self):\n        self.collection.insert_one({})\n",
+                      "tests/fakes.py": "class FakeCollection:\n    def insert_one(self, data):\n        pass\n"})
+        assert store.node("insert_one") is not None
+        assert store.exact_node("insert_one") is None
+        result = retrieve_issue_context("Fix `Repo.claim`.", store,
+            memory_file=store.path, budgets=MemoryRetrievalBudgets())
+        assert not any(i.name == "insert_one" and any(r.relationship == "CALLS" for r in i.relationships)
+                       for i in result.items)
+        assert result.unresolved_edges > 0

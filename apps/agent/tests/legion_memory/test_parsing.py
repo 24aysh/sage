@@ -100,3 +100,17 @@ def test_path_normalization_preserves_dot_directories() -> None:
         ".github/workflows/test.yml"
     )
     assert detect_language("component.TSX") == "tsx"
+
+
+def test_named_javascript_arrow_and_doc_comment_are_indexed():
+    parsed = CodeParser().parse_bytes(b'''/** Checkout is idempotent per customer. */
+export const checkout = (customerId) => {
+    return persist(customerId);
+};
+function persist(id) { return id; }
+''', relative_path="services/orders.js")
+    nodes = {node.name: node for node in parsed.nodes}
+    assert "checkout" in nodes
+    assert "customerId" in nodes["checkout"].extra["params"]
+    assert "idempotent per customer" in nodes["checkout"].extra["docstring"]
+    assert any(e.source_qualified == nodes["checkout"].qualified_name and e.target_qualified == "persist" for e in parsed.edges)
