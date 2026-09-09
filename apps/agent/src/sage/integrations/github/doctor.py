@@ -53,6 +53,32 @@ def main() -> int:
             _error("testing guide is missing required setup documentation")
             status = 1
 
+    solve_action = required[1]
+    workflow = required[2]
+    if solve_action.is_file() and workflow.is_file():
+        action_body = solve_action.read_text(encoding="utf-8")
+        workflow_body = workflow.read_text(encoding="utf-8")
+        required_action_wiring = (
+            "legion-embeddings-enabled:",
+            "default: \"true\"",
+            "SAGE_LEGION_QDRANT_URL",
+            "SAGE_LEGION_QDRANT_API_KEY",
+            'SAGE_LEGION_QDRANT_PATH: ""',
+        )
+        required_workflow_wiring = (
+            "secrets.SAGE_LEGION_EMBEDDINGS_ENABLED || 'true'",
+            "secrets.SAGE_LEGION_QDRANT_URL",
+            "secrets.SAGE_LEGION_QDRANT_API_KEY",
+            "/legion-memory.json",
+        )
+        if all(value in action_body for value in required_action_wiring) and all(
+            value in workflow_body for value in required_workflow_wiring
+        ):
+            _ok("GitHub Legion Memory defaults and secret wiring are installed")
+        else:
+            _error("GitHub Legion Memory action wiring is incomplete")
+            status = 1
+
     environment_example = root / ".env.example"
     if environment_example.is_file():
         body = environment_example.read_text(encoding="utf-8")

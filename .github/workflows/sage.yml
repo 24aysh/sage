@@ -80,6 +80,9 @@ jobs:
           v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
           v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
           google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
+          legion-embeddings-enabled: ${{ secrets.SAGE_LEGION_EMBEDDINGS_ENABLED || 'true' }}
+          legion-qdrant-url: ${{ secrets.SAGE_LEGION_QDRANT_URL }}
+          legion-qdrant-api-key: ${{ secrets.SAGE_LEGION_QDRANT_API_KEY }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
           status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
 
@@ -98,6 +101,7 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json
             ${{ steps.solve.outputs.diagnostics-path }}/diff.patch
             ${{ steps.solve.outputs.diagnostics-path }}/usage.json
+            ${{ steps.solve.outputs.diagnostics-path }}/legion-memory.json
             ${{ steps.solve.outputs.diagnostics-path }}/terminal.json
             ${{ steps.solve.outputs.diagnostics-path }}/verification-summary.json
             ${{ steps.solve.outputs.diagnostics-path }}/review.json
