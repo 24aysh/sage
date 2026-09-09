@@ -148,3 +148,22 @@ def test_large_tool_payload_remains_valid_json_within_budget() -> None:
     assert payload["truncated"] is True
     assert payload["returned"] == len(payload["data"]["nodes"]) > 0
     assert payload["omitted"] + payload["returned"] == 500
+
+
+def test_review_context_uses_bound_source_reader_and_refactor_is_read_only(fixture_repo, built_memory):
+    from sage.agents.memory_tools import build_legion_memory_tools
+
+    service, database = built_memory
+    reads = []
+    def reader(**kwargs):
+        reads.append(kwargs)
+        return "current bounded source"
+    tools = {t.name: t for t in build_legion_memory_tools(service, repo_root=fixture_repo, memory_file=database, source_reader=reader)}
+    response = json.loads(asyncio.run(tools["get_review_context_tool"].ainvoke({"changed_files": ["service.py"], "include_source": True})))
+    assert response["data"]["changed_functions_total"] > 0
+    assert response["data"]["source_snippets"][0]["source"] == "current bounded source"
+    assert all(r["end_line"] - r["start_line"] < 50 for r in reads)
+    original = (fixture_repo / "service.py").read_bytes()
+    preview = json.loads(asyncio.run(tools["refactor_tool"].ainvoke({"mode": "rename", "old_name": "helper", "new_name": "helper_new"})))
+    assert preview["returned"] > 0
+    assert (fixture_repo / "service.py").read_bytes() == original

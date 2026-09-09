@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from sage.legion_memory.parsing import CodeParser, PARSER_VERSION
+from sage.legion_memory.service import LegionMemoryService
+from sage.legion_memory.session import MemorySession
+from sage.legion_memory.store import GraphStore
 
-def pytest_addoption(parser):
+
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--legion-reference", default=None,
                      help="Optional trusted pinned reference checkout for offline differential tests.")
-
-from sage.legion_memory.service import LegionMemoryService
 
 
 def git(repository: Path, *arguments: str) -> str:
@@ -76,3 +80,33 @@ def built_memory(
     service = LegionMemoryService(data_root=tmp_path / "memory")
     result = service.build_or_update_graph_tool(repo_root=fixture_repo)
     return service, result.memory_file
+
+
+def apply_files(
+    store: GraphStore, files: dict[str, str], *, full: bool = True,
+    removed: tuple[str, ...] = (),
+) -> None:
+    """Index in-memory source fixtures through the real parser and graph store."""
+    parser = CodeParser()
+    store.apply_update(
+        parsed_files=[parser.parse_bytes(text.encode(), relative_path=path)
+                      for path, text in files.items()],
+        removed_files=removed, repository_id="fixture", indexed_sha="sha",
+        parser_version=PARSER_VERSION,
+        build_type="full" if full else "incremental", full_rebuild=full,
+    )
+
+
+@pytest.fixture
+def memory_session(
+    fixture_repo: Path, built_memory: tuple[LegionMemoryService, Path],
+) -> Iterator[MemorySession]:
+    service, database = built_memory
+    build = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    retrieval = service.retrieve_issue_context(
+        issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    session = MemorySession(service, fixture_repo, database, database, build, retrieval)
+    try:
+        yield session
+    finally:
+        session.close()

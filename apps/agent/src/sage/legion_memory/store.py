@@ -12,7 +12,6 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 import networkx as nx
 
@@ -20,7 +19,7 @@ from sage.legion_memory.migrations import SCHEMA_VERSION, apply_migrations
 from sage.legion_memory.parsing import EdgeRecord, NodeRecord, ParsedFile
 from sage.legion_memory.communities import community_groups
 from sage.legion_memory.resolution import resolve_symbol
-from sage.legion_memory.composition import infer_composition
+from sage.legion_memory.bindings import infer_composition
 from sage.legion_memory.tsconfig import config_aliases
 
 _MAX_JSON_CHARS = 8_000

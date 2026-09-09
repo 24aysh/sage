@@ -336,7 +336,8 @@ github-test: ## Run deterministic GitHub integration tests (no live API/model ca
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" \
 		"$(AGENT_PROJECT)/tests/integrations/github" \
 		"$(AGENT_PROJECT)/tests/workflows/test_github.py" \
-		"$(AGENT_PROJECT)/tests/test_cli.py"
+		"$(AGENT_PROJECT)/tests/test_cli.py" \
+		"$(AGENT_PROJECT)/tests/cli"
 
 github-event-check: ## Parse and classify a local event fixture without API/model calls.
 	@set -euo pipefail; \

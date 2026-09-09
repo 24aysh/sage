@@ -6,6 +6,9 @@ import pytest
 
 from sage.errors import LegionMemoryQueryError
 from sage.legion_memory.service import LegionMemoryService
+from sage.legion_memory.store import GraphStore
+
+from .conftest import apply_files
 
 
 def test_search_query_traversal_and_impact_return_provenance(
@@ -109,3 +112,40 @@ def test_empty_and_ambiguous_results_do_not_overclaim_certainty(
             target="../../etc/passwd",
             **arguments,
         )
+
+
+def test_flow_excludes_tests_and_singletons_and_preserves_decorated_entry(tmp_path):
+    files = {"app.py": '''def helper():
+    return 42
+
+@app.get("/health")
+def health():
+    return helper()
+
+def test_health():
+    return health()
+
+def unused():
+    pass
+'''}
+    with GraphStore(tmp_path / "graph.sqlite3") as store:
+        apply_files(store, files)
+        flows = store.rows("SELECT name, depth, node_count, criticality FROM flows")
+        assert [row["name"] for row in flows] == ["health"]
+        assert flows[0]["node_count"] == 2
+        assert 0 <= flows[0]["criticality"] <= 1
+
+
+def test_weighted_leiden_is_deterministic_and_test_follows_production():
+    import networkx as nx
+    from sage.legion_memory.communities import community_groups
+
+    graph = nx.DiGraph()
+    for name in ("checkout", "persist", "stock", "other", "test_checkout"):
+        graph.add_node(name, file_path=name + ".py", is_test=name.startswith("test"))
+    graph.add_edge("checkout", "persist", kind="CALLS", weight=1)
+    graph.add_edge("checkout", "stock", kind="CALLS", weight=1)
+    graph.add_edge("checkout", "test_checkout", kind="TESTED_BY", weight=0.4)
+    first = community_groups(graph)
+    assert first == community_groups(graph)
+    assert next(group for group in first if "checkout" in group) >= {"checkout", "test_checkout"}

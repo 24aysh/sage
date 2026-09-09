@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 
 
@@ -57,7 +58,13 @@ def _sage_imports(path: Path) -> set[str]:
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.ImportFrom) and node.module:
             if node.module == "sage" or node.module.startswith("sage."):
-                imports.add(node.module)
+                for alias in node.names:
+                    candidate = f"{node.module}.{alias.name}"
+                    relative = candidate.removeprefix("sage.").replace(".", "/")
+                    imports.add(
+                        candidate if (SOURCE_ROOT / f"{relative}.py").is_file()
+                        else node.module
+                    )
         elif isinstance(node, ast.Import):
             imports.update(
                 alias.name
@@ -81,11 +88,21 @@ def test_domain_depends_only_on_domain_contracts() -> None:
         assert all(
             module.startswith("sage.domain.") for module in _sage_imports(path)
         ), path
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            modules = (
+                [node.module] if isinstance(node, ast.ImportFrom) and node.module
+                else [alias.name for alias in node.names] if isinstance(node, ast.Import)
+                else []
+            )
+            assert all(
+                module.split(".")[0] in sys.stdlib_module_names | {"pydantic", "sage"}
+                for module in modules
+            ), path
 
 
 def test_layers_do_not_reach_back_into_entrypoints_or_outer_workflows() -> None:
     for layer, forbidden in LAYER_FORBIDDEN_IMPORTS.items():
-        for path in (SOURCE_ROOT / layer).glob("*.py"):
+        for path in (SOURCE_ROOT / layer).rglob("*.py"):
             for module in _sage_imports(path):
                 assert not any(
                     module == f"sage.{name}" or module.startswith(f"sage.{name}.")
@@ -99,6 +116,12 @@ def test_package_initializers_contain_no_implementation() -> None:
         if path == SOURCE_ROOT / "__init__.py":
             assert len(body) == 2
             assert isinstance(body[1], ast.Assign)
+        elif path == SOURCE_ROOT / "cli" / "__init__.py":
+            # Preserve the installed sage.cli:main entrypoint, without logic.
+            assert len(body) == 2
+            assert isinstance(body[1], ast.ImportFrom)
+            assert body[1].module == "sage.cli.app"
+            assert [(alias.name, alias.asname) for alias in body[1].names] == [("main", None)]
         else:
             assert len(body) == 1
             assert isinstance(body[0], ast.Expr)
@@ -145,10 +168,9 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
         .splitlines()
     )
 
-    # Legion Actions adds durable-vector identity and trusted workflow wiring.
-    assert len(files) <= 99
+    # CLI command owners and repository indexing replace two oversized modules.
+    assert len(files) <= 106
     assert nonblank_lines <= 16_300
     assert orchestrator_lines <= 400
     for path in files:
-        budget = 15 if path == SOURCE_ROOT / "cli.py" else 14
-        assert len(_sage_imports(path)) <= budget, path
+        assert len(_sage_imports(path)) <= 14, path

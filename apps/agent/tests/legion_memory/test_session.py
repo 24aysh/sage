@@ -1,5 +1,8 @@
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
+from sage.agents.repository_tools import build_repository_read_tools
 from sage.domain.memory import (
     MemoryBuildResult,
     MemoryBuildType,
@@ -9,6 +12,7 @@ from sage.domain.memory import (
 )
 from sage.legion_memory.service import LegionMemoryService
 from sage.legion_memory.session import MemorySession
+from .conftest import commit_all
 
 
 def test_session_records_bounded_tool_evidence_without_payloads(tmp_path: Path) -> None:
@@ -113,3 +117,50 @@ def _retrieval(memory_file: Path) -> MemoryRetrievalResult:
         indexed_sha="a" * 40,
         duration_ms=1,
     )
+
+
+def test_enrichment_preserves_source_deduplicates_and_records_usage(fixture_repo, memory_session):
+    session = memory_session
+    repository = SimpleNamespace(read_file=lambda **_: "8: def helper():\n9:     return 42", search_text=lambda **_: "service.py:8:def helper():")
+    tools = {t.name: t for t in build_repository_read_tools(SimpleNamespace(repository=repository), enrich=session.enrich)}
+    first = asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 8, "end_line": 9}))
+    assert first.startswith("8: def helper():")
+    assert "Called by:" in first and "Tests:" in first and "Community:" in first
+    assert "Accepted-base" in first
+    second = asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 8, "end_line": 9}))
+    assert "legion-read-context" not in second
+    assert session.artifact().enrichments[0].hit_count == 1
+    assert session.artifact().enrichments[1].status == "skipped"
+    assert not session.artifact().tool_calls
+    session.begin_session(initial_visible=False)
+    third = asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 8, "end_line": 9}))
+    assert "Called by:" in third
+    session.invalidate("service.py")
+    assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""
+    assert session.enrich(tool_name="read_file", path="service.py", available_chars=100) == ""
+    session.close()
+    assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""
+
+
+def test_enrichment_failure_leaves_source_unchanged(fixture_repo, memory_session):
+    session = memory_session
+    (fixture_repo / "new.py").write_text("def new():\n    pass\n")
+    commit_all(fixture_repo, "make graph stale")
+    assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""
+    assert session.artifact().enrichments[0].status == "unavailable"
+
+
+def test_search_enrichment_and_default_read_range(fixture_repo, memory_session):
+    session = memory_session
+    repository = SimpleNamespace(search_text=lambda **_: "service.py:8:def helper():", read_file=lambda **_: "source")
+    tools = {t.name: t for t in build_repository_read_tools(SimpleNamespace(repository=repository), enrich=session.enrich)}
+    result = asyncio.run(tools["search_text"].ainvoke({"query": "helper"}))
+    assert result.startswith("service.py:8:def helper():") and "Called by:" in result
+    assert session.artifact().enrichments[0].status == "used"
+    captures = []
+    def capture(**kwargs):
+        captures.append(kwargs)
+        return ""
+    tools = {t.name: t for t in build_repository_read_tools(SimpleNamespace(repository=repository), enrich=capture)}
+    asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 12}))
+    assert captures[0]["end_line"] == 311
