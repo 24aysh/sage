@@ -15,8 +15,9 @@ under `docs/` for present behavior and commands.
 
 | Document | Status |
 | --- | --- |
-| [`25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Native graph, retrieval, local Solver integration, and initial embeddings implemented; complete parity and measured savings remain open; GitHub Actions integration is deferred |
+| [`25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Native graph, retrieval, local Solver integration, and initial embeddings implemented; complete parity and measured savings remain open; GitHub Actions integration is owned by specification 27 |
 | [`26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md`](26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md) | Implementation-ready correctness fixes and quality-first evaluation design: held-out tasks, independent grading, matched trials, ablations, and statistical release gates; no live benchmark results yet |
+| [`27_GITHUB_ACTIONS_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](27_GITHUB_ACTIONS_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Default-on GitHub Actions integration implemented locally with per-solve ephemeral SQLite graphs and persistent remote Qdrant embeddings; immutable action pinning and the live `/sage solve` canary remain release gates |
 
 ## Implemented consolidation
 

@@ -782,17 +782,20 @@ inspect the counts and raise the explicit budget only if the API cost is
 acceptable. Requests are sequential and individually bounded; unchanged text
 is not re-embedded. Native retrieval never builds document vectors implicitly.
 
-Existing schema-1/2 SQLite graphs migrate to schema 3 on build. The parser-version change
-also rebuilds metadata/relations from committed source. Direct retrieval of an
-old schema requires running the build first. Qdrant data is separate: copying
-only SQLite does not copy vectors. Deleted/renamed symbols and old generations
-are excluded from queries. After successful publication, obsolete vectors in
-the active repository/model-identity collection are deleted and their SQLite
-manifests pruned. `Vector cleanup: complete / N obsolete points removed` reports
-this separately. A cleanup failure reports `pending` but keeps the new generation
-ready; the next build retries. Failed indexing never deletes recovery data.
-Other repositories and separately configured model/dimension collections are
-left alone, not treated as garbage for the current index.
+Existing schema-1/2 SQLite graphs migrate to schema 3 on build. The parser-version
+change also rebuilds metadata/relations from committed source. Direct retrieval
+of an old schema requires running the build first. Qdrant data is separate:
+copying only SQLite does not copy vectors. Deleted/renamed symbols and old
+generations are excluded from queries. After successful publication, cleanup
+may delete snapshot points older than 24 hours and content-cache points older
+than 30 days; it never removes the current generation. `Vector cleanup: complete
+/ N obsolete points removed` reports this separately. This retention window
+prevents one concurrent solve from deleting another solve's active generation
+while preserving reuse for unchanged content. A cleanup failure reports
+`pending` but keeps the new generation ready; the next build retries. Failed
+indexing never deletes recovery data. Other repositories and separately
+configured model/dimension collections are left alone, not treated as garbage
+for the current index.
 
 For an A/B/C comparison, replace `SAME_COMMIT` with one fixed SHA and keep
 models, Issue, verification and solve budgets identical:
@@ -918,8 +921,9 @@ The new tests cover semantic-only matches, no-hit and provider failure fallback,
 unchanged-vector reuse, changed/deleted symbols, interrupted-batch recovery,
 model-recipe isolation, locks, schema migration, native-tool usage, Gemini
 request shape, invalid vectors, and selected parser/flow/community behavior.
-Real Gemini and Qdrant-server checks are separate opt-in checks; these offline
-results do not certify quota availability or shared-server concurrency.
+Real Gemini and Qdrant-server checks are separate opt-in checks. The offline
+suite covers deterministic shared-store generation isolation and retention,
+but does not certify hosted-service quotas, availability, or latency.
 
 ### Read/search enrichment and expanded native tools
 
@@ -1091,6 +1095,42 @@ run rather than claiming it passed.
 
 ## GitHub controller checks
 
+### Install GitHub Legion Memory
+
+Accepted GitHub `/sage solve` and `/sage fix` runs build a new Tree-sitter
+`graph.sqlite3` under runner temporary storage. The graph is rebuilt at the
+accepted base SHA for every run attempt and is not cached or uploaded. GitHub
+embeddings default on and use persistent remote Qdrant; local `make solve`
+behavior remains memory-free.
+
+Before installing the pinned workflow, create these repository secrets (or
+environment secrets when the solve job is assigned to that environment):
+
+```text
+SAGE_LEGION_QDRANT_URL          # required HTTPS endpoint
+SAGE_LEGION_QDRANT_API_KEY      # required remote credential
+SAGE_LEGION_EMBEDDINGS_ENABLED  # optional; set false for lexical memory
+```
+
+`GEMINI_API_KEY` remains required for the Reviewer and supplies the existing
+Gemini Embedding 2 adapter. Qdrant and model credentials are scoped only to the
+trusted solve controller step. They do not enter checkout, dependency install,
+Docker build, sandbox, gate, finalizer, prompt, or diagnostic upload steps.
+
+Run the offline policy and controller checks after changing the installation:
+
+```bash
+make actions-check
+make github-test
+make github-doctor
+```
+
+`github-doctor` validates the workflow wiring and default without reading
+secret values. Missing or invalid remote Qdrant configuration fails before the
+first model or embedding call when embeddings are enabled. Setting
+`SAGE_LEGION_EMBEDDINGS_ENABLED=false` skips Qdrant and embedding construction
+but still builds and uses lexical Legion Memory.
+
 Classify a fixture with no API or model call:
 
 ```bash
@@ -1103,19 +1143,31 @@ comments, rejects pull-request comments, rechecks authorization and duplicate
 state before constructing model dependencies, and runs at the gate's exact
 base SHA.
 
-After the implementation is committed and the workflow's two local Sage Action
-references are pinned to that immutable commit, use a disposable repository for
-one controlled canary:
+After the implementation commit is pushed and the workflow's two Sage Action
+references are pinned to its full immutable SHA, use a disposable repository
+for one controlled canary. Choose an Issue that names a known symbol or path so
+semantic or hybrid retrieval should produce a positive match:
 
 1. invoke one bounded Issue with `/sage solve`;
 2. confirm authorization, exact base SHA, and one status-comment lifecycle;
-3. confirm a creation-only `sage/issue-<number>` branch and draft PR;
-4. confirm the uploaded diagnostic allowlist contains no checkout, Issue body,
-   or credentials;
-5. rerun finalization and confirm it is idempotent; and
-6. clean up through normal repository maintenance, not through Sage.
+3. inspect uploaded `legion-memory.json` and confirm `build_type=full`, its
+   `indexed_sha` equals the GitHub base SHA, vectors are `ready`, Qdrant
+   operations are non-zero, retrieval includes `semantic` or `hybrid`, and
+   memory exposure or native memory-tool use is recorded;
+4. confirm a creation-only `sage/issue-<number>` branch and draft PR;
+5. confirm the uploaded diagnostic allowlist contains no checkout, rendered
+   memory context, Issue body, Qdrant endpoint, or credentials;
+6. rerun finalization and confirm it is idempotent; and
+7. clean up through normal repository maintenance, not through Sage.
 
-The canary cannot be run until an immutable implementation commit exists.
+A second bounded Issue started while the default branch remains at the same
+exact base should report zero new document embeddings and reuse all eligible
+vectors. For a lexical-only smoke, temporarily set the optional embedding secret
+to `false`, invoke a fresh bounded Issue, and confirm the graph remains present
+while vector status is disabled. Restore the intended secret afterward.
+
+The canary cannot be run until the implementation commits are pushed and an
+immutable implementation SHA is pinned.
 
 ## Expected run evidence
 
@@ -1133,7 +1185,9 @@ For a completed candidate, check at least:
 - `changed-files.json` and `diff.patch` match the candidate workspace.
 
 GitHub diagnostic uploads are intentionally smaller than the local run
-directory and remain a fixed allowlist in the workflow.
+directory and remain a fixed allowlist in the workflow. Their
+`legion-memory.json` copy removes the rendered retrieval context while retaining
+SHA, counts, timings, vector status, search modes, exposure, and usage evidence.
 
 ## Troubleshooting
 
@@ -1163,6 +1217,17 @@ SHA or diff-digest change is a safety failure, not a retry signal.
 GitHub workflow failure: run `make actions-check`, then inspect only the
 allowlisted diagnostic artifact and the bot-owned status comment. Provider
 details and credentials are deliberately excluded.
+
+GitHub embedding configuration failure: confirm both Qdrant secrets exist, the
+URL uses HTTPS without embedded credentials or query parameters, and
+`SAGE_LEGION_QDRANT_PATH` is not configured in the solve environment. To keep
+lexical memory available during Qdrant maintenance, set the optional embedding
+secret to `false` rather than removing the memory integration.
+
+GitHub vector fallback with valid configuration: inspect the redacted
+`legion-memory.json` vector reason and Qdrant/embedding usage counts. A transient
+Gemini or Qdrant failure preserves the fresh graph and lexical retrieval, but a
+release canary is not successful until vector status is `ready`.
 
 Legion Memory status is `missing`: run `make legion-memory REPO=...` or pass
 the same explicit `MEMORY_FILE` to both build and status. A stale-SHA or

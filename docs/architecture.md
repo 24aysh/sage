@@ -62,10 +62,13 @@ Kotlin, Swift, PHP, Scala, Dart, Lua, Bash, Elixir, Zig, Julia, HCL, SQL,
 YAML, Nix, PowerShell, Svelte, Vue, R, Perl, and Solidity.
 
 The LangChain adapters are native, read-only, repository-bound tools;
-they accept neither a database path nor arbitrary SQL from the model. A local
-memory solve builds or updates the graph against the clean workspace before
-the sandbox or first model call, retrieves bounded Issue context, and creates
-a run-scoped memory session. Phase 2 retrieval
+they accept neither a database path nor arbitrary SQL from the model. A memory
+solve builds or updates the graph against the clean workspace after sandbox
+startup but before the first model call, retrieves bounded Issue context, and
+creates a run-scoped memory session. Local callers explicitly select memory.
+Every accepted GitHub solve selects it automatically and creates a new SQLite
+graph under runner-owned temporary storage; that graph is neither cached nor
+uploaded. Phase 2 retrieval
 extracts bounded Issue paths, identifiers, error tokens, and terms, ranks exact
 and FTS5 hits, expands the best seeds through relationships, flows, and
 communities, and returns explainable source locators under result and character
@@ -78,36 +81,45 @@ prompt section. Unavailable memory binds no graph tools. The Reviewer remains
 unchanged and judges only the actual candidate evidence. No MCP server,
 daemon or watcher is used. Lexical-only retrieval makes no embedding calls.
 
-With embeddings explicitly enabled, `composition.py` injects a Gemini adapter
-and a Qdrant store factory into the existing graph service. `config.py` owns
-the independent `LegionEmbeddingSettings` boundary so memory commands need no
-chat-model credentials. `make solve` never constructs these adapters.
-`make legion-solve` still uses the same solve workflow and gates.
+With embeddings enabled, `composition.py` injects a Gemini adapter and a Qdrant
+store factory into the existing graph service. `config.py` owns the independent
+`LegionEmbeddingSettings` boundary so memory commands need no chat-model
+credentials. Local memory commands remain opt-in, while GitHub solves default
+embeddings on and require remote HTTPS Qdrant configuration. The optional
+GitHub secret `SAGE_LEGION_EMBEDDINGS_ENABLED=false` retains lexical memory and
+constructs neither embedding nor Qdrant adapters. `make solve` never constructs
+these adapters. `make legion-solve` still uses the same solve workflow and
+gates.
 
 `legion_memory/vectors.py` formats bounded non-File node documents, reuses
 same-text/same-model vectors, and reconciles vectors even on a no-change graph
-build. Schema 2 added an embedding manifest and persistent memory namespace;
-schema 3 preserves original edge identities when distinct aliases converge on
-the same resolved target. Parser v3 rebuilds committed metadata on upgrade.
-Qdrant collections are isolated by namespace, repository and embedding identity;
-point IDs additionally include a generation. Only acknowledged, verified
-batches are recorded. A ready generation is published in SQLite after the
-complete index is available. Published provenance includes SHA and parser
-version. A failed index leaves the graph usable for lexical retrieval.
+build. Schema 2 added the SQLite publication manifest; schema 3 preserves
+original edge identities when distinct aliases converge on the same resolved
+target. Parser v3 rebuilds committed metadata on upgrade. Qdrant collection
+identity is now a hash of repository and embedding identity rather than the
+random namespace in one SQLite file. Each collection contains immutable
+content-cache points and graph-generation snapshot points. This lets a newly
+built GitHub SQLite graph reuse verified vectors from a prior solve. Searches
+filter the exact generation published by the current accepted-SHA graph. Only
+acknowledged, identity-validated batches are recorded, and SQLite publishes a
+ready generation only after the complete snapshot is available. A failed index
+leaves the graph usable for lexical retrieval.
 
 Writers take a nonblocking per-database file lock through graph and vector
 creation; semantic readers take a shared lock. Network requests never hold a
 SQLite write transaction. The Qdrant client is opened/closed within each
-operation, not kept as a singleton. Default storage is a persistent `qdrant/`
-directory beside SQLite; concurrent opens fail safely. A configured server URL
-uses the same adapter, but shared-server concurrency across copied databases
-has not been certified. Once a generation is published, obsolete points in
-that repository/embedding-identity collection are physically pruned, then its
-obsolete SQLite manifests are removed. Failed publication never prunes recovery
-data. Failed cleanup leaves the current generation usable and retries on the
-next build, including no-change builds. Other repositories and separately
-configured embedding identities are not deleted. Copying only SQLite preserves
-graph-only use, not the vectors.
+operation, not kept as a singleton. Default local storage is a persistent
+`qdrant/` directory beside SQLite; concurrent opens fail safely. GitHub requires
+a configured HTTPS server URL and API key and never falls back to that local
+directory. Deterministic point IDs and idempotent upserts isolate concurrent
+same-repository solves without serializing Issues. Cleanup retains snapshot
+points for at least 24 hours and reusable content points for at least 30 days;
+it never deletes the current generation. Failed publication never prunes
+recovery data. Failed cleanup leaves the current generation usable and retries
+on the next build. Other repositories and separately configured embedding
+identities are not deleted. Copying only SQLite preserves graph-only use, not
+the vectors; rebuilding SQLite with access to the corresponding Qdrant scope
+recovers verified vectors.
 
 `legion_memory/search.py` combines bounded term-FTS and cosine-ranked vectors using
 RRF (constant 60), query-kind/identifier boosts and a context-file boost.
@@ -326,7 +338,7 @@ candidate-snapshot.json
 verification-summary.json
 review.json
 usage.json
-legion-memory.json              # memory-assisted local runs only
+legion-memory.json              # memory-assisted local and GitHub runs
 terminal.json
 agent-final.json
 changed-files.json
@@ -412,7 +424,7 @@ Measured on 7 September 2026 during Legion Memory Phase 4:
 | --- | ---: | ---: |
 | Production Python files | 81 | 96 |
 | Production Python lines | 10,922 | approximately 17,400 |
-| Nonblank production Python lines | 9,383 | approximately 15,200 (budget 15,600) |
+| Nonblank production Python lines | 9,383 | 16,231 (budget 16,300) |
 | Solve coordinator | 631 lines | 327 lines |
 | Highest internal module fan-out | 21 | 15 at CLI; 14 elsewhere |
 | Supported solve architectures | 1 behind selectors/factories | 1 constructed directly |
@@ -426,9 +438,12 @@ structural enrichment, symbol resolution, predefined queries, diagnostics and
 change-risk context. The CLI's extra dependency is the
 embedding usage contract. These extend the existing solve lifecycle without
 adding another orchestration architecture. Compressing
-these boundaries would make the system smaller but harder to audit. File
-count, coordinator size, and dependency fan-out carry the intended navigation
-improvement, and the current nonblank size is guarded against regression.
+these boundaries would make the system smaller but harder to audit. The GitHub
+Legion integration adds durable-vector identity validation, retention, trusted
+workflow construction, and redacted diagnostics without a new module or
+dependency. File count, coordinator size, and dependency fan-out carry the
+intended navigation improvement, and the current nonblank size is guarded
+against regression.
 
 The detailed migration rationale and compatibility decisions are linked from
 [`refactor-plan.md`](refactor-plan.md). Verification commands are in
