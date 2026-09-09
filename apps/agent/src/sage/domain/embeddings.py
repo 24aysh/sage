@@ -6,7 +6,7 @@ import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -64,6 +64,19 @@ class VectorPoint:
     text_hash: str
     vector: list[float]
     generation: str
+    record_type: Literal["cache", "snapshot"] = "snapshot"
+    repository_id: str = ""
+    fingerprint: str = ""
+
+
+@dataclass(frozen=True)
+class VectorSearchHit:
+    qualified_name: str
+    text_hash: str
+    generation: str
+    repository_id: str
+    fingerprint: str
+    score: float
 
 
 class EmbeddingProvider(Protocol):
@@ -76,8 +89,20 @@ class EmbeddingProvider(Protocol):
 class VectorStore(Protocol):
     def get(self, ids: Sequence[str]) -> dict[str, VectorPoint]: ...
     def upsert(self, points: Sequence[VectorPoint]) -> None: ...
-    def search(self, vector: list[float], *, generation: str, limit: int) -> list[tuple[str, float]]: ...
-    def prune(self, *, keep_generation: str) -> int: ...
+    def search(
+        self,
+        vector: list[float],
+        *,
+        generation: str,
+        limit: int,
+    ) -> list[VectorSearchHit]: ...
+    def prune(
+        self,
+        *,
+        keep_generation: str,
+        snapshot_before: float,
+        cache_before: float,
+    ) -> int: ...
     def close(self) -> None: ...
 
 
