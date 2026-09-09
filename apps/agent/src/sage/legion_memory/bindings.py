@@ -1,4 +1,4 @@
-"""Bounded static propagation through Python constructors and local factories.
+"""Bounded static dependency bindings through Python constructors and factories.
 
 Only parsed expressions are inspected: indexed code is never imported/executed.
 Unions are retained to avoid resolving conflicting dependency-injection sites.
