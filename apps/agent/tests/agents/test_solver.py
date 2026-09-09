@@ -5,22 +5,78 @@ from pathlib import Path
 
 import pytest
 
+from sage.agents.prompts import SOLVER_INSTRUCTIONS, build_solver_message
+from sage.agents.solver import SolverPlanSession, build_solver_tools
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
+from sage.domain.memory import (
+    MemoryBuildResult,
+    MemoryBuildType,
+    MemoryRetrievalOutcome,
+    MemoryRetrievalResult,
+    MemoryRetrievalStatus,
+)
 from sage.domain.solve import PreparedRun
-from sage.orchestration.context import SolveContext
+from sage.domain.solver import (
+    SolverAcceptanceCriterion,
+    SolverPlan,
+    SolverPlanTask,
+)
 from sage.errors import RepositoryError
-from sage.agents.solver import SolverPlanSession, build_solver_tools
+from sage.legion_memory.service import LegionMemoryService
+from sage.legion_memory.session import MemorySession
+from sage.orchestration.context import SolveContext
+from sage.sandbox.base import CommandResult
 
 
 class Repository:
     def __init__(self) -> None:
         self.mutations = 0
+        self.write_modes: list[str] = []
+
+    def read_file(self, **kwargs) -> str:
+        return "1: source"
 
     def replace_text(self, **kwargs) -> str:
         del kwargs
         self.mutations += 1
         return "changed"
+
+    def write_file(self, **kwargs) -> str:
+        self.mutations += 1
+        self.write_modes.append(kwargs["mode"])
+        return "written"
+
+
+class CommandRepository(Repository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.commands: list[str] = []
+
+    def run_command(
+        self,
+        *,
+        command: str,
+        timeout_seconds: int | None = None,
+    ) -> CommandResult:
+        del timeout_seconds
+        self.commands.append(command)
+        return CommandResult(
+            command=command,
+            exit_code=0,
+            stdout="passed",
+            stderr="",
+            timed_out=False,
+        )
+
+    def format_command_result(self, result: CommandResult) -> str:
+        return result.stdout
+
+
+def test_solver_prompt_describes_memory_as_graph_navigation_context() -> None:
+    assert "graph-derived navigation context" in SOLVER_INSTRUCTIONS
+    assert "Verify locations and behavior against source" in SOLVER_INSTRUCTIONS
+    assert "untrusted navigation evidence" not in SOLVER_INSTRUCTIONS
 
 
 def test_mutation_requires_implementable_saved_plan(tmp_path: Path) -> None:
@@ -57,7 +113,7 @@ def test_mutation_requires_implementable_saved_plan(tmp_path: Path) -> None:
     assert "apply_patch" not in tools
 
 
-def test_save_plan_unlocks_mutation_and_persists_outside_repository(
+def test_save_plan_unlocks_mutation_and_write_file_has_safe_default(
     tmp_path: Path,
 ) -> None:
     repository = Repository()
@@ -118,6 +174,149 @@ def test_save_plan_unlocks_mutation_and_persists_outside_repository(
             }
         )
     )
+    result = asyncio.run(
+        tools["write_file"].ainvoke(
+            {
+                "path": "tests/test_example.py",
+                "content": "def test_example(): pass\n",
+            }
+        )
+    )
 
-    assert repository.mutations == 1
+    assert result == "written"
+    assert repository.mutations == 2
+    assert repository.write_modes == ["create_or_replace"]
     assert (run_dir / "solver-plan.json").is_file()
+
+
+def test_run_command_records_only_policy_approved_executions(tmp_path: Path) -> None:
+    repository = CommandRepository()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    context = SolveContext(
+        prepared_run=PreparedRun(
+            run_id="run",
+            source_repo=tmp_path,
+            run_dir=run_dir,
+            workspace_dir=tmp_path,
+            base_ref="HEAD",
+            base_sha="a" * 40,
+        ),
+        repository=repository,  # type: ignore[arg-type]
+        settings=Settings(openai_api_key="test"),
+        artifacts=RunArtifacts(run_dir),
+    )
+    plans = SolverPlanSession(RunArtifacts(run_dir))
+    plans.save(
+        SolverPlan(
+            issue_summary="Run the focused tests.",
+            approach="Verify the existing implementation.",
+            tasks=(
+                SolverPlanTask(task_id="verify", objective="Run focused tests."),
+            ),
+            acceptance_criteria=(
+                SolverAcceptanceCriterion(
+                    criterion_id="tests",
+                    requirement="Focused tests pass.",
+                ),
+            ),
+            status="implementable",
+        )
+    )
+    recorded: list[str] = []
+    tools = {
+        tool.name: tool
+        for tool in build_solver_tools(
+            context,
+            plans,
+            command_recorder=recorded.append,
+        )
+    }
+
+    with pytest.raises(RepositoryError, match="verification commands only"):
+        asyncio.run(tools["run_command"].ainvoke({"command": "echo unsafe"}))
+
+    result = asyncio.run(tools["run_command"].ainvoke({"command": "pytest -q"}))
+
+    assert result == "passed"
+    assert repository.commands == ["pytest -q"]
+    assert recorded == ["pytest -q"]
+
+
+def test_memory_context_and_tools_are_added_only_for_a_valid_session(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    memory_file = tmp_path / "graph.sqlite3"
+    session = MemorySession(
+        service=LegionMemoryService(),
+        repo_root=tmp_path,
+        requested_memory_file=memory_file,
+        memory_file=memory_file,
+        build=MemoryBuildResult(
+            build_type=MemoryBuildType.NO_CHANGE,
+            memory_file=memory_file,
+            repository_id="repository-id",
+            indexed_sha="a" * 40,
+            schema_version=1,
+            files_indexed=1,
+            files_parsed=0,
+            files_removed=0,
+            total_nodes=2,
+            total_edges=1,
+            total_flows=0,
+            total_communities=0,
+            duration_ms=1,
+        ),
+        retrieval=MemoryRetrievalResult(
+            status=MemoryRetrievalStatus.USED,
+            outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+            summary="Found one symbol.",
+            memory_file=memory_file,
+            indexed_sha="a" * 40,
+            returned=1,
+            total_candidates=1,
+            context="Function helper at app.py:1-2",
+            context_chars=29,
+            duration_ms=1,
+        ),
+    )
+    context = SolveContext(
+        prepared_run=PreparedRun(
+            run_id="run",
+            source_repo=tmp_path,
+            run_dir=run_dir,
+            workspace_dir=tmp_path,
+            base_ref="HEAD",
+            base_sha="a" * 40,
+        ),
+        repository=Repository(),  # type: ignore[arg-type]
+        settings=Settings(openai_api_key="test"),
+        artifacts=RunArtifacts(run_dir),
+        memory=session,
+    )
+
+    tools = {
+        item.name
+        for item in build_solver_tools(
+            context,
+            SolverPlanSession(RunArtifacts(run_dir)),
+        )
+    }
+    message = build_solver_message(
+        base_sha="a" * 40,
+        issue_text="Fix helper.",
+        memory_context=session.initial_context,
+    )
+
+    assert "semantic_search_nodes_tool" in tools
+    assert "get_architecture_overview_tool" not in tools
+    assert {"query_graph_tool", "get_flow_tool", "get_community_tool", "get_impact_radius_tool"} <= tools
+    assert "<untrusted-legion-memory>" in message
+    assert "Function helper at app.py:1-2" in message
+    assert "</untrusted-legion-memory>" in message
+    assert "<untrusted-legion-memory>" not in build_solver_message(
+        base_sha="a" * 40,
+        issue_text="Fix helper.",
+    )

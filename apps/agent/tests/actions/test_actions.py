@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "2d68feab091044a8338931ca9c585fef9ba58fad"
+SAGE_ACTION_SHA = "8aa6875dcd8a576e67479706458ae8b0be39439a"
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -75,6 +75,15 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "required": False,
         "default": "true",
     }
+    assert document["inputs"]["legion-embeddings-enabled"] == {
+        "description": (
+            "Enable persistent Legion embeddings; set false for lexical memory only."
+        ),
+        "required": False,
+        "default": "true",
+    }
+    assert document["inputs"]["legion-qdrant-url"]["required"] is False
+    assert document["inputs"]["legion-qdrant-api-key"]["required"] is False
     assert document["inputs"]["langsmith-api-key"] == {
         "description": "Optional LangSmith API key scoped to the solve controller step.",
         "required": False,
@@ -98,6 +107,15 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     ) in body
     assert "OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}" in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
+    assert (
+        "SAGE_LEGION_EMBEDDINGS_ENABLED: "
+        "${{ inputs.legion-embeddings-enabled }}"
+    ) in body
+    assert "SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}" in body
+    assert (
+        "SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}"
+    ) in body
+    assert 'SAGE_LEGION_QDRANT_PATH: ""' in body
     assert "docker build" in body
     assert "sage github solve" in body
     assert "upload-artifact" not in body
@@ -115,6 +133,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         assert "GEMINI_API_KEY" not in rendered
         assert "LANGSMITH_API_KEY" not in rendered
         assert "SAGE_WEB_SEARCH_API_KEY" not in rendered
+        assert "SAGE_LEGION_QDRANT" not in rendered
     assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
@@ -191,10 +210,17 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "SAGE_WEB_SEARCH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "SAGE_LEGION_QDRANT" not in yaml.safe_dump(jobs["gate"])
+    assert "SAGE_LEGION_QDRANT" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_WEB_SEARCH_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.SAGE_LEGION_QDRANT_URL" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.SAGE_LEGION_QDRANT_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.SAGE_LEGION_EMBEDDINGS_ENABLED" in yaml.safe_dump(
+        jobs["solve"]
+    )
     assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
     assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
@@ -210,6 +236,9 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "admission-enabled" not in solve_action["with"]
     assert solve_action["with"]["google-model-context-approved"] == (
         "${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}"
+    )
+    assert solve_action["with"]["legion-embeddings-enabled"] == (
+        "${{ secrets.SAGE_LEGION_EMBEDDINGS_ENABLED || 'true' }}"
     )
     assert "vars.LANGSMITH_TRACING" in yaml.safe_dump(jobs["solve"])
     assert "vars.LANGSMITH_PROJECT" in yaml.safe_dump(jobs["solve"])
@@ -231,6 +260,7 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "changed-files.json",
         "diff.patch",
         "usage.json",
+        "legion-memory.json",
         "terminal.json",
         "verification-summary.json",
         "review.json",

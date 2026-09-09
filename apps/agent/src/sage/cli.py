@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -14,9 +15,18 @@ from pathlib import Path
 
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
-from sage.config import Settings
+from sage.artifacts.files import write_json_atomic, write_text_atomic
+from sage.composition import build_legion_memory_service, build_orchestrator
+from sage.config import Settings, LegionEmbeddingSettings
+from sage.domain.embeddings import VectorStatus, VectorUsage
+from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveRequest, SolveResult
-from sage.errors import ConfigurationError, GitHubConfigurationError, SageError
+from sage.errors import (
+    ConfigurationError,
+    GitHubConfigurationError,
+    LegionMemoryQueryError,
+    SageError,
+)
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
 from sage.integrations.github.events import (
@@ -29,7 +39,6 @@ from sage.integrations.github.publication_smoke import (
     default_publication_smoke_dir,
     run_publication_smoke,
 )
-from sage.composition import build_orchestrator
 from sage.workflows.github import finalize_github_issue, run_github_issue
 from sage.workflows.solve import solve_issue
 
@@ -77,8 +86,46 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--issue-file", required=True, type=Path)
     solve_parser.add_argument("--base-ref", default="HEAD")
     solve_parser.add_argument("--sandbox-image")
+    solve_parser.add_argument("--memory-file", type=Path)
     solve_parser.add_argument("--debug", action="store_true")
     solve_parser.set_defaults(handler=_run_local_solve)
+
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Build or inspect the local Legion Memory graph.",
+    )
+    memory_subparsers = memory_parser.add_subparsers(
+        dest="memory_command",
+        required=True,
+    )
+    memory_build_parser = memory_subparsers.add_parser(
+        "build",
+        help="Build, update, or confirm a repository graph.",
+    )
+    memory_build_parser.add_argument("--repo", required=True, type=Path)
+    memory_build_parser.add_argument("--memory-file", type=Path)
+    memory_build_parser.add_argument("--full-rebuild", action="store_true")
+    memory_build_parser.add_argument("--debug", action="store_true")
+    memory_build_parser.set_defaults(handler=_run_memory_build)
+
+    memory_status_parser = memory_subparsers.add_parser(
+        "status",
+        help="Inspect graph readiness and provenance.",
+    )
+    memory_status_parser.add_argument("--repo", required=True, type=Path)
+    memory_status_parser.add_argument("--memory-file", type=Path)
+    memory_status_parser.add_argument("--debug", action="store_true")
+    memory_status_parser.set_defaults(handler=_run_memory_status)
+
+    memory_retrieve_parser = memory_subparsers.add_parser(
+        "retrieve",
+        help="Retrieve Issue-relevant context from a ready graph.",
+    )
+    memory_retrieve_parser.add_argument("--repo", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--issue-file", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--memory-file", required=True, type=Path)
+    memory_retrieve_parser.add_argument("--debug", action="store_true")
+    memory_retrieve_parser.set_defaults(handler=_run_memory_retrieve)
 
     github_parser = subparsers.add_parser(
         "github",
@@ -153,7 +200,189 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     publication_smoke_parser.add_argument("--debug", action="store_true")
     publication_smoke_parser.set_defaults(handler=_run_github_publication_smoke)
+    for command_parser in (solve_parser, memory_build_parser, memory_retrieve_parser):
+        command_parser.add_argument("--embeddings", choices=("on", "off"), default=None,
+            help="Explicitly enable Gemini code/Issue embeddings or retain lexical-only memory.")
     return parser
+
+
+def _memory_service(arguments: argparse.Namespace):
+    choice = getattr(arguments, "embeddings", None)
+    settings = LegionEmbeddingSettings.from_env(enabled=None if choice is None else choice == "on")
+    return build_legion_memory_service(embeddings=settings) if settings.enabled else build_legion_memory_service()
+
+
+def _run_memory_build(arguments: argparse.Namespace) -> int:
+    """Run the strict standalone graph build command."""
+
+    result = _memory_service(arguments).build_or_update_graph_tool(
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+        full_rebuild=arguments.full_rebuild,
+    )
+    print("Legion Memory build: ready")
+    print(f"  Memory file: {result.memory_file}")
+    print(f"  Build type: {result.build_type.value}")
+    print(f"  Indexed SHA: {result.indexed_sha}")
+    print(f"  Files indexed: {result.files_indexed}")
+    print(f"  Files parsed: {result.files_parsed}")
+    print(f"  Files removed: {result.files_removed}")
+    print(f"  Nodes: {result.total_nodes}")
+    print(f"  Edges: {result.total_edges}")
+    print(f"  Flows: {result.total_flows}")
+    print(f"  Communities: {result.total_communities}")
+    print(f"  Languages: {', '.join(result.languages) or 'none'}")
+    print(f"  Duration: {result.duration_ms:.2f} ms")
+    _render_vectors(result.vectors)
+    if result.warnings:
+        print("  Warnings:")
+        for warning in result.warnings:
+            print(f"    - {warning}")
+    return 1 if result.vectors.status == "unavailable" else 0
+
+
+def _run_memory_status(arguments: argparse.Namespace) -> int:
+    """Print a bounded graph health and provenance summary."""
+
+    stats = build_legion_memory_service().graph_stats(
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+    )
+    print(f"Legion Memory status: {stats.status.value}")
+    print(f"  Memory file: {stats.memory_file}")
+    if stats.status.value != "ready":
+        print("  Build the graph with: sage memory build --repo <repository>")
+        return 1
+    print(f"  Build type: {stats.build_type.value if stats.build_type else 'unknown'}")
+    print(f"  Indexed SHA: {stats.indexed_sha}")
+    print(f"  Files: {stats.files}")
+    print(f"  Nodes: {stats.nodes}")
+    print(f"  Edges: {stats.edges}")
+    print(f"  Flows: {stats.flows}")
+    print(f"  Communities: {stats.communities}")
+    print(f"  Languages: {', '.join(stats.languages) or 'none'}")
+    print(f"  Last updated: {stats.last_updated}")
+    return 0
+
+
+def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
+    """Print an explainable, model-free retrieval result for one Issue."""
+
+    issue_file = arguments.issue_file.expanduser().resolve()
+    if not issue_file.is_file():
+        raise LegionMemoryQueryError(f"Issue file does not exist: {issue_file}")
+    try:
+        issue_text = issue_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise LegionMemoryQueryError(
+            f"Unable to read Issue file: {type(error).__name__}: {str(error)[:300]}"
+        ) from error
+    result = _memory_service(arguments).retrieve_issue_context(
+        issue_text=issue_text,
+        repo_root=arguments.repo,
+        memory_file=arguments.memory_file,
+    )
+    context_file = (
+        _write_memory_retrieval_context(result, issue_file=issue_file)
+        if result.status is not MemoryRetrievalStatus.UNAVAILABLE
+        else None
+    )
+    _render_memory_retrieval(result, context_file=context_file)
+    return 1 if result.status is MemoryRetrievalStatus.UNAVAILABLE else 0
+
+
+def _write_memory_retrieval_context(
+    result: MemoryRetrievalResult,
+    *,
+    issue_file: Path,
+) -> Path:
+    """Atomically save the latest bounded retrieval beside its SQLite graph."""
+
+    context_file = result.memory_file.with_suffix(".context.md")
+    context = result.context or "_No Issue-relevant context was retrieved._"
+    document = (
+        "# Legion Memory retrieved context\n\n"
+        "> Graph-derived navigation context. Verify locations and behavior "
+        "against source.\n\n"
+        f"- Issue file: `{issue_file}`\n"
+        f"- Memory file: `{result.memory_file}`\n"
+        f"- Indexed SHA: `{result.indexed_sha or 'unavailable'}`\n"
+        f"- Status: `{result.status.value}`\n"
+        f"- Outcome: `{result.outcome.value}`\n"
+        f"- Context characters: {result.context_chars}\n"
+        f"- Truncated: {'yes' if result.truncated else 'no'}\n\n"
+        "## Context passed to Sage\n\n"
+        f"{context}\n"
+    )
+    try:
+        write_text_atomic(context_file, document)
+        write_json_atomic(result.memory_file.with_suffix(".retrieval.json"), result.model_dump(mode="json"))
+    except OSError as error:
+        raise LegionMemoryQueryError(
+            "Unable to save retrieved context: "
+            f"{type(error).__name__}: {str(error)[:300]}"
+        ) from error
+    return context_file
+
+
+def _render_memory_retrieval(
+    result: MemoryRetrievalResult,
+    *,
+    context_file: Path | None = None,
+) -> None:
+    """Render stable retrieval logs without trusting database text as terminal data."""
+
+    print(f"Legion Memory retrieval: {result.status.value}")
+    print(f"  Memory used: {'yes' if result.status is MemoryRetrievalStatus.USED else 'no'}")
+    print(f"  Outcome: {result.outcome.value}")
+    print(f"  Summary: {_safe_log_value(result.summary, 500)}")
+    print(f"  Memory file: {result.memory_file}")
+    print(f"  Indexed SHA: {result.indexed_sha or 'unavailable'}")
+    print(f"  Search modes: {', '.join(result.search_modes) or 'none'}")
+    print(
+        "  Query terms: "
+        + (", ".join(_safe_log_value(term, 80) for term in result.query_terms) or "none")
+    )
+    print(f"  Lexical candidates: {result.lexical_candidates}")
+    print(f"  Semantic candidates: {result.semantic_candidates}")
+    _render_vectors(result.vectors)
+    print(f"  Graph-expanded candidates: {result.expanded_candidates}")
+    print(f"  Retrieved: {result.returned}/{result.total_candidates}")
+    print(f"  Omitted: {result.omitted}")
+    print(f"  Truncated: {'yes' if result.truncated else 'no'}")
+    print(f"  Context characters: {result.context_chars}")
+    print("  Usage meaning: retrieved context, not measured improvement")
+    print(f"  Unresolved relationships skipped: {result.unresolved_edges}")
+    print(f"  Ranking duration: {result.ranking_duration_ms:.2f} ms")
+    print(f"  Query embedding duration: {result.vectors.query_embedding_duration_ms:.2f} ms")
+    if context_file is not None:
+        print(f"  Context file: {context_file}")
+    print(f"  Duration: {result.duration_ms:.2f} ms")
+    if result.items:
+        print("  Retrieved memories:")
+        for item in result.items:
+            location = (
+                f"{_safe_log_value(item.file_path, 300)}:"
+                f"{item.line_start}-{item.line_end}"
+            )
+            print(
+                f"    {item.rank}. {_safe_log_value(item.kind, 40)} "
+                f"{_safe_log_value(item.qualified_name, 500)}"
+            )
+            print(f"       Location: {location}")
+            print(f"       Score: {item.score:.3f}")
+            print(f"       Why: {', '.join(item.reasons)}")
+    if result.warnings:
+        print("  Warnings:")
+        for warning in result.warnings:
+            print(f"    - {_safe_log_value(warning, 500)}")
+
+
+def _safe_log_value(value: object, limit: int) -> str:
+    rendered = "".join(
+        character if character.isprintable() else " " for character in str(value)
+    )
+    return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
 
 
 def _run_local_solve(arguments: argparse.Namespace) -> int:
@@ -165,11 +394,26 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
         issue_path=arguments.issue_file.expanduser().resolve(),
         base_ref=arguments.base_ref,
         sandbox_image=arguments.sandbox_image,
+        memory_file=(
+            arguments.memory_file.expanduser().resolve()
+            if arguments.memory_file is not None
+            else None
+        ),
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
     orchestrator = build_orchestrator(settings)
-    result = asyncio.run(solve_issue(request, orchestrator, settings))
+    if request.memory_file is not None:
+        result = asyncio.run(
+            solve_issue(
+                request,
+                orchestrator,
+                settings,
+                memory_service=_memory_service(arguments),
+            )
+        )
+    else:
+        result = asyncio.run(solve_issue(request, orchestrator, settings))
     _render_result(
         result,
         model=settings.solver_model,
@@ -230,6 +474,9 @@ def _run_github_solve(arguments: argparse.Namespace) -> int:
             status_comment_id=arguments.status_comment_id,
             orchestrator_factory=build_orchestrator,
             settings_factory=lambda: Settings.from_env(environment),
+            memory_service_factory=lambda: build_legion_memory_service(
+                embeddings=LegionEmbeddingSettings.from_github_env(environment)
+            ),
         )
     )
     print(f"GitHub solve outcome: {result.outcome.value}")
@@ -396,20 +643,102 @@ def _render_result(result: SolveResult, *, model: str) -> None:
         print()
         print("Patch:")
         print(f"  {result.run_dir / 'diff.patch'}")
-        return
-
-    print("Agent completed without producing a repository change.")
-    print()
-    print("Summary:")
-    print(f"  {result.summary}")
-    if result.remaining_uncertainty:
+    else:
+        print("Agent completed without producing a repository change.")
         print()
-        print("Remaining uncertainty:")
-        for uncertainty in result.remaining_uncertainty:
-            print(f"  {uncertainty}")
+        print("Summary:")
+        print(f"  {result.summary}")
+        if result.remaining_uncertainty:
+            print()
+            print("Remaining uncertainty:")
+            for uncertainty in result.remaining_uncertainty:
+                print(f"  {uncertainty}")
+        print()
+        print("Run artifacts:")
+        print(f"  {result.run_dir}")
+
+    _render_solve_memory_summary(result)
+    _render_solve_usage_summary(result)
+
+
+def _render_solve_memory_summary(result: SolveResult) -> None:
+    memory = result.memory
+    if memory is None:
+        return
     print()
-    print("Run artifacts:")
-    print(f"  {result.run_dir}")
+    print("Legion Memory:")
+    print(f"  Status: {memory.status.value}")
+    print(
+        "  Initial retrieval: "
+        f"{memory.retrieval.returned if memory.retrieval is not None else 0} memories"
+    )
+    print(f"  Native memory tool calls: {len(memory.tool_calls)}")
+    exposure = memory.exposure
+    print("  Exposure: " + ", ".join(f"{name}={'yes' if getattr(exposure, name) else 'no'}"
+          for name in ("available", "retrieved", "exposed", "queried", "read_enriched")))
+    print(f"  Memory characters (across {exposure.sessions} histories): initial={exposure.initial_context_chars}, "
+          f"enrichment={exposure.enrichment_chars}, graph responses={exposure.graph_response_chars}")
+    print(f"  Source-read characters: {exposure.source_read_chars}; schema characters per binding summed: {exposure.tool_schema_chars}")
+    print(f"  Memory preflight: {exposure.preflight_duration_ms:.2f} ms")
+    print(f"  Retrieved paths later read: {len(exposure.retrieved_paths_read)} (overlap, not causal use)")
+    print(f"  Read/search enrichments: {sum(e.status == 'used' for e in memory.enrichments)} used / {len(memory.enrichments)} attempted")
+    print(f"  Fallback: {memory.fallback}")
+    print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
+    if memory.embedding_usage is not None:
+        _render_embedding_usage(memory.embedding_usage)
+
+
+def _render_vectors(status: VectorStatus) -> None:
+    print(f"  Embeddings: {status.status}")
+    if status.model:
+        print(f"  Embedding model: {status.model} ({status.dimensions} dimensions)")
+        print(f"  Vectors: {status.embedded} embedded / {status.reused} reused / {status.eligible} eligible")
+        print(f"  Vector cleanup: {status.cleanup_status} / {status.removed} obsolete points removed")
+    if status.reason:
+        print(f"  Vector fallback: {_safe_log_value(status.reason, 300)}")
+    if status.usage is not None:
+        _render_embedding_usage(status.usage)
+
+
+def _render_embedding_usage(usage: VectorUsage) -> None:
+    print(f"  Embedding API calls: {usage.document_calls} document / {usage.query_calls} query (including retries)")
+    print(f"  Embedding retries: {usage.retries}")
+    print(f"  Embedding input tokens: {usage.input_tokens if usage.input_tokens is not None else 'unknown'}")
+    print(f"  Qdrant operations: {usage.qdrant_operations}")
+
+
+def _render_solve_usage_summary(result: SolveResult) -> None:
+    provenance = result.provenance
+    print()
+    print("Usage totals:")
+    if provenance is None:
+        print("  Model calls: unavailable")
+        print("  Total tool calls: unavailable")
+        print("  Commands: unavailable")
+        print("  Total tokens: unavailable")
+        return
+    input_tokens = sum(call.input_tokens or 0 for call in provenance.calls)
+    output_tokens = sum(call.output_tokens or 0 for call in provenance.calls)
+    cached_tokens = sum(call.cached_tokens or 0 for call in provenance.calls)
+    tool_counts: dict[str, int] = {}
+    for call in provenance.tool_calls:
+        tool_counts[call.tool_name] = tool_counts.get(call.tool_name, 0) + 1
+    print(f"  Model calls: {len(provenance.calls)}")
+    print(f"  Total tool calls: {len(provenance.tool_calls)}")
+    print(
+        "  Tools: "
+        + (
+            ", ".join(
+                f"{name}={count}" for name, count in sorted(tool_counts.items())
+            )
+            or "none"
+        )
+    )
+    print(f"  Commands: {json.dumps(list(provenance.commands), ensure_ascii=False)}")
+    print(f"  Input tokens: {input_tokens}")
+    print(f"  Output tokens: {output_tokens}")
+    print(f"  Cached input tokens: {cached_tokens}")
+    print(f"  Total tokens: {input_tokens + output_tokens}")
 
 
 if __name__ == "__main__":

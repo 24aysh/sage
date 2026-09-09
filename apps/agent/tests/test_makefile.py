@@ -37,6 +37,44 @@ def test_run_status_disables_the_git_pager() -> None:
     assert 'git --no-pager -C "$$run_dir/repo" diff --check' in target
 
 
+def test_legion_memory_target_uses_bound_repository_and_optional_database() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("legion-memory:", 1)[1].split("\nnew-issue:", 1)[0]
+
+    assert 'args=(memory build --repo "$(REPO)")' in target
+    assert '--memory-file "$(MEMORY_FILE)"' in target
+    assert "LANGSMITH_TRACING=false" in target
+    assert "OPENAI_API_KEY" not in target
+
+
+def test_legion_retrieve_target_requires_issue_and_explicit_database() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("legion-retrieve:", 1)[1].split("\nnew-issue:", 1)[0]
+
+    assert "REPO, ISSUE, and MEMORY are required" in target
+    assert "sage memory retrieve" in target
+    assert '--repo "$(REPO)"' in target
+    assert '--issue-file "$(ISSUE)"' in target
+    assert '--memory-file "$(MEMORY)"' in target
+    assert "LANGSMITH_TRACING=false" in target
+    assert "OPENAI_API_KEY" not in target
+
+
+def test_legion_solve_reuses_baseline_solve_with_explicit_memory() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    solve_target = makefile.split("solve:", 1)[1].split("\nsolve-debug:", 1)[0]
+    legion_target = makefile.split("legion-solve:", 1)[1].split(
+        "\nrun-status:", 1
+    )[0]
+
+    assert "LEGION_SOLVE ?= false" in makefile
+    assert 'if [[ "$(LEGION_SOLVE)" == "true" ]]' in solve_target
+    assert 'memory_args=(--memory-file "$(MEMORY)")' in solve_target
+    assert '"$${memory_args[@]}"' in solve_target
+    assert "LEGION_SOLVE := true" in makefile
+    assert "solve ## Run a live solve with Legion Memory enabled." in legion_target
+
+
 def test_first_run_validates_inputs_before_credentials(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()

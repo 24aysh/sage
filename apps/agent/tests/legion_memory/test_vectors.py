@@ -1,0 +1,663 @@
+"""Offline Gemini-boundary and real local-Qdrant lifecycle coverage."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from sage.config import LegionEmbeddingSettings
+from sage.domain.embeddings import (
+    EmbeddingIdentity,
+    MemoryVectorError,
+    VectorPoint,
+    VectorSearchHit,
+    VectorUsage,
+    validate_vector,
+)
+from sage.domain.memory import MemoryRetrievalStatus
+from sage.errors import ConfigurationError
+from sage.integrations.qdrant import QdrantVectorStore
+from sage.legion_memory.service import LegionMemoryService
+from sage.legion_memory.store import GraphStore
+from sage.legion_memory.vectors import (
+    VectorIndex,
+    cache_point_id,
+    memory_lock,
+    node_text,
+    snapshot_point_id,
+    vector_collection,
+)
+from sage.legion_memory.search import rrf_merge
+from sage.providers.embeddings import GeminiEmbeddingProvider
+from .conftest import commit_all
+
+
+class FakeEmbeddings:
+    identity = EmbeddingIdentity(dimensions=3)
+
+    def __init__(self):
+        self.usage = VectorUsage()
+        self.fail = False
+        self.texts = []
+
+    def embed(self, text, *, query, timeout):
+        assert 0 < timeout <= 30
+        self.texts.append(text)
+        if self.fail:
+            raise MemoryVectorError("Simulated embedding failure.")
+        if query:
+            self.usage.query_calls += 1
+            return [0., 0., 1.] if "unrelated" in text else [1., 0., 0.]
+        self.usage.document_calls += 1
+        return [1., 0., 0.] if "helper" in text else [0., 1., 0.]
+
+
+def vector_service(tmp_path):
+    provider = FakeEmbeddings()
+
+    def factory(database, collection, create):
+        return QdrantVectorStore(path=tmp_path / "vectors", collection=collection,
+            dimensions=3, usage=provider.usage, create=create)
+
+    return LegionMemoryService(vectors=VectorIndex(provider, factory)), provider
+
+
+def test_build_reuses_vectors_and_semantic_only_issue_finds_code(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    first = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert first.vectors.status == "ready"
+    assert first.vectors.embedded > 0
+    assert all(text.startswith("title: ") for text in provider.texts)
+    calls = provider.usage.document_calls
+    second = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert second.build_type == "no_change"
+    assert second.vectors.embedded == 0
+    assert second.vectors.reused == first.vectors.embedded
+    assert provider.usage.document_calls == calls
+    query = "Reimburse the buyer after revocation"
+    result = service.retrieve_issue_context(issue_text=query, repo_root=fixture_repo, memory_file=database)
+    assert result.status is MemoryRetrievalStatus.USED
+    assert result.semantic_candidates > 0
+    assert "semantic" in result.search_modes
+    assert any(item.name == "helper" for item in result.items)
+    assert result.context_chars == len(result.context)
+    assert "signature:" in result.context
+    assert "CALLS link to" in result.context or "TESTED_BY link to" in result.context
+    service.retrieve_issue_context(issue_text=query, repo_root=fixture_repo, memory_file=database)
+    assert provider.usage.query_calls == 1
+    assert provider.usage.input_tokens is None
+
+
+def test_fresh_sqlite_graph_reuses_persistent_qdrant_vectors(
+    fixture_repo,
+    tmp_path,
+):
+    service, provider = vector_service(tmp_path)
+    first = service.build_or_update_graph_tool(
+        repo_root=fixture_repo,
+        memory_file=tmp_path / "first.sqlite3",
+    )
+    calls = provider.usage.document_calls
+
+    second = service.build_or_update_graph_tool(
+        repo_root=fixture_repo,
+        memory_file=tmp_path / "second.sqlite3",
+    )
+
+    assert first.build_type == "full"
+    assert second.build_type == "full"
+    assert second.vectors.status == "ready"
+    assert second.vectors.embedded == 0
+    assert second.vectors.reused == second.vectors.eligible
+    assert provider.usage.document_calls == calls
+    assert second.vectors.generation == first.vectors.generation
+
+
+def test_fresh_changed_graph_reuses_only_unchanged_qdrant_content(
+    fixture_repo,
+    tmp_path,
+):
+    service, provider = vector_service(tmp_path)
+    first = service.build_or_update_graph_tool(
+        repo_root=fixture_repo,
+        memory_file=tmp_path / "first.sqlite3",
+    )
+    source = fixture_repo / "service.py"
+    source.write_text(
+        source.read_text().replace(
+            "def helper():",
+            'def helper():\n    """Changed durable content."""',
+        )
+    )
+    commit_all(fixture_repo, "change one durable vector")
+
+    second = service.build_or_update_graph_tool(
+        repo_root=fixture_repo,
+        memory_file=tmp_path / "second.sqlite3",
+    )
+
+    assert first.build_type == "full"
+    assert second.build_type == "full"
+    assert second.vectors.embedded == 1
+    assert second.vectors.reused == second.vectors.eligible - 1
+    assert provider.usage.document_calls == first.vectors.embedded + 1
+
+
+def test_vector_identities_are_stable_and_non_identifying():
+    collection = vector_collection("repository-secret-name", "model-fingerprint")
+
+    assert collection == vector_collection(
+        "repository-secret-name", "model-fingerprint"
+    )
+    assert "repository-secret-name" not in collection
+    assert cache_point_id(collection, "app.py::work", "hash") == cache_point_id(
+        collection,
+        "app.py::work",
+        "hash",
+    )
+    assert snapshot_point_id(
+        collection,
+        "generation",
+        "app.py::work",
+    ) != snapshot_point_id(collection, "other", "app.py::work")
+
+
+def test_semantic_no_hit_and_failed_index_preserve_lexical(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    provider.fail = True
+    build = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert build.vectors.status == "unavailable"
+    assert service.graph_stats(repo_root=fixture_repo, memory_file=database).status == "ready"
+    result = service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    assert result.status == "used"
+    assert result.vectors.status == "unavailable"
+    assert result.warnings
+    provider.fail = False
+    build = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert build.build_type == "no_change"
+    assert build.vectors.status == "ready"
+    result = service.retrieve_issue_context(issue_text="unrelated galactic penguins", repo_root=fixture_repo, memory_file=database)
+    assert result.status == "no_match"
+
+
+def test_changed_docstring_reembeds_only_changed_node_and_deleted_nodes_do_not_return(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    first = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    source = fixture_repo / "service.py"
+    source.write_text(source.read_text().replace("def helper():", 'def helper():\n    """Refund the buyer."""'))
+    commit_all(fixture_repo, "change one docstring")
+    stale = service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    assert stale.status == "unavailable"
+    second = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert second.vectors.embedded == 1
+    assert second.vectors.reused == first.vectors.embedded - 1
+    source.write_text("def replacement():\n    return 42\n")
+    commit_all(fixture_repo, "replace service")
+    service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    result = service.semantic_search_nodes_tool(query="reimburse", repo_root=fixture_repo, memory_file=database)
+    assert all(n["qualified_name"] != "service.py::helper" for n in result["data"]["nodes"])
+
+
+def test_partial_failure_is_unpublished_and_restart_reuses_acknowledged_batches(fixture_repo, tmp_path):
+    source = fixture_repo / "many.py"
+    source.write_text("\n".join(f"def work_{n}():\n    pass\n" for n in range(40)))
+    commit_all(fixture_repo, "many symbols")
+    service, provider = vector_service(tmp_path)
+    original = provider.embed
+
+    def fail_later(text, **kwargs):
+        if provider.usage.document_calls >= 34:
+            raise MemoryVectorError("Interrupted batch.")
+        return original(text, **kwargs)
+
+    provider.embed = fail_later
+    database = tmp_path / "graph.sqlite3"
+    failed = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert failed.vectors.status == "unavailable"
+    with GraphStore(database, read_only=True) as store:
+        assert store.get_metadata(f"vectors:{provider.identity.fingerprint}") == "{}"
+    provider.embed = original
+    repaired = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert repaired.vectors.status == "ready"
+    assert repaired.vectors.reused >= 32
+
+
+def test_large_index_budget_resume_reuse_and_query(tmp_path):
+    from sage.legion_memory.parsing import CodeParser, PARSER_VERSION
+    provider = FakeEmbeddings()
+    points = {}
+    class Store:
+        def get(self, ids):
+            return {key: points[key] for key in ids if key in points}
+        def upsert(self, batch):
+            points.update({point.point_id: point for point in batch})
+        def prune(self, *, keep_generation, snapshot_before, cache_before):
+            obsolete = [key for key, value in points.items() if value.generation != keep_generation]
+            for key in obsolete:
+                del points[key]
+            return len(obsolete)
+        def search(self, vector, *, generation, limit):
+            return [
+                VectorSearchHit(
+                    point.qualified_name,
+                    point.text_hash,
+                    point.generation,
+                    point.repository_id,
+                    point.fingerprint,
+                    1.0,
+                )
+                for point in points.values()
+                if point.generation == generation
+            ][:limit]
+        def close(self):
+            pass
+    factory = lambda *_: Store()
+    with GraphStore(tmp_path / "graph.sqlite3") as graph:
+        graph.apply_update(parsed_files=[CodeParser().parse_bytes(
+            "\n".join(f"def work_{n}():\n    pass\n" for n in range(2001)).encode(), relative_path="many.py")],
+            removed_files=[], repository_id="test", indexed_sha="sha", parser_version=PARSER_VERSION,
+            build_type="full", full_rebuild=True)
+        denied = VectorIndex(provider, factory).synchronize(graph)
+        assert denied.eligible == 2001 and denied.status == "unavailable"
+        assert provider.usage.document_calls == 0 and not points
+        original = provider.embed
+        def interrupted(text, **kwargs):
+            if provider.usage.document_calls >= 34:
+                raise MemoryVectorError("interrupt")
+            return original(text, **kwargs)
+        provider.embed = interrupted
+        index = VectorIndex(provider, factory, max_nodes=2100)
+        assert index.synchronize(graph).status == "unavailable"
+        assert len(points) == 64
+        provider.embed = original
+        resumed = index.synchronize(graph)
+        assert resumed.status == "ready" and resumed.reused == 32
+        assert resumed.embedded == 1969
+        reused = index.synchronize(graph)
+        assert reused.embedded == 0 and reused.reused == 2001
+        with memory_lock(graph.path):
+            pass
+        hits, status = index.search(graph, "work", limit=3)
+        assert status.status == "ready" and len(hits) == 3
+
+
+def test_provider_concurrency_is_bounded_and_preserves_order(monkeypatch):
+    from threading import Barrier, Lock
+    from time import monotonic
+    provider = GeminiEmbeddingProvider(api_key="test", dimensions=3, concurrency=2)
+    lock, barrier = Lock(), Barrier(2)
+    active = maximum = 0
+    def embed(text, **kwargs):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+        barrier.wait(timeout=3)
+        with lock:
+            active -= 1
+        return [float(text), 1., 0.]
+    monkeypatch.setattr(provider, "embed", embed)
+    values = provider.embed_many(["1", "2", "3", "4"], timeout=3, deadline=monotonic() + 10)
+    assert [v[0] for v in values] == [1, 2, 3, 4]
+    assert maximum == 2
+    with pytest.raises(MemoryVectorError, match="deadline"):
+        provider.embed_many(["1"], timeout=3, deadline=monotonic() - 1)
+
+
+def test_index_identity_and_lock_boundaries(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    provider.identity = provider.identity.model_copy(update={"recipe": "changed"})
+    result = service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    assert result.vectors.status == "unavailable"
+    with memory_lock(database):
+        with pytest.raises(MemoryVectorError, match="busy"):
+            with memory_lock(database):
+                pass
+
+
+def test_query_failures_and_invalid_manifest_keep_lexical_retrieval(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    provider.fail = True
+    result = service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    assert result.status == "used"
+    assert result.vectors.status == "unavailable"
+    provider.fail = False
+    # Failed query closes local Qdrant: the next query can acquire its lock.
+    assert service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database).vectors.status == "ready"
+    with GraphStore(database) as store:
+        with store.transaction():
+            store.set_metadata(f"vectors:{provider.identity.fingerprint}", "[]")
+    result = service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    assert result.status == "used"
+    assert result.vectors.status == "unavailable"
+
+
+def test_missing_collection_can_be_rebuilt_without_reusing_missing_vectors(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    original = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+
+    def fresh_storage(database, collection, create):
+        return QdrantVectorStore(path=tmp_path / "fresh-vectors", collection=collection,
+            dimensions=3, usage=provider.usage, create=create)
+
+    service.vectors = VectorIndex(provider, fresh_storage)
+    result = service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database)
+    assert result.status == "used"
+    assert result.vectors.status == "unavailable"
+    rebuilt = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert rebuilt.vectors.status == "ready"
+    assert rebuilt.vectors.embedded == original.vectors.embedded
+    assert rebuilt.vectors.reused == 0
+
+
+def test_corrupt_cached_payload_is_replaced_before_publication(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    first = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    with GraphStore(database, read_only=True) as store:
+        row = store.rows("SELECT * FROM vector_nodes LIMIT 1")[0]
+        vectors = service.vectors._factory(database, service.vectors._collection(store), False)
+        try:
+            vectors.upsert([VectorPoint(row["point_id"], row["qualified_name"],
+                "invalid-hash", [1., 0., 0.], row["generation"])])
+        finally:
+            vectors.close()
+    repaired = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert repaired.vectors.status == "ready"
+    assert repaired.vectors.embedded == 0
+    assert repaired.vectors.reused == first.vectors.embedded
+
+
+def test_cleanup_preserves_recent_vectors_for_concurrent_readers(fixture_repo, tmp_path, monkeypatch):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    first = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    with GraphStore(database, read_only=True) as store:
+        old_ids = [r["point_id"] for r in store.rows("SELECT point_id FROM vector_nodes")]
+    source = fixture_repo / "service.py"
+    source.write_text(source.read_text().replace("def helper():", 'def helper():\n    """Updated documentation."""'))
+    commit_all(fixture_repo, "change embedding generation")
+    prune = QdrantVectorStore.prune
+    def fail_cleanup(self, **kwargs):
+        raise MemoryVectorError("cleanup interrupted")
+    monkeypatch.setattr(QdrantVectorStore, "prune", fail_cleanup)
+    pending = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert pending.vectors.status == "ready"
+    assert pending.vectors.cleanup_status == "pending"
+    assert service.retrieve_issue_context(issue_text="helper", repo_root=fixture_repo, memory_file=database).vectors.status == "ready"
+    monkeypatch.setattr(QdrantVectorStore, "prune", prune)
+    repaired = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert repaired.vectors.cleanup_status == "complete"
+    assert repaired.vectors.embedded == 0
+    assert repaired.vectors.removed == 0
+    with GraphStore(database, read_only=True) as store:
+        assert {r["generation"] for r in store.rows("SELECT generation FROM vector_nodes")} == {repaired.vectors.generation}
+        vectors = service.vectors._factory(database, service.vectors._collection(store), False)
+        try:
+            assert len(vectors.get(old_ids)) == len(old_ids)
+            assert vectors.search(
+                [1.0, 0.0, 0.0],
+                generation=first.vectors.generation,
+                limit=20,
+            )
+            assert vectors.search(
+                [1.0, 0.0, 0.0],
+                generation=repaired.vectors.generation,
+                limit=20,
+            )
+        finally:
+            vectors.close()
+
+
+def test_qdrant_cleanup_removes_only_expired_snapshot_points(tmp_path):
+    usage = VectorUsage()
+    store = QdrantVectorStore(
+        path=tmp_path / "vectors",
+        collection="cleanup",
+        dimensions=3,
+        usage=usage,
+        create=True,
+    )
+    points = (
+        VectorPoint(
+            "0d476f64-18d4-58c2-8a34-ce75e1708dc7",
+            "old",
+            "old-hash",
+            [1.0, 0.0, 0.0],
+            "old-generation",
+            repository_id="repository",
+            fingerprint="fingerprint",
+        ),
+        VectorPoint(
+            "b7d35d57-4572-5208-a84d-facc5e5250e4",
+            "current",
+            "current-hash",
+            [0.0, 1.0, 0.0],
+            "current-generation",
+            repository_id="repository",
+            fingerprint="fingerprint",
+        ),
+        VectorPoint(
+            "aa38eda1-1318-5eba-8038-75c502c886b3",
+            "cached",
+            "cache-hash",
+            [0.0, 0.0, 1.0],
+            "content-cache-v1",
+            record_type="cache",
+            repository_id="repository",
+            fingerprint="fingerprint",
+        ),
+    )
+    try:
+        store.upsert(points)
+        removed = store.prune(
+            keep_generation="current-generation",
+            snapshot_before=float("inf"),
+            cache_before=0,
+        )
+        remaining = store.get([point.point_id for point in points])
+    finally:
+        store.close()
+
+    assert removed == 1
+    assert points[0].point_id not in remaining
+    assert points[1].point_id in remaining
+    assert points[2].point_id in remaining
+
+
+def test_cleanup_preserves_other_embedding_identities(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    with GraphStore(database, read_only=True) as store:
+        original_collection = service.vectors._collection(store)
+        original_ids = [r["point_id"] for r in store.rows("SELECT point_id FROM vector_nodes")]
+    provider.identity = provider.identity.model_copy(update={"recipe": "another-identity"})
+    result = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert result.vectors.cleanup_status == "complete"
+    original_vectors = service.vectors._factory(database, original_collection, False)
+    try:
+        assert len(original_vectors.get(original_ids)) == len(original_ids)
+    finally:
+        original_vectors.close()
+    with GraphStore(database, read_only=True) as store:
+        assert len(store.rows("SELECT DISTINCT fingerprint FROM vector_nodes")) == 2
+
+
+def test_node_and_deadline_budgets_do_not_break_the_graph(fixture_repo, tmp_path):
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    service.vectors._max_nodes = 1
+    result = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert result.vectors.status == "unavailable"
+    assert "node budget" in result.vectors.reason
+    assert provider.usage.document_calls == 0
+    service.vectors._max_nodes = 2000
+    service.vectors._deadline = 0
+    result = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    assert result.vectors.status == "unavailable"
+    assert "deadline" in result.vectors.reason
+    assert provider.usage.document_calls == 0
+    assert service.graph_stats(repo_root=fixture_repo, memory_file=database).status == "ready"
+
+
+def test_rrf_is_rank_based_and_deterministic():
+    assert rrf_merge([("a", 999), ("b", 1)], [("b", 0.8), ("c", 0.7)])[0][0] == "b"
+    assert rrf_merge([("a", 0.1)], [("a", 100)])[0][1] == pytest.approx(2 / 61)
+    assert [name for name, _ in rrf_merge([("b", 1)], [("a", 2)])] == ["a", "b"]
+
+
+def test_config_is_opt_in_and_needs_no_openai_key():
+    assert not LegionEmbeddingSettings.from_env({}).enabled
+    configured = LegionEmbeddingSettings.from_env({"GEMINI_API_KEY": "fake"}, enabled=True)
+    assert configured.model == "gemini-embedding-2"
+    assert configured.dimensions == 3072
+    assert not LegionEmbeddingSettings.from_env({"SAGE_LEGION_EMBEDDINGS_ENABLED": "true"}, enabled=False).enabled
+    with pytest.raises(ConfigurationError):
+        LegionEmbeddingSettings.from_env({"SAGE_LEGION_QDRANT_PATH": "/tmp/a", "SAGE_LEGION_QDRANT_URL": "http://localhost:6333"}, enabled=True)
+    with pytest.raises(ConfigurationError):
+        LegionEmbeddingSettings.from_env({"SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "false"}, enabled=True)
+
+
+def test_github_embedding_config_is_default_on_remote_only():
+    configured = LegionEmbeddingSettings.from_github_env(
+        {
+            "GEMINI_API_KEY": "gemini-secret",
+            "SAGE_LEGION_QDRANT_URL": "https://qdrant.example.com",
+            "SAGE_LEGION_QDRANT_API_KEY": "qdrant-secret",
+        }
+    )
+
+    assert configured.enabled is True
+    assert configured.qdrant_url == "https://qdrant.example.com"
+    assert LegionEmbeddingSettings.from_github_env(
+        {"SAGE_LEGION_EMBEDDINGS_ENABLED": "false"}
+    ).enabled is False
+    with pytest.raises(ConfigurationError, match="Qdrant URL and API key"):
+        LegionEmbeddingSettings.from_github_env({"GEMINI_API_KEY": "secret"})
+    with pytest.raises(ConfigurationError, match="Qdrant URL and API key"):
+        LegionEmbeddingSettings.from_github_env(
+            {
+                "GEMINI_API_KEY": "secret",
+                "SAGE_LEGION_QDRANT_URL": "   ",
+                "SAGE_LEGION_QDRANT_API_KEY": "   ",
+            }
+        )
+    with pytest.raises(ConfigurationError, match="remote Qdrant"):
+        LegionEmbeddingSettings.from_github_env(
+            {
+                "GEMINI_API_KEY": "secret",
+                "SAGE_LEGION_QDRANT_PATH": "/tmp/qdrant",
+            }
+        )
+    with pytest.raises(ConfigurationError, match="must be true or false"):
+        LegionEmbeddingSettings.from_github_env(
+            {"SAGE_LEGION_EMBEDDINGS_ENABLED": "sometimes"}
+        )
+
+
+def test_gemini_uses_one_document_no_task_type_and_closes_client(monkeypatch):
+    from google import genai
+
+    calls = []
+    closed = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.models = self
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            closed.append(True)
+        def embed_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(embeddings=[SimpleNamespace(values=[1., 0., 0.])])
+
+    monkeypatch.setattr(genai, "Client", Client)
+    provider = GeminiEmbeddingProvider(api_key="fake", dimensions=3)
+    assert provider.embed("title: helper | text: refund", query=False, timeout=1) == [1., 0., 0.]
+    assert calls[0]["model"] == "gemini-embedding-2"
+    assert isinstance(calls[0]["contents"], str)
+    assert calls[0]["config"].task_type is None
+    assert closed == [True]
+    with pytest.raises(MemoryVectorError):
+        provider._values(SimpleNamespace(embeddings=[]))
+    for vector in ([0., 0., 0.], [float("nan"), 1., 1.], [1.]):
+        with pytest.raises(MemoryVectorError):
+            validate_vector(vector, 3)
+
+
+def test_missing_key_is_safe_and_auth_validation_is_not_retried(monkeypatch):
+    from google import genai
+    from google.genai import errors
+
+    with pytest.raises(MemoryVectorError, match="GEMINI_API_KEY"):
+        GeminiEmbeddingProvider(api_key=None, dimensions=3).embed("code", query=False, timeout=1)
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.models = self
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def embed_content(self, **kwargs):
+            calls.append(kwargs)
+            raise errors.APIError(403, {"error": {"message": "DO-NOT-LOG-SECRET"}})
+
+    monkeypatch.setattr(genai, "Client", Client)
+    provider = GeminiEmbeddingProvider(api_key="fake", dimensions=3)
+    with pytest.raises(MemoryVectorError) as error:
+        provider.embed("code", query=False, timeout=1)
+    assert "DO-NOT-LOG-SECRET" not in str(error.value)
+    assert len(calls) == 1
+    assert provider.usage.retries == 0
+
+
+def test_query_vector_usage_is_recorded_in_native_tool_session(fixture_repo, tmp_path):
+    import asyncio
+    from sage.agents.memory_tools import build_legion_memory_tools
+    from sage.agents.prompts import build_solver_message
+    from sage.legion_memory.session import MemorySession
+
+    service, provider = vector_service(tmp_path)
+    database = tmp_path / "graph.sqlite3"
+    build = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+    retrieval = service.retrieve_issue_context(issue_text="reimburse", repo_root=fixture_repo, memory_file=database)
+    session = MemorySession(service, fixture_repo, database, database, build, retrieval)
+    message = build_solver_message(base_sha=build.indexed_sha, issue_text="reimburse", memory_context=session.initial_context)
+    assert "service.py::helper" in message
+    tools = {t.name: t for t in build_legion_memory_tools(service, repo_root=fixture_repo,
+        memory_file=database, usage_recorder=session.record_tool_call)}
+    asyncio.run(tools["semantic_search_nodes_tool"].ainvoke({"query": "reimburse", "limit": 3}))
+    artifact = session.artifact()
+    assert artifact.embedding_usage.query_calls == 1  # Initial query is reused.
+    assert len(artifact.tool_calls) == 1
+    assert artifact.embedding_usage.document_calls == build.vectors.embedded
+    session.close()
+    assert not service.vectors._queries
+
+
+def test_cli_embedding_build_failure_is_strict_without_chat_credentials(fixture_repo, tmp_path, monkeypatch, capsys):
+    from sage.cli import main
+
+    for key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "SAGE_LEGION_QDRANT_URL", "SAGE_LEGION_QDRANT_PATH"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "true")
+    status = main(["memory", "build", "--repo", str(fixture_repo), "--memory-file", str(tmp_path / "graph.sqlite3"), "--embeddings", "on"])
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "Legion Memory build: ready" in output
+    assert "Embeddings: unavailable" in output
+    assert "GEMINI_API_KEY is missing" in output

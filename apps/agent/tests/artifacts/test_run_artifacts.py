@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from sage.artifacts.store import RunArtifacts
+from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus
 from sage.domain.solver import (
     SavedSolverPlan,
     SolverAcceptanceCriterion,
@@ -36,6 +37,24 @@ def test_run_artifacts_writes_fixed_atomic_stage_artifacts(tmp_path: Path) -> No
     assert plan_path == tmp_path / "solver-plans/01.json"
     assert (tmp_path / "solver-plan.json").is_file()
     assert "constrained-cross-provider" in usage_path.read_text()
+
+
+def test_run_artifacts_writes_legion_memory_evidence(tmp_path: Path) -> None:
+    store = RunArtifacts(tmp_path)
+    memory_file = tmp_path / "graph.sqlite3"
+
+    path = store.write_legion_memory(
+        LegionMemoryRunArtifact(
+            requested_memory_file=memory_file,
+            resolved_memory_file=memory_file,
+            status=MemoryRetrievalStatus.UNAVAILABLE,
+            failure_category="LegionMemoryBuildError",
+            fallback="normal repository inspection",
+        )
+    )
+
+    assert path == tmp_path / "legion-memory.json"
+    assert '"status": "unavailable"' in path.read_text(encoding="utf-8")
 
 
 def test_artifact_stage_names_cannot_escape_run_directory(tmp_path: Path) -> None:

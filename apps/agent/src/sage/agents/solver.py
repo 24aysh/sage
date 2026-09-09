@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from typing import Literal, Protocol, TypeVar
+import json
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import Any, Literal, Protocol, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool, tool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel
 
 from sage.agents.loop import build_graph as build_tool_graph
 from sage.agents.loop import recursion_limit
+from sage.agents.memory_tools import build_legion_memory_tools
 from sage.agents.prompts import (
     SOLVER_INSTRUCTIONS,
     build_repair_message,
@@ -37,8 +41,7 @@ from sage.domain.usage import AttemptKind, ModelRole
 from sage.errors import AgentRuntimeError, RepositoryError
 from sage.observability import agent_trace_config, log_agent_result
 from sage.providers.calls import ModelCalls
-from sage.research.service import ResearchService
-from sage.research.tools import build_solver_research_tools
+from sage.research.tools import ResearchToolService, build_solver_research_tools
 from sage.verification.discovery import is_allowed_solver_verification_command
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,29 @@ class SolverContext(RepositoryContext, Protocol):
 
     prepared_run: PreparedRun
     settings: Settings
+    memory: SolverMemorySession | None
+
+
+class SolverMemorySession(Protocol):
+    """Narrow run-scoped memory surface consumed by Solver tool binding."""
+
+    service: Any
+    repo_root: Path
+    memory_file: Path
+    tools_enabled: bool
+
+    def enrich(self, **arguments: Any) -> str: ...
+    def begin_session(self, *, initial_visible: bool) -> str: ...
+    def invalidate(self, *paths: str) -> None: ...
+    def record_schemas(self, characters: int) -> None: ...
+    def filter_response(self, result: dict[str, object]) -> dict[str, object]: ...
+
+    def record_tool_call(
+        self,
+        tool_name: str,
+        result: dict[str, object],
+        duration_ms: float,
+    ) -> None: ...
 
 
 class SolverAgent:
@@ -68,8 +94,12 @@ class SolverAgent:
         context: SolverContext,
         plans: SolverPlanSession,
         calls: ModelCalls,
-        research: ResearchService,
+        research: ResearchToolService,
     ) -> SolverFinalResult:
+        if context.memory is not None:
+            packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
+            if stage == "solver-repair" and packet:
+                message += "\n\n<legion-repair-context>\n" + packet + "\n</legion-repair-context>"
         input_cap = (
             self._settings.repair_input_chars
             if stage == "solver-repair"
@@ -82,7 +112,12 @@ class SolverAgent:
             message=message,
             context=context,
             calls=calls,
-            tools=build_solver_tools(context, plans, research),
+            tools=build_solver_tools(
+                context,
+                plans,
+                research,
+                command_recorder=calls.record_command,
+            ),
             output_schema=SolverFinalResult,
         )
         log_agent_result(
@@ -227,7 +262,9 @@ class SolverPlanSession:
 def build_solver_tools(
     context: SolverContext,
     plans: SolverPlanSession,
-    research: ResearchService | None = None,
+    research: ResearchToolService | None = None,
+    *,
+    command_recorder: Callable[[str], None] | None = None,
 ) -> list[BaseTool]:
     """Build the Solver's structured repository and research tool set."""
 
@@ -311,50 +348,64 @@ def build_solver_tools(
         """Replace exact UTF-8 text after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        return context.repository.replace_text(
+        result = context.repository.replace_text(
             path=path,
             old_text=old_text,
             new_text=new_text,
             expected_occurrences=expected_occurrences,
         )
+        if context.memory is not None:
+            context.memory.invalidate(path)
+        return result
 
     @tool
     async def write_file(
         path: str,
         content: str,
-        mode: Literal["create", "replace", "create_or_replace"],
+        mode: Literal["create", "replace", "create_or_replace"] = "create_or_replace",
     ) -> str:
         """Create or replace one UTF-8 file after enforcing the plan gate."""
 
         plans.require_implementable()
-        return context.repository.write_file(
+        result = context.repository.write_file(
             path=path,
             content=content,
             mode=mode,
         )
+        if context.memory is not None:
+            context.memory.invalidate(path)
+        return result
 
     @tool
     async def delete_file(path: str) -> str:
         """Delete one regular file after enforcing the saved-plan gate."""
 
         plans.require_implementable()
-        return context.repository.delete_file(path=path)
+        result = context.repository.delete_file(path=path)
+        if context.memory is not None:
+            context.memory.invalidate(path)
+        return result
 
     @tool
     async def move_file(source_path: str, destination_path: str) -> str:
         """Move one file without overwrite after enforcing the plan gate."""
 
         plans.require_implementable()
-        return context.repository.move_file(
+        result = context.repository.move_file(
             source_path=source_path,
             destination_path=destination_path,
         )
+        if context.memory is not None:
+            context.memory.invalidate(source_path, destination_path)
+        return result
 
     @tool
     async def run_command(command: str, timeout_seconds: int | None = None) -> str:
         """Run a policy-checked repository command in the isolated sandbox."""
 
         plans.require_implementable()
+        if len(command) > 4_000:
+            raise RepositoryError("run_command is limited to 4000 characters.")
         trusted_commands = {
             item.command for item in context.settings.verification_commands
         }
@@ -370,19 +421,40 @@ def build_solver_tools(
             command=command,
             timeout_seconds=timeout_seconds,
         )
+        if command_recorder is not None:
+            command_recorder(command)
         return context.repository.format_command_result(result)
 
-    research_tools = (
-        build_solver_research_tools(research)
-        if research is not None
+    memory_tools = (
+        build_legion_memory_tools(
+            context.memory.service,
+            repo_root=context.memory.repo_root,
+            memory_file=context.memory.memory_file,
+            output_chars=context.settings.max_tool_output_chars,
+            usage_recorder=context.memory.record_tool_call,
+            source_reader=context.repository.read_file,
+            profile="solve",
+            response_filter=context.memory.filter_response,
+        )
+        if context.memory is not None and context.memory.tools_enabled
         else []
+    )
+    if context.memory is not None and memory_tools:
+        context.memory.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in memory_tools],
+                                                    separators=(",", ":"))))
+    research_tools = (
+        build_solver_research_tools(research) if research is not None else []
     )
     show_diff = build_show_diff_tool(
         context,
         description="Show actual bounded Git status, statistics, and candidate diff.",
     )
     return [
-        *build_repository_read_tools(context),
+        *build_repository_read_tools(
+            context, enrich=context.memory.enrich if context.memory is not None else None,
+            output_chars=context.settings.max_tool_output_chars,
+        ),
+        *memory_tools,
         *research_tools,
         save_plan,
         revise_plan,

@@ -117,6 +117,9 @@ class SolveOrchestrator:
                 message=build_solver_message(
                     base_sha=context.prepared_run.base_sha,
                     issue_text=issue_text,
+                    memory_context=(
+                        context.memory.initial_context if context.memory else None
+                    ),
                 ),
                 context=context,
                 plans=plans,

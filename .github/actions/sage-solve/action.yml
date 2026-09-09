@@ -27,6 +27,16 @@ inputs:
     description: Google context acknowledgement; set false to disable Google calls.
     required: false
     default: "true"
+  legion-embeddings-enabled:
+    description: Enable persistent Legion embeddings; set false for lexical memory only.
+    required: false
+    default: "true"
+  legion-qdrant-url:
+    description: HTTPS URL for the remote Legion Qdrant deployment.
+    required: false
+  legion-qdrant-api-key:
+    description: API key for the remote Legion Qdrant deployment.
+    required: false
   langsmith-api-key:
     description: Optional LangSmith API key scoped to the solve controller step.
     required: false
@@ -113,6 +123,10 @@ runs:
         SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}
         SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}
         SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}
+        SAGE_LEGION_EMBEDDINGS_ENABLED: ${{ inputs.legion-embeddings-enabled }}
+        SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}
+        SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}
+        SAGE_LEGION_QDRANT_PATH: ""
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..

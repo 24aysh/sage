@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from sage.domain.memory import LegionMemoryRunArtifact
 from sage.domain.usage import RunProvenance
 
 
@@ -17,6 +18,7 @@ class SolveRequest(BaseModel):
     issue_path: Path
     base_ref: str = "HEAD"
     sandbox_image: str | None = None
+    memory_file: Path | None = None
 
 
 class PreparedRun(BaseModel):
@@ -75,3 +77,4 @@ class SolveResult(BaseModel):
     workspace_dir: Path
     outcome: SolveOutcome = SolveOutcome.COMPLETED
     provenance: RunProvenance | None = None
+    memory: LegionMemoryRunArtifact | None = None

@@ -11,7 +11,13 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 
 from sage.config import Settings
-from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole, RunProvenance
+from sage.domain.usage import (
+    AgentToolCallRecord,
+    AttemptKind,
+    ModelCallRecord,
+    ModelRole,
+    RunProvenance,
+)
 from sage.errors import AgentRuntimeError
 from sage.observability import agent_trace_config, log_agent_activity, log_agent_finished
 from sage.providers.base import ModelProvider, ProviderResult
@@ -45,6 +51,8 @@ class ModelCalls:
         self._deadline = clock() + settings.run_deadline_seconds
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
+        self._tool_calls: list[AgentToolCallRecord] = []
+        self._commands: list[str] = []
         self._consecutive_failures: dict[str, int] = {}
         self.solver_sessions = 0
         self.review_cycles = 0
@@ -62,9 +70,17 @@ class ModelCalls:
     def provenance(self) -> RunProvenance:
         return RunProvenance(
             calls=self.records,
+            tool_calls=tuple(self._tool_calls),
+            commands=tuple(self._commands),
             solver_sessions=self.solver_sessions,
             review_cycles=self.review_cycles,
         )
+
+    def record_command(self, command: str) -> None:
+        """Persist one policy-approved Solver command that reached execution."""
+
+        self._commands.append(command)
+        self._persist()
 
     def start_solver_session(self) -> None:
         """Record one initial or repair Solver tool-loop session."""
@@ -99,6 +115,17 @@ class ModelCalls:
     ) -> None:
         usage = message.usage_metadata or {}
         input_details = usage.get("input_token_details") or {}
+        for item in message.tool_calls:
+            name = str(item.get("name") or "unknown").strip()[:100] or "unknown"
+            self._tool_calls.append(
+                AgentToolCallRecord(
+                    call_number=len(self._tool_calls) + 1,
+                    model_call_number=call_number,
+                    stage=stage,
+                    role=role,
+                    tool_name=name,
+                )
+            )
         self._append_record(
             ModelCallRecord(
                 call_number=call_number,

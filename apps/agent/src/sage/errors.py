@@ -53,6 +53,18 @@ class ArtifactError(SageError):
     """Raised when run artifacts cannot be persisted."""
 
 
+class LegionMemoryError(SageError):
+    """Base class for expected local knowledge-graph failures."""
+
+
+class LegionMemoryBuildError(LegionMemoryError):
+    """Raised when a requested graph build cannot complete safely."""
+
+
+class LegionMemoryQueryError(LegionMemoryError):
+    """Raised when a graph cannot be validated or queried safely."""
+
+
 class GitHubIntegrationError(SageError):
     """Base class for expected GitHub integration failures."""
 

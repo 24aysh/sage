@@ -1,0 +1,10 @@
+{
+  "files": {"app.py": "def helper():\n    return 42\n\ndef main():\n    return helper()\n"},
+  "expected": {
+    "nodes": [["app.py::helper", "Function", "app.py", 1, 2], ["app.py::main", "Function", "app.py", 4, 5]],
+    "calls": [["app.py::main", "app.py::helper"]],
+    "flows": [["app.py::helper", "app.py::main"]],
+    "communities": [["app.py::helper", "app.py::main"]],
+    "query": ["app.py::helper"]
+  }
+}

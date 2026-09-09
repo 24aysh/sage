@@ -357,6 +357,32 @@ def test_graph_returns_repository_failure_before_next_decision(tmp_path: Path) -
     assert tool_results[0].content == "Repository tool failed: read failed"
 
 
+def test_graph_returns_invalid_tool_arguments_for_model_correction(
+    tmp_path: Path,
+) -> None:
+    graph, model, repository = _graph(
+        tmp_path,
+        [
+            _tool_message("read_file", {}),
+            _final_message("corrected"),
+        ],
+    )
+
+    result = asyncio.run(graph.ainvoke(_initial_state()))
+
+    assert result["final_output"].summary == "corrected"
+    assert repository.calls == []
+    tool_results = [
+        message for message in model.inputs[1] if isinstance(message, ToolMessage)
+    ]
+    assert len(tool_results) == 1
+    assert tool_results[0].status == "error"
+    assert tool_results[0].content == (
+        "Tool arguments invalid for 'read_file': path: Field required. "
+        "Correct the arguments and try again."
+    )
+
+
 def test_graph_propagates_model_and_unexpected_tool_failures(tmp_path: Path) -> None:
     model_graph, _model, _repository = _graph(tmp_path, [ValueError("model failed")])
     with pytest.raises(ValueError, match="model failed"):

@@ -8,6 +8,7 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sage.errors import ConfigurationError
@@ -42,6 +43,101 @@ class ConfiguredVerificationCommand(BaseModel):
         if any(character in self.command for character in ("\x00", "\r", "\n")):
             raise ValueError("Configured verification command must be one line.")
         return self
+
+
+class LegionEmbeddingSettings(BaseModel):
+    """Independent memory configuration; graph commands need no chat keys."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    enabled: bool = False
+    model: Literal["gemini-embedding-2"] = "gemini-embedding-2"
+    dimensions: Literal[768, 1536, 3072] = 3072
+    api_key: str | None = Field(default=None, repr=False)
+    qdrant_path: Path | None = None
+    qdrant_url: str | None = None
+    qdrant_api_key: str | None = Field(default=None, repr=False)
+    max_nodes: int = Field(default=2000, ge=1, le=100_000)
+    deadline_seconds: int = Field(default=300, ge=1, le=3600)
+    request_timeout_seconds: int = Field(default=30, ge=1, le=60)
+    retries: int = Field(default=1, ge=0, le=3)
+    concurrency: int = Field(default=1, ge=1, le=8)
+    min_similarity: float = Field(default=0.45, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_storage(self) -> LegionEmbeddingSettings:
+        if self.qdrant_path and self.qdrant_url:
+            raise ValueError("Configure Qdrant path OR URL, not both.")
+        if self.qdrant_url:
+            from urllib.parse import urlsplit
+
+            parsed = urlsplit(self.qdrant_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or (
+                parsed.username or parsed.password or parsed.query or parsed.fragment
+            ):
+                raise ValueError("Qdrant URL must be HTTP(S), without credentials or query.")
+            if self.qdrant_api_key and parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+                raise ValueError("Remote Qdrant credentials require HTTPS.")
+        return self
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None, *, enabled: bool | None = None) -> LegionEmbeddingSettings:
+        values = os.environ if environ is None else environ
+        active = enabled if enabled is not None else _parse_bool(
+            values.get("SAGE_LEGION_EMBEDDINGS_ENABLED", "false"), name="SAGE_LEGION_EMBEDDINGS_ENABLED",
+        )
+        if not active:
+            return cls()  # Disabled commands do not validate unused credentials/adapters.
+        if not _parse_bool(values.get("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "true"), name="SAGE_GOOGLE_MODEL_CONTEXT_APPROVED"):
+            raise ConfigurationError("Google context sharing is disabled.")
+        try:
+            return cls(
+                enabled=True,
+                api_key=values.get("GEMINI_API_KEY", "").strip() or None,
+                model=values.get("SAGE_LEGION_EMBEDDING_MODEL", "gemini-embedding-2"),
+                dimensions=int(values.get("SAGE_LEGION_EMBEDDING_DIMENSIONS", "3072")),
+                qdrant_path=values.get("SAGE_LEGION_QDRANT_PATH", "").strip() or None,
+                qdrant_url=values.get("SAGE_LEGION_QDRANT_URL", "").strip() or None,
+                qdrant_api_key=(
+                    values.get("SAGE_LEGION_QDRANT_API_KEY", "").strip() or None
+                ),
+                max_nodes=values.get("SAGE_LEGION_EMBEDDING_MAX_NODES", "2000"),
+                deadline_seconds=values.get("SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS", "300"),
+                request_timeout_seconds=values.get("SAGE_LEGION_EMBEDDING_TIMEOUT_SECONDS", "30"),
+                concurrency=values.get("SAGE_LEGION_EMBEDDING_CONCURRENCY", "1"),
+                retries=values.get("SAGE_LEGION_EMBEDDING_RETRIES", "1"),
+                min_similarity=values.get("SAGE_LEGION_EMBEDDING_MIN_SIMILARITY", "0.45"),
+            )
+        except (ValueError, ValidationError):
+            raise ConfigurationError("Invalid Legion embedding settings; check model, dimensions, budgets and Qdrant configuration.") from None
+
+    @classmethod
+    def from_github_env(
+        cls,
+        environ: Mapping[str, str] | None = None,
+    ) -> LegionEmbeddingSettings:
+        """Load the default-on, remote-only GitHub embedding policy."""
+
+        values = os.environ if environ is None else environ
+        active = _parse_bool(
+            values.get("SAGE_LEGION_EMBEDDINGS_ENABLED", "true"),
+            name="SAGE_LEGION_EMBEDDINGS_ENABLED",
+        )
+        settings = cls.from_env(values, enabled=active)
+        if not settings.enabled:
+            return settings
+        if settings.qdrant_path is not None:
+            raise ConfigurationError(
+                "GitHub Legion embeddings require remote Qdrant storage."
+            )
+        if settings.qdrant_url is None or not settings.qdrant_api_key:
+            raise ConfigurationError(
+                "GitHub Legion embeddings require a Qdrant URL and API key."
+            )
+        if not settings.api_key:
+            raise ConfigurationError(
+                "GEMINI_API_KEY is required for GitHub Legion embeddings."
+            )
+        return settings
 
 
 class Settings(BaseModel):
@@ -90,10 +186,13 @@ class Settings(BaseModel):
     run_deadline_seconds: int = Field(default=4_800, ge=600, le=5_100)
     finalization_reserve_seconds: int = Field(default=300, ge=60, le=900)
     solver_input_chars: int = Field(default=96_000, ge=8_000, le=200_000)
+    legion_initial_context_chars: int = Field(default=4000, ge=500, le=12_000)
     reviewer_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     repair_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     max_candidate_diff_chars: int = Field(default=96_000, ge=4_000, le=200_000)
     max_verification_log_chars: int = Field(default=24_000, ge=2_000, le=100_000)
+    verification_preflight: bool = False
+    verification_preflight_dependencies: tuple[str, ...] = Field(default=(), max_length=32)
     verification_commands: tuple[ConfiguredVerificationCommand, ...] = Field(
         default=(),
         max_length=3,
@@ -227,6 +326,7 @@ class Settings(BaseModel):
                     "SAGE_FINALIZATION_RESERVE_SECONDS", "300"
                 ),
                 solver_input_chars=values.get("SAGE_SOLVER_INPUT_CHARS", "96000"),
+                legion_initial_context_chars=values.get("SAGE_LEGION_INITIAL_CONTEXT_CHARS", "4000"),
                 reviewer_input_chars=values.get(
                     "SAGE_REVIEWER_INPUT_CHARS", "48000"
                 ),
@@ -238,8 +338,10 @@ class Settings(BaseModel):
                     "SAGE_MAX_VERIFICATION_LOG_CHARS", "24000"
                 ),
                 verification_commands=verification_commands,
+                verification_preflight=_parse_bool(values.get("SAGE_VERIFICATION_PREFLIGHT", "false"), name="SAGE_VERIFICATION_PREFLIGHT"),
+                verification_preflight_dependencies=json.loads(values.get("SAGE_VERIFICATION_PREFLIGHT_DEPENDENCIES_JSON", "[]")),
             )
-        except ValidationError as error:
+        except (ValidationError, json.JSONDecodeError) as error:
             raise ConfigurationError(f"Invalid Sage configuration: {error}") from error
 
 
