@@ -103,10 +103,20 @@ class Publisher(Protocol):
 
 SettingsFactory = Callable[[], Settings]
 OrchestratorFactory = Callable[[Settings], SolveEngine]
-SolveRunner = Callable[
-    [SolveRequest, SolveEngine, Settings],
-    Awaitable[SolveResult],
-]
+MemoryServiceFactory = Callable[[], object]
+
+
+class SolveRunner(Protocol):
+    """Injected solve boundary with the production memory dependency."""
+
+    def __call__(
+        self,
+        request: SolveRequest,
+        orchestrator: SolveEngine,
+        settings: Settings,
+        *,
+        memory_service: object | None = None,
+    ) -> Awaitable[SolveResult]: ...
 
 
 async def run_github_issue(
@@ -120,6 +130,7 @@ async def run_github_issue(
     runner_temp: Path,
     status_comment_id: int,
     orchestrator_factory: OrchestratorFactory,
+    memory_service_factory: MemoryServiceFactory,
     settings_factory: SettingsFactory = Settings.from_env,
     solve_runner: SolveRunner = solve_issue,
     publisher: Publisher = publish_solve_result,
@@ -182,14 +193,28 @@ async def run_github_issue(
             context_dir=context_dir,
             target_checkout=checkout,
         )
+        memory_file = _github_memory_file(
+            invocation,
+            runner_temp=runner_temp,
+            checkout=checkout,
+            context_dir=context_dir,
+            diagnostics_dir=diagnostics_dir,
+        )
         request = SolveRequest(
             repo_path=checkout,
             issue_path=issue_path,
             base_ref=invocation.base_sha,
+            memory_file=memory_file,
         )
         settings = settings_factory()
+        memory_service = memory_service_factory()
         orchestrator = orchestrator_factory(settings)
-        solve_result = await solve_runner(request, orchestrator, settings)
+        solve_result = await solve_runner(
+            request,
+            orchestrator,
+            settings,
+            memory_service=memory_service,
+        )
         if solve_result.base_sha != invocation.base_sha:
             raise GitHubPublicationError(
                 "The solve result base does not match the validated event base."
@@ -549,3 +574,44 @@ def _validate_runner_paths(
             raise ConfigurationError(
                 f"The {label} directory must be outside the target checkout."
             )
+
+
+def _github_memory_file(
+    invocation: GitHubInvocation,
+    *,
+    runner_temp: Path,
+    checkout: Path,
+    context_dir: Path,
+    diagnostics_dir: Path,
+) -> Path:
+    """Select a fresh runner-owned graph path for one Actions attempt."""
+
+    root = runner_temp.expanduser().resolve()
+    memory_file = (
+        root
+        / "sage-legion-memory"
+        / f"{invocation.actions_run.run_id}-{invocation.actions_run.attempt}"
+        / "graph.sqlite3"
+    )
+    protected = (
+        checkout.expanduser().resolve(),
+        context_dir.expanduser().resolve(),
+        diagnostics_dir.expanduser().resolve(),
+    )
+    if root not in memory_file.parents or any(
+        path == memory_file or path in memory_file.parents for path in protected
+    ):
+        raise ConfigurationError(
+            "The GitHub Legion Memory file must be isolated under runner temp."
+        )
+    related = (
+        memory_file,
+        memory_file.with_suffix(memory_file.suffix + ".lock"),
+        memory_file.with_suffix(memory_file.suffix + "-wal"),
+        memory_file.with_suffix(memory_file.suffix + "-shm"),
+    )
+    if any(path.exists() for path in related):
+        raise ConfigurationError(
+            "The GitHub Legion Memory path is not fresh for this run attempt."
+        )
+    return memory_file
