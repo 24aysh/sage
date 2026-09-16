@@ -259,20 +259,43 @@ availability without reading secret values.
 Accepted `/sage solve` and `/sage fix` Issue comments recheck authorization and
 duplicate state before model construction, and solve at the gate's exact SHA.
 GitHub memory uses fresh runner-owned SQLite and defaults to persistent remote
-embeddings. Configure repository/environment secrets:
+embeddings.
+
+Configure credentials only as repository or environment Secrets:
 
 ```text
 OPENAI_API_KEY
 GEMINI_API_KEY
 SAGE_LEGION_QDRANT_URL          # HTTPS endpoint
 SAGE_LEGION_QDRANT_API_KEY
-SAGE_LEGION_EMBEDDINGS_ENABLED  # optional false: lexical memory only
+LANGSMITH_API_KEY               # optional; required when tracing is enabled
+SAGE_WEB_SEARCH_API_KEY         # optional; required for the selected provider
 ```
 
-The installed Action supplies its scoped GitHub token. Model/Qdrant credentials
-belong only to the trusted solve controller step. Invalid enabled embedding
-configuration fails before the first model/embedding call. GitHub does not fall
-back to local Qdrant storage.
+The installed Action supplies its scoped GitHub token. Secret values belong only
+to the trusted solve controller step; the workflow references them with
+`${{ secrets.NAME }}` and never stores their values in YAML.
+
+Configure every non-secret `.env.example` setting in the top-level `env:` block
+of `.github/workflows/sage.yml`. Values are quoted strings so booleans, numbers,
+empty values and JSON reach the existing typed environment boundary unchanged.
+For example:
+
+```yaml
+env:
+  SOLVER_MODEL: "gpt-5.4-mini"
+  REVIEWER_MODEL: "gemini-3.5-flash"
+  SAGE_LEGION_EMBEDDINGS_ENABLED: "true"  # false selects lexical memory
+  SAGE_LEGION_EMBEDDING_MAX_NODES: "2000"
+  SAGE_RESEARCH_ENABLED: "true"
+  SAGE_WEB_SEARCH_PROVIDER: ""
+```
+
+The action inherits this repository-owned configuration. It exposes inputs only
+for credentials and run identity, preventing hidden input defaults from
+overriding the YAML. GitHub does not permit local Qdrant storage, so keep
+`SAGE_LEGION_QDRANT_PATH` empty. Invalid enabled embedding configuration fails
+before the first model/embedding call.
 
 A live release canary requires a pushed implementation and both Sage Actions
 pinned to its full immutable commit SHA. In a disposable repository, invoke a
@@ -286,9 +309,10 @@ bounded Issue naming a known symbol and verify:
    Qdrant endpoint or credentials.
 5. Idempotent finalization; a second same-SHA Issue reuses eligible vectors.
 
-A lexical-only canary uses the optional secret set to false and must retain the
-graph with vectors disabled. Restore the intended setting afterward. Live canaries
-and paid calls are separate from the offline gate.
+A lexical-only canary sets `SAGE_LEGION_EMBEDDINGS_ENABLED: "false"` in the
+workflow YAML and must retain the graph with vectors disabled. Restore the
+intended setting afterward. Live canaries and paid calls are separate from the
+offline gate.
 
 ## Read evidence before retrying
 

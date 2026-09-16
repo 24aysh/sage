@@ -198,8 +198,8 @@ One `RunArtifacts` instance owns atomic evidence for one run:
 
 Immutable histories live under `solver-plans/`, `verification/`, and `reviews/`.
 Persisted format identifiers, trace labels, model environment names
-(`SAGE_V2_SOLVER_MODEL`, `SAGE_V2_REVIEWER_MODEL`) and `sage-sandbox:v2` remain
-compatible. Character ledgers and path overlap do not prove causal memory use or
+(`SOLVER_MODEL`, `REVIEWER_MODEL`) and `sage-sandbox:v2` remain stable.
+Character ledgers and path overlap do not prove causal memory use or
 billed token savings. Query embedding, retrieval, graph build and preflight
 timings remain separate.
 
