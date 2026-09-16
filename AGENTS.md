@@ -108,7 +108,7 @@ cross-run state engine.
 - `sage/domain/` — provider-neutral typed contracts;
 - `sage/cli/` — command parsing, output, and exit policy; `__init__.py` only
   re-exports `main` to preserve the installed entrypoint;
-- `sage/repository/`, `sage/research/`, `sage/verification/` — deterministic capabilities;
+- `sage/repository/`, `sage/verification/` — deterministic capabilities;
 - `sage/legion_memory/` — rebuildable committed-source navigation: `indexing.py`
   owns provenance/builds, `service.py` validated queries, `retrieval.py` Issue
   ranking, and `session.py` run visibility; `bindings.py` infers source bindings;

@@ -33,7 +33,6 @@ from sage.providers.base import ProviderResult
 from sage.providers.calls import ModelCalls
 from sage.legion_memory.service import LegionMemoryService
 from sage.legion_memory.session import MemorySession
-from sage.research.service import build_research_service
 from sage.repository.service import Repository
 from sage.sandbox.base import CommandResult
 
@@ -207,7 +206,6 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
         solver=SolverAgent(settings=settings, model=solver),  # type: ignore[arg-type]
         reviewer=ReviewerAgent(settings=settings),
         reviewer_provider=reviewer,
-        research_service=build_research_service(settings),
     )
 
     result = asyncio.run(
@@ -326,7 +324,6 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
             context=context,
             plans=SolverPlanSession(artifacts),
             calls=calls,
-            research=build_research_service(settings),
         )
     )
 

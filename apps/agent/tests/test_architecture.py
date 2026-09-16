@@ -15,6 +15,7 @@ REMOVED_PATHS = {
     "artifacts/v2.py",
     "domain/runtime.py",
     "providers/factory.py",
+    "research",
 }
 LAYER_FORBIDDEN_IMPORTS = {
     "agents": ("cli", "composition", "integrations", "orchestration", "sandbox", "workflows"),
@@ -26,14 +27,12 @@ LAYER_FORBIDDEN_IMPORTS = {
         "integrations",
         "orchestration",
         "repository",
-        "research",
         "sandbox",
         "verification",
         "workflows",
     ),
     "artifacts": ("agents", "orchestration", "workflows"),
     "repository": ("agents", "orchestration", "workflows"),
-    "research": ("agents", "orchestration", "workflows"),
     "sandbox": ("agents", "orchestration", "workflows"),
     "verification": ("agents", "orchestration", "workflows"),
     "legion_memory": (

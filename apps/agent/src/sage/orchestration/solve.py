@@ -19,7 +19,7 @@ from sage.agents.solver import (
 from sage.domain.review import ReviewFailureType, ReviewVerdict
 from sage.domain.solve import AgentFinalOutput, SolveOutcome
 from sage.domain.verification import VerificationStatus
-from sage.errors import AgentRuntimeError, InvalidModelContractError
+from sage.errors import AgentRuntimeError
 from sage.observability import workflow_trace_config
 from sage.orchestration.candidate import (
     create_candidate_snapshot,
@@ -36,7 +36,6 @@ from sage.orchestration.validation import (
     verification_fingerprint,
 )
 from sage.providers.calls import ModelCalls
-from sage.research.service import ResearchService
 from sage.verification.runner import Verifier
 
 if TYPE_CHECKING:
@@ -55,12 +54,10 @@ class SolveOrchestrator:
         solver: SolverAgent,
         reviewer: ReviewerAgent,
         reviewer_provider: ModelProvider,
-        research_service: ResearchService,
     ) -> None:
         self._solver = solver
         self._reviewer = reviewer
         self._reviewer_provider = reviewer_provider
-        self._research_service = research_service
 
     async def solve(
         self,
@@ -96,7 +93,6 @@ class SolveOrchestrator:
             run_id=context.prepared_run.run_id,
         )
         plans = SolverPlanSession(artifacts)
-        research = self._research_service
         verifier = Verifier(
             repository=context.repository,
             artifacts=artifacts,
@@ -124,7 +120,6 @@ class SolveOrchestrator:
                 context=context,
                 plans=plans,
                 calls=calls,
-                research=research,
             )
             review_version = 0
             verification_pass = 0
@@ -133,16 +128,6 @@ class SolveOrchestrator:
             while True:
                 validate_solver_final(solver_result, plan=plans.saved)
                 assert plans.saved is not None
-                unknown_research = [
-                    result_id
-                    for result_id in plans.saved.plan.research_result_ids
-                    if research.get_result(result_id) is None
-                ]
-                if unknown_research:
-                    raise InvalidModelContractError(
-                        "Solver plan references unknown research results: "
-                        + ", ".join(sorted(unknown_research))
-                    )
                 artifacts.write_solver_final(solver_result)
                 solver_outcome = solver_terminal(solver_result, calls=calls)
                 if solver_outcome is not None:
@@ -155,9 +140,7 @@ class SolveOrchestrator:
                             "Solver reported no change after modifying the candidate.",
                             calls,
                         )
-                    return self._persist_terminal(
-                        solver_outcome, context, calls, research
-                    )
+                    return self._persist_terminal(solver_outcome, context, calls)
                 snapshot = create_candidate_snapshot(
                     repository=context.repository,
                     base_sha=context.prepared_run.base_sha,
@@ -194,7 +177,7 @@ class SolveOrchestrator:
                             "The candidate did not pass required deterministic verification.",
                             calls,
                         )
-                        return self._persist_terminal(final, context, calls, research)
+                        return self._persist_terminal(final, context, calls)
                     prior_progress = progress
                     solver_result = await self._solver.run(
                         stage="solver-repair",
@@ -207,7 +190,6 @@ class SolveOrchestrator:
                         context=context,
                         plans=plans,
                         calls=calls,
-                        research=research,
                     )
                     continue
 
@@ -219,7 +201,6 @@ class SolveOrchestrator:
                     plan=plans.saved,
                     calls=calls,
                     rereview=review_version > 1,
-                    research_summary_json=research.summary().model_dump_json(indent=2),
                 )
                 artifacts.write_review(review, version=review_version)
                 if review.verdict is ReviewVerdict.PASS:
@@ -238,7 +219,7 @@ class SolveOrchestrator:
                         ],
                         provenance=calls.provenance(),
                     )
-                    return self._persist_terminal(final, context, calls, research)
+                    return self._persist_terminal(final, context, calls)
 
                 if review.verdict is ReviewVerdict.UNCERTAIN:
                     final = terminal(
@@ -246,14 +227,14 @@ class SolveOrchestrator:
                         "Independent review could not establish that the candidate is safe.",
                         calls,
                     )
-                    return self._persist_terminal(final, context, calls, research)
+                    return self._persist_terminal(final, context, calls)
                 if review.failure_type not in {
                     ReviewFailureType.IMPLEMENTATION,
                     ReviewFailureType.PLANNING,
                     ReviewFailureType.VERIFICATION,
                 }:
                     final = review_failure_terminal(review, calls)
-                    return self._persist_terminal(final, context, calls, research)
+                    return self._persist_terminal(final, context, calls)
 
                 progress = (snapshot.diff_digest, review_fingerprint(review))
                 if progress == prior_progress or not calls.has_time_for_model_call():
@@ -262,7 +243,7 @@ class SolveOrchestrator:
                         "Independent review found blocking issues without further progress.",
                         calls,
                     )
-                    return self._persist_terminal(final, context, calls, research)
+                    return self._persist_terminal(final, context, calls)
                 prior_progress = progress
                 solver_result = await self._solver.run(
                     stage="solver-repair",
@@ -281,13 +262,12 @@ class SolveOrchestrator:
                     context=context,
                     plans=plans,
                     calls=calls,
-                    research=research,
                 )
         except Exception as error:
             final = failure_terminal(error, calls)
             if final is None:
                 raise
-        final = self._persist_terminal(final, context, calls, research)
+        final = self._persist_terminal(final, context, calls)
         logger.info(
             "Sage solve: finished run=%s outcome=%s model_calls=%d",
             context.prepared_run.run_id,
@@ -310,14 +290,10 @@ class SolveOrchestrator:
         final: AgentFinalOutput,
         context: SolveContext,
         calls: ModelCalls,
-        research: ResearchService,
     ) -> AgentFinalOutput:
         artifacts = context.artifacts
         updated = final.model_copy(update={"provenance": calls.provenance()})
         artifacts.write_usage(updated.provenance)
-        research_summary = research.summary()
-        if research_summary.searches or research_summary.errors or research_summary.sources:
-            artifacts.write_research_summary(research_summary)
         artifacts.write_terminal(updated)
         logger.info(
             "Sage solve: terminal outcome=%s model_calls=%d",

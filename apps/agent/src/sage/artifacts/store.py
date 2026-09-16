@@ -43,8 +43,6 @@ class RunArtifacts:
             "model": settings.solver_model,
             "runtime": _RUNTIME_LABEL,
             "model_profile": _MODEL_PROFILE_LABEL,
-            "research_enabled": settings.research_enabled,
-            "web_search_provider": settings.web_search_provider or None,
             "sandbox_image": settings.sandbox_image,
         }
         try:
@@ -94,9 +92,6 @@ class RunArtifacts:
         path = self._json(Path("solver-plans") / f"{version:02d}.json", value)
         self._json("solver-plan.json", value)
         return path
-
-    def write_research_summary(self, value: BaseModel) -> Path:
-        return self._json("research-summary.json", value)
 
     def write_solver_final(self, value: BaseModel) -> Path:
         return self._json("solver-final.json", value)

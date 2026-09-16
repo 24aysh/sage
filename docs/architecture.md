@@ -31,7 +31,7 @@ Three different facts must stay distinct:
 | --- | --- | --- |
 | What should change | Issue and persisted Solver plan | Solver, verifier, Reviewer |
 | What actually changed | Git at the accepted base SHA | Candidate guard, artifacts, publication |
-| Where to look | Current source reads, optional base-snapshot memory, bounded research | Solver |
+| Where to look | Current source reads and optional base-snapshot memory | Solver |
 
 Memory cannot satisfy acceptance criteria, grant mutation authority, or replace
 current source. Model summaries cannot define a diff or changed-file list.
@@ -55,7 +55,6 @@ Tests mirror owners under `apps/agent/tests/`.
 | Reviewer packet and contract | `agents/reviewer.py`, `domain/review.py` | Independent judgment and complete criterion coverage |
 | File, search, Git, command operations | `repository/` | Validated paths, command allowlist, bounded output |
 | Verification | `verification/` | Deterministic checks; preflight is tooling readiness, not test evidence |
-| Research | `research/` | Safe URLs, provenance, cache and budgets |
 | Models and call accounting | `providers/` | Bounded retries, typed outputs and usage |
 | Run evidence | `artifacts/store.py`, `artifacts/files.py` | Atomic run-scoped writes |
 | GitHub transport/publication | `integrations/github/` | Authorization, credential isolation, creation-only publication |

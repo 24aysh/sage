@@ -35,7 +35,6 @@ class ReviewerAgent:
         plan: SavedSolverPlan,
         calls: ModelCalls,
         rereview: bool,
-        research_summary_json: str,
     ) -> ReviewResult:
         packet = build_review_message(
             issue_text=issue_text,
@@ -44,7 +43,6 @@ class ReviewerAgent:
             candidate_diff=snapshot.diff,
             verification_json=verification.model_dump_json(indent=2),
             solver_summary=snapshot.solver_summary,
-            research_summary_json=research_summary_json,
         )
         if len(packet) > self._settings.reviewer_input_chars:
             raise AgentRuntimeError(

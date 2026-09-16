@@ -41,7 +41,6 @@ from sage.domain.usage import AttemptKind, ModelRole
 from sage.errors import AgentRuntimeError, RepositoryError
 from sage.observability import agent_trace_config, log_agent_result
 from sage.providers.calls import ModelCalls
-from sage.research.tools import ResearchToolService, build_solver_research_tools
 from sage.verification.discovery import is_allowed_solver_verification_command
 
 logger = logging.getLogger(__name__)
@@ -94,7 +93,6 @@ class SolverAgent:
         context: SolverContext,
         plans: SolverPlanSession,
         calls: ModelCalls,
-        research: ResearchToolService,
     ) -> SolverFinalResult:
         if context.memory is not None:
             packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
@@ -115,7 +113,6 @@ class SolverAgent:
             tools=build_solver_tools(
                 context,
                 plans,
-                research,
                 command_recorder=calls.record_command,
             ),
             output_schema=SolverFinalResult,
@@ -262,11 +259,10 @@ class SolverPlanSession:
 def build_solver_tools(
     context: SolverContext,
     plans: SolverPlanSession,
-    research: ResearchToolService | None = None,
     *,
     command_recorder: Callable[[str], None] | None = None,
 ) -> list[BaseTool]:
-    """Build the Solver's structured repository and research tool set."""
+    """Build the Solver's structured repository and memory tool set."""
 
     @tool
     async def save_plan(
@@ -279,7 +275,6 @@ def build_solver_tools(
         assumptions: list[str],
         risks: list[str],
         status: Literal["implementable", "blocked"],
-        research_result_ids: list[str] | None = None,
         blocker: str | None = None,
     ) -> str:
         """Validate and persist the complete plan before any file mutation."""
@@ -287,7 +282,6 @@ def build_solver_tools(
         saved = plans.save(
             SolverPlan(
                 issue_summary=issue_summary,
-                research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -314,7 +308,6 @@ def build_solver_tools(
         assumptions: list[str],
         risks: list[str],
         status: Literal["implementable", "blocked"],
-        research_result_ids: list[str] | None = None,
         blocker: str | None = None,
     ) -> str:
         """Persist a complete replacement for the current Solver plan."""
@@ -324,7 +317,6 @@ def build_solver_tools(
             reason=reason,
             plan=SolverPlan(
                 issue_summary=issue_summary,
-                research_result_ids=tuple(research_result_ids or ()),
                 approach=approach,
                 tasks=tuple(tasks),
                 acceptance_criteria=tuple(acceptance_criteria),
@@ -442,9 +434,6 @@ def build_solver_tools(
     if context.memory is not None and memory_tools:
         context.memory.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in memory_tools],
                                                     separators=(",", ":"))))
-    research_tools = (
-        build_solver_research_tools(research) if research is not None else []
-    )
     show_diff = build_show_diff_tool(
         context,
         description="Show actual bounded Git status, statistics, and candidate diff.",
@@ -455,7 +444,6 @@ def build_solver_tools(
             output_chars=context.settings.max_tool_output_chars,
         ),
         *memory_tools,
-        *research_tools,
         save_plan,
         revise_plan,
         replace_text,

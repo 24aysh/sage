@@ -120,7 +120,6 @@ first-run: ## Configure, verify, and run a live solve.
 	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
 	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
 	inherited_langsmith_api_key="$${LANGSMITH_API_KEY:-}"; \
-	inherited_web_search_api_key="$${SAGE_WEB_SEARCH_API_KEY:-}"; \
 	inherited_langsmith_tracing="$${LANGSMITH_TRACING:-}"; \
 	inherited_langsmith_project="$${LANGSMITH_PROJECT:-}"; \
 	inherited_langsmith_workspace_id="$${LANGSMITH_WORKSPACE_ID:-}"; \
@@ -132,7 +131,6 @@ first-run: ## Configure, verify, and run a live solve.
 	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
 	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
 	if [[ -n "$$inherited_langsmith_api_key" ]]; then export LANGSMITH_API_KEY="$$inherited_langsmith_api_key"; fi; \
-	if [[ -n "$$inherited_web_search_api_key" ]]; then export SAGE_WEB_SEARCH_API_KEY="$$inherited_web_search_api_key"; fi; \
 	if [[ -n "$$inherited_langsmith_tracing" ]]; then export LANGSMITH_TRACING="$$inherited_langsmith_tracing"; fi; \
 	if [[ -n "$$inherited_langsmith_project" ]]; then export LANGSMITH_PROJECT="$$inherited_langsmith_project"; fi; \
 	if [[ -n "$$inherited_langsmith_workspace_id" ]]; then export LANGSMITH_WORKSPACE_ID="$$inherited_langsmith_workspace_id"; fi; \
@@ -281,17 +279,6 @@ doctor: ## Check all prerequisites needed for a live solve.
 		echo "OK: Google model context use is explicitly acknowledged."; \
 	else \
 		echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required." >&2; status=1; \
-	fi; \
-	if [[ -n "$${SAGE_WEB_SEARCH_PROVIDER:-}" ]]; then \
-		if [[ "$${SAGE_WEB_SEARCH_PROVIDER}" != "tavily" ]]; then \
-			echo "ERROR: SAGE_WEB_SEARCH_PROVIDER must be empty or tavily." >&2; status=1; \
-		elif [[ -n "$${SAGE_WEB_SEARCH_API_KEY:-}" ]]; then \
-			echo "OK: controller-side Tavily research is configured (API key hidden)."; \
-		else \
-			echo "ERROR: SAGE_WEB_SEARCH_API_KEY is required for Tavily research." >&2; status=1; \
-		fi; \
-	else \
-		echo "OK: external research is unconfigured; repository-local solving remains available."; \
 	fi; \
 	if [[ -x "$(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python" ]]; then \
 		python_version="$$($(ROOT_DIR)/$(AGENT_PROJECT)/.venv/bin/python --version 2>&1)"; \

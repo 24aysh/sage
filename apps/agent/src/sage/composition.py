@@ -14,7 +14,6 @@ from sage.errors import ConfigurationError
 from sage.legion_memory.service import LegionMemoryService
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.google import GoogleProvider
-from sage.research.service import build_research_service
 
 
 def build_legion_memory_service(*, data_root: Path | None = None,
@@ -63,5 +62,4 @@ def build_orchestrator(settings: Settings) -> SolveOrchestrator:
         solver=SolverAgent(settings=settings, model=solver_model),
         reviewer=ReviewerAgent(settings=settings),
         reviewer_provider=reviewer_provider,
-        research_service=build_research_service(settings),
     )
