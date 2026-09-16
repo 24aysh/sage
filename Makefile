@@ -26,7 +26,8 @@ DEBUG_FLAG :=
 .PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-debug \
-	legion-memory legion-retrieve legion-solve run-status run-test
+	legion-memory legion-retrieve legion-solve run-status run-test \
+	clean-runs clean-legion-memory clean-embeddings
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -56,6 +57,10 @@ help: ## Show the available commands and variables.
 		'                        Build or update the local Legion Memory graph.' \
 		'  make legion-retrieve REPO=... ISSUE=... MEMORY=...' \
 		'                        Print Issue-relevant memories from a ready graph.' \
+		'  make clean-runs       Delete run contents while preserving .sage/runs.' \
+		'  make clean-legion-memory' \
+		'                        Delete graph contents while preserving .sage/legion-memory.' \
+		'  make clean-embeddings Delete vector contents while preserving .sage/embeddings.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
@@ -368,6 +373,13 @@ graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/agents/test_loop.py::test_compiled_graph_renders_expected_mermaid"
+
+clean-runs clean-legion-memory clean-embeddings:
+	@set -euo pipefail; \
+	directory="$(ROOT_DIR)/.sage/$(@:clean-%=%)"; \
+	mkdir -p "$$directory"; \
+	find "$$directory" -mindepth 1 -delete; \
+	echo "Cleared $$directory (directory preserved)."
 
 legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optional.
 	@set -euo pipefail; \

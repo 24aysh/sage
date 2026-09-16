@@ -6,6 +6,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
@@ -73,6 +75,49 @@ def test_legion_solve_reuses_baseline_solve_with_explicit_memory() -> None:
     assert '"$${memory_args[@]}"' in solve_target
     assert "LEGION_SOLVE := true" in makefile
     assert "solve ## Run a live solve with Legion Memory enabled." in legion_target
+
+
+@pytest.mark.parametrize(
+    ("target", "directory_name"),
+    (
+        ("clean-runs", "runs"),
+        ("clean-legion-memory", "legion-memory"),
+        ("clean-embeddings", "embeddings"),
+    ),
+)
+def test_clean_target_removes_only_contents_and_preserves_parent(
+    tmp_path: Path,
+    target: str,
+    directory_name: str,
+) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text(
+        (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    sage_directory = tmp_path / ".sage"
+    target_directory = sage_directory / directory_name
+    nested_directory = target_directory / "nested"
+    nested_directory.mkdir(parents=True)
+    (target_directory / ".hidden").write_text("hidden", encoding="utf-8")
+    (nested_directory / "artifact").write_text("artifact", encoding="utf-8")
+    sibling = sage_directory / "unrelated"
+    sibling.mkdir()
+    (sibling / "keep").write_text("keep", encoding="utf-8")
+
+    result = subprocess.run(
+        ["make", "-f", str(makefile), target],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert target_directory.is_dir()
+    assert list(target_directory.iterdir()) == []
+    assert (sibling / "keep").read_text(encoding="utf-8") == "keep"
 
 
 def test_first_run_validates_inputs_before_credentials(tmp_path: Path) -> None:

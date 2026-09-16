@@ -179,6 +179,21 @@ The defaults remain Gemini Embedding 2, 3072 dimensions, 2,000 symbols,
 builds make no document calls. Raise explicit limits only after examining usage.
 Missing provider token usage is `unknown`, not zero or a character estimate.
 
+### Clear local Sage data
+
+Clear one local data store at a time with:
+
+```bash
+make clean-runs
+make clean-legion-memory
+make clean-embeddings
+```
+
+Each command deletes all nested and hidden content from its matching directory
+under `.sage/`. The `.sage/runs`, `.sage/legion-memory`, and `.sage/embeddings`
+parent directories themselves are preserved (and created if absent). The other
+stores are not changed.
+
 ## Sandbox and local solve
 
 ```bash
