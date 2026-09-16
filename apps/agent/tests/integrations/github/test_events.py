@@ -16,9 +16,8 @@ FIXTURES = Path(__file__).parents[2] / "fixtures" / "github"
 BASE_SHA = "a" * 40
 
 
-@pytest.mark.parametrize("body", ["/sage solve", "/sage fix"])
-def test_parse_command_accepts_exact_supported_aliases(body: str) -> None:
-    assert parse_command(body) is SageCommand.SOLVE
+def test_parse_command_accepts_exact_solve_command() -> None:
+    assert parse_command("/sage solve") is SageCommand.SOLVE
 
 
 @pytest.mark.parametrize(
@@ -29,6 +28,7 @@ def test_parse_command_accepts_exact_supported_aliases(body: str) -> None:
         "/sage solve ",
         "/SAGE SOLVE",
         "/sage",
+        "/sage fix",
         "/sage solve now",
         "please /sage solve",
         "`/sage solve`",
@@ -57,15 +57,6 @@ def test_load_issue_comment_event_normalizes_supported_solve() -> None:
     assert invocation.actions_run.run_id == 9001
     assert invocation.actions_run.attempt == 1
     assert invocation.actions_run.html_url.endswith("/actions/runs/9001")
-
-
-def test_load_issue_comment_event_maps_fix_alias_to_solve() -> None:
-    event_path = FIXTURES / "issue_fix.json"
-
-    invocation = load_issue_comment_event(_environment(event_path))
-
-    assert invocation.command is SageCommand.SOLVE
-    assert invocation.comment.body == "/sage fix"
 
 
 def test_load_issue_comment_event_preserves_ordinary_comment_as_ignored() -> None:

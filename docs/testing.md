@@ -256,7 +256,7 @@ a creation-only Sage branch and a draft PR request. `github-doctor` checks local
 files, immutable Action references, configuration documentation and Docker
 availability without reading secret values.
 
-Accepted `/sage solve` and `/sage fix` Issue comments recheck authorization and
+Accepted `/sage solve` Issue comments recheck authorization and
 duplicate state before model construction, and solve at the gate's exact SHA.
 GitHub memory uses fresh runner-owned SQLite and defaults to persistent remote
 embeddings.

@@ -24,7 +24,6 @@ from sage.integrations.github.models import (
 MAX_EVENT_BYTES = 2_000_000
 _COMMANDS = {
     "/sage solve": SageCommand.SOLVE,
-    "/sage fix": SageCommand.SOLVE,
 }
 
 

@@ -45,8 +45,7 @@ concurrency:
   group: >-
     ${{
       (github.event.issue.pull_request == null &&
-       (github.event.comment.body == '/sage solve' ||
-        github.event.comment.body == '/sage fix'))
+       github.event.comment.body == '/sage solve')
       && format('sage-{0}-issue-{1}', github.event.repository.id, github.event.issue.number)
       || format('sage-{0}-comment-{1}', github.event.repository.id, github.event.comment.id)
     }}
@@ -57,8 +56,7 @@ jobs:
     name: Authorize Sage request
     if: >-
       github.event.issue.pull_request == null &&
-      (github.event.comment.body == '/sage solve' ||
-       github.event.comment.body == '/sage fix')
+      github.event.comment.body == '/sage solve'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

@@ -54,7 +54,7 @@ def test_build_context_uses_current_issue_and_filters_discussion() -> None:
     invocation = _invocation()
     comments = (
         _comment(10, "Earlier diagnosis", "alice", hour=9),
-        _comment(11, "/sage fix", "maintainer", hour=9, minute=15),
+        _comment(11, "/sage solve", "maintainer", hour=9, minute=15),
         _comment(
             12,
             f"{invocation_marker(999)}\nSage status",
@@ -91,7 +91,7 @@ def test_build_context_uses_current_issue_and_filters_discussion() -> None:
     assert context.markdown.index("Earlier diagnosis") < context.markdown.index(
         "Recent reproduction"
     )
-    assert "/sage fix" not in context.markdown
+    assert context.markdown.count("/sage solve") == 1
     assert "Sage status" not in context.markdown
     assert "Posted after invocation" not in context.markdown
 

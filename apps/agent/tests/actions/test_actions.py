@@ -146,7 +146,7 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
     gate_filter = jobs["gate"]["if"]
     assert "pull_request == null" in gate_filter
     assert "comment.body == '/sage solve'" in gate_filter
-    assert "comment.body == '/sage fix'" in gate_filter
+    assert "comment.body == '/sage fix'" not in gate_filter
 
 
 def test_workflow_configures_every_non_secret_example_value_in_yaml() -> None:
