@@ -9,7 +9,7 @@ ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
 ENV_EXAMPLE = ROOT / ".env.example"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SAGE_ACTION_SHA = "52cc9a940b573b3721d3135ca4d3a6256f0e9517"
+SAGE_ACTION_SHA = "82f79aa3a666f83d48d148b59d1e148e778e0ba4"
 SECRET_CONFIGURATION = {
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
