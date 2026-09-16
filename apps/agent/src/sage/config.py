@@ -273,11 +273,9 @@ class Settings(BaseModel):
                 ),
                 openai_max_retries=values.get("OPENAI_MAX_RETRIES", "2"),
                 google_model_context_approved=google_context_approved,
-                solver_model=values.get(
-                    "SAGE_V2_SOLVER_MODEL", DEFAULT_SOLVER_MODEL
-                ).strip(),
+                solver_model=values.get("SOLVER_MODEL", DEFAULT_SOLVER_MODEL).strip(),
                 reviewer_model=values.get(
-                    "SAGE_V2_REVIEWER_MODEL", DEFAULT_REVIEWER_MODEL
+                    "REVIEWER_MODEL", DEFAULT_REVIEWER_MODEL
                 ).strip(),
                 research_enabled=_parse_bool(
                     values.get("SAGE_RESEARCH_ENABLED", "true"),

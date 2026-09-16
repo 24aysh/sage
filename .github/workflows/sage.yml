@@ -6,6 +6,48 @@ name: Sage Issue Solver
 
 permissions: {}
 
+# Repository-owned, non-secret Sage configuration. Keep credential values in
+# GitHub Secrets and edit these strings to tune the installed workflow.
+env:
+  SAGE_LEGION_EMBEDDINGS_ENABLED: "true"
+  SAGE_LEGION_INITIAL_CONTEXT_CHARS: "4000"
+  SAGE_LEGION_EMBEDDING_MODEL: "gemini-embedding-2"
+  SAGE_LEGION_EMBEDDING_DIMENSIONS: "3072"
+  SAGE_LEGION_EMBEDDING_MAX_NODES: "2000"
+  SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS: "300"
+  SAGE_LEGION_EMBEDDING_TIMEOUT_SECONDS: "30"
+  SAGE_LEGION_EMBEDDING_CONCURRENCY: "1"
+  SAGE_LEGION_EMBEDDING_RETRIES: "1"
+  SAGE_LEGION_EMBEDDING_MIN_SIMILARITY: "0.45"
+  SAGE_LEGION_QDRANT_PATH: ""
+  OPENAI_MAX_RETRIES: "2"
+  SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "true"
+  SOLVER_MODEL: "gpt-5.4-mini"
+  REVIEWER_MODEL: "gemini-3.5-flash"
+  SAGE_RESEARCH_ENABLED: "true"
+  SAGE_WEB_SEARCH_PROVIDER: ""
+  SAGE_RESEARCH_TIMEOUT_SECONDS: "15"
+  SAGE_RESEARCH_MAX_RESULT_CHARS: "12000"
+  SAGE_RESEARCH_ALLOWED_DOMAINS: ""
+  SAGE_OFFICIAL_DOCUMENTATION_DOMAINS: ""
+  SAGE_VERIFICATION_COMMANDS_JSON: "[]"
+  SAGE_VERIFICATION_PREFLIGHT: "false"
+  SAGE_VERIFICATION_PREFLIGHT_DEPENDENCIES_JSON: "[]"
+  LANGSMITH_TRACING: "false"
+  LANGSMITH_PROJECT: "sage-v2"
+  LANGSMITH_WORKSPACE_ID: ""
+  LANGSMITH_HIDE_INPUTS: "false"
+  LANGSMITH_HIDE_OUTPUTS: "false"
+  SAGE_MAX_TURNS: "30"
+  SAGE_RUNS_DIR: ".sage/runs"
+  SAGE_SANDBOX_IMAGE: "sage-sandbox:v2"
+  SAGE_COMMAND_TIMEOUT_SECONDS: "60"
+  SAGE_MAX_TOOL_OUTPUT_CHARS: "12000"
+  SAGE_GITHUB_API_TIMEOUT_SECONDS: "30"
+  SAGE_GITHUB_MAX_COMMENTS: "20"
+  SAGE_GITHUB_MAX_COMMENT_PAGES: "5"
+  SAGE_GITHUB_MAX_CONTEXT_CHARS: "40000"
+
 concurrency:
   group: >-
     ${{
@@ -50,17 +92,6 @@ jobs:
     if: needs.gate.outputs.should-run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    env:
-      LANGSMITH_TRACING: ${{ vars.LANGSMITH_TRACING || 'false' }}
-      LANGSMITH_PROJECT: ${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}
-      LANGSMITH_WORKSPACE_ID: ${{ vars.LANGSMITH_WORKSPACE_ID }}
-      LANGSMITH_HIDE_INPUTS: ${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}
-      LANGSMITH_HIDE_OUTPUTS: ${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}
-      SAGE_RESEARCH_ENABLED: ${{ vars.SAGE_RESEARCH_ENABLED || 'true' }}
-      SAGE_RESEARCH_TIMEOUT_SECONDS: ${{ vars.SAGE_RESEARCH_TIMEOUT_SECONDS || '15' }}
-      SAGE_RESEARCH_MAX_RESULT_CHARS: ${{ vars.SAGE_RESEARCH_MAX_RESULT_CHARS || '12000' }}
-      SAGE_RESEARCH_ALLOWED_DOMAINS: ${{ vars.SAGE_RESEARCH_ALLOWED_DOMAINS }}
-      SAGE_OFFICIAL_DOCUMENTATION_DOMAINS: ${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}
     permissions:
       contents: write
       issues: write
@@ -75,12 +106,6 @@ jobs:
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
           web-search-api-key: ${{ secrets.SAGE_WEB_SEARCH_API_KEY }}
-          web-search-provider: ${{ vars.SAGE_WEB_SEARCH_PROVIDER || '' }}
-          openai-max-retries: ${{ vars.OPENAI_MAX_RETRIES || '2' }}
-          v2-solver-model: ${{ vars.SAGE_V2_SOLVER_MODEL || 'gpt-5.4-mini' }}
-          v2-reviewer-model: ${{ vars.SAGE_V2_REVIEWER_MODEL || 'gemini-3.5-flash' }}
-          google-model-context-approved: ${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}
-          legion-embeddings-enabled: ${{ secrets.SAGE_LEGION_EMBEDDINGS_ENABLED || 'true' }}
           legion-qdrant-url: ${{ secrets.SAGE_LEGION_QDRANT_URL }}
           legion-qdrant-api-key: ${{ secrets.SAGE_LEGION_QDRANT_API_KEY }}
           base-sha: ${{ needs.gate.outputs.base-sha }}

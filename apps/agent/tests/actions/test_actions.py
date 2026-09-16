@@ -7,8 +7,17 @@ import yaml
 ROOT = Path(__file__).parents[4]
 ACTIONS = ROOT / ".github" / "actions"
 WORKFLOW = ROOT / ".github" / "workflows" / "sage.yml"
+ENV_EXAMPLE = ROOT / ".env.example"
 FULL_SHA_REFERENCE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 SAGE_ACTION_SHA = "52cc9a940b573b3721d3135ca4d3a6256f0e9517"
+SECRET_CONFIGURATION = {
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "LANGSMITH_API_KEY",
+    "SAGE_WEB_SEARCH_API_KEY",
+    "SAGE_LEGION_QDRANT_URL",
+    "SAGE_LEGION_QDRANT_API_KEY",
+}
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -55,33 +64,18 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     body = (ACTIONS / "sage-solve" / "action.yml").read_text(encoding="utf-8")
     document = yaml.safe_load(body)
 
-    assert "anthropic-api-key" not in document["inputs"]
-    assert document["inputs"]["openai-max-retries"] == {
-        "description": "Bounded OpenAI SDK retries for temporary rate limits.",
-        "required": False,
-        "default": "2",
+    assert set(document["inputs"]) == {
+        "github-token",
+        "openai-api-key",
+        "gemini-api-key",
+        "legion-qdrant-url",
+        "legion-qdrant-api-key",
+        "langsmith-api-key",
+        "web-search-api-key",
+        "base-sha",
+        "status-comment-id",
     }
-    assert "v2-planner-model" not in document["inputs"]
-    assert "v2-planner-fallback-model" not in document["inputs"]
-    assert document["inputs"]["v2-solver-model"]["default"] == "gpt-5.4-mini"
-    assert document["inputs"]["v2-reviewer-model"]["default"] == "gemini-3.5-flash"
     assert document["inputs"]["gemini-api-key"]["required"] is True
-    assert "runtime" not in document["inputs"]
-    assert "model-profile" not in document["inputs"]
-    assert document["inputs"]["google-model-context-approved"] == {
-        "description": (
-            "Google context acknowledgement; set false to disable Google calls."
-        ),
-        "required": False,
-        "default": "true",
-    }
-    assert document["inputs"]["legion-embeddings-enabled"] == {
-        "description": (
-            "Enable persistent Legion embeddings; set false for lexical memory only."
-        ),
-        "required": False,
-        "default": "true",
-    }
     assert document["inputs"]["legion-qdrant-url"]["required"] is False
     assert document["inputs"]["legion-qdrant-api-key"]["required"] is False
     assert document["inputs"]["langsmith-api-key"] == {
@@ -96,26 +90,15 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
     assert "LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}" in body
     assert "SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}" in body
-    assert document["inputs"]["web-search-provider"]["default"] == ""
-    assert "admission-enabled" not in document["inputs"]
     assert "ANTHROPIC_API_KEY" not in body
-    assert "SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}" in body
-    assert "SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}" in body
-    assert (
-        "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "
-        "${{ inputs.google-model-context-approved }}"
-    ) in body
-    assert "OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}" in body
+    assert "SAGE_V2_SOLVER_MODEL" not in body
+    assert "SAGE_V2_REVIEWER_MODEL" not in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
-    assert (
-        "SAGE_LEGION_EMBEDDINGS_ENABLED: "
-        "${{ inputs.legion-embeddings-enabled }}"
-    ) in body
     assert "SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}" in body
     assert (
         "SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}"
     ) in body
-    assert 'SAGE_LEGION_QDRANT_PATH: ""' in body
+    assert 'sandbox_image="${SAGE_SANDBOX_IMAGE:-sage-sandbox:v2}"' in body
     assert "docker build" in body
     assert "sage github solve" in body
     assert "upload-artifact" not in body
@@ -155,26 +138,7 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
         "issues": "write",
         "pull-requests": "write",
     }
-    assert jobs["solve"]["env"] == {
-        "LANGSMITH_TRACING": "${{ vars.LANGSMITH_TRACING || 'false' }}",
-        "LANGSMITH_PROJECT": "${{ vars.LANGSMITH_PROJECT || 'sage-v2' }}",
-        "LANGSMITH_WORKSPACE_ID": "${{ vars.LANGSMITH_WORKSPACE_ID }}",
-        "LANGSMITH_HIDE_INPUTS": "${{ vars.LANGSMITH_HIDE_INPUTS || 'false' }}",
-        "LANGSMITH_HIDE_OUTPUTS": "${{ vars.LANGSMITH_HIDE_OUTPUTS || 'false' }}",
-        "SAGE_RESEARCH_ENABLED": "${{ vars.SAGE_RESEARCH_ENABLED || 'true' }}",
-        "SAGE_RESEARCH_TIMEOUT_SECONDS": (
-            "${{ vars.SAGE_RESEARCH_TIMEOUT_SECONDS || '15' }}"
-        ),
-        "SAGE_RESEARCH_MAX_RESULT_CHARS": (
-            "${{ vars.SAGE_RESEARCH_MAX_RESULT_CHARS || '12000' }}"
-        ),
-        "SAGE_RESEARCH_ALLOWED_DOMAINS": (
-            "${{ vars.SAGE_RESEARCH_ALLOWED_DOMAINS }}"
-        ),
-        "SAGE_OFFICIAL_DOCUMENTATION_DOMAINS": (
-            "${{ vars.SAGE_OFFICIAL_DOCUMENTATION_DOMAINS }}"
-        ),
-    }
+    assert "env" not in jobs["solve"]
     assert jobs["finalize"]["permissions"] == {
         "issues": "write",
         "pull-requests": "read",
@@ -187,6 +151,24 @@ def test_workflow_filters_exact_issue_commands_and_uses_least_privilege() -> Non
     assert "pull_request == null" in gate_filter
     assert "comment.body == '/sage solve'" in gate_filter
     assert "comment.body == '/sage fix'" in gate_filter
+
+
+def test_workflow_configures_every_non_secret_example_value_in_yaml() -> None:
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    example_names = {
+        line.partition("=")[0]
+        for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*=.*", line)
+    }
+    configuration = document["env"]
+
+    assert set(configuration) == example_names - SECRET_CONFIGURATION
+    assert all(isinstance(value, str) for value in configuration.values())
+    assert not SECRET_CONFIGURATION & configuration.keys()
+    assert configuration["SOLVER_MODEL"] == "gpt-5.4-mini"
+    assert configuration["REVIEWER_MODEL"] == "gemini-3.5-flash"
+    assert configuration["SAGE_LEGION_EMBEDDINGS_ENABLED"] == "true"
+    assert configuration["SAGE_LEGION_QDRANT_PATH"] == ""
 
 
 def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> None:
@@ -218,14 +200,8 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "secrets.SAGE_WEB_SEARCH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_LEGION_QDRANT_URL" in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_LEGION_QDRANT_API_KEY" in yaml.safe_dump(jobs["solve"])
-    assert "secrets.SAGE_LEGION_EMBEDDINGS_ENABLED" in yaml.safe_dump(
-        jobs["solve"]
-    )
-    assert "vars.OPENAI_MAX_RETRIES" in yaml.safe_dump(jobs["solve"])
-    assert "vars.SAGE_V2_SOLVER_MODEL" in yaml.safe_dump(jobs["solve"])
-    assert "vars.SAGE_V2_REVIEWER_MODEL" in yaml.safe_dump(jobs["solve"])
-    assert "vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED" in yaml.safe_dump(jobs["solve"])
-    assert "vars.SAGE_WEB_SEARCH_PROVIDER" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.SAGE_LEGION_EMBEDDINGS_ENABLED" not in body
+    assert "vars." not in body
     solve_action = next(
         step
         for step in jobs["solve"]["steps"]
@@ -234,14 +210,17 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "runtime" not in solve_action["with"]
     assert "model-profile" not in solve_action["with"]
     assert "admission-enabled" not in solve_action["with"]
-    assert solve_action["with"]["google-model-context-approved"] == (
-        "${{ vars.SAGE_GOOGLE_MODEL_CONTEXT_APPROVED || 'true' }}"
-    )
-    assert solve_action["with"]["legion-embeddings-enabled"] == (
-        "${{ secrets.SAGE_LEGION_EMBEDDINGS_ENABLED || 'true' }}"
-    )
-    assert "vars.LANGSMITH_TRACING" in yaml.safe_dump(jobs["solve"])
-    assert "vars.LANGSMITH_PROJECT" in yaml.safe_dump(jobs["solve"])
+    assert set(solve_action["with"]) == {
+        "github-token",
+        "openai-api-key",
+        "gemini-api-key",
+        "langsmith-api-key",
+        "web-search-api-key",
+        "legion-qdrant-url",
+        "legion-qdrant-api-key",
+        "base-sha",
+        "status-comment-id",
+    }
     assert "ANTHROPIC_API_KEY" not in body
     assert "anthropic-api-key" not in body
     assert "pull_request_target" not in body

@@ -72,8 +72,8 @@ def test_settings_loads_role_models_and_verification_commands() -> None:
             "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED": "true",
             "GEMINI_API_KEY": "gemini-secret",
             "OPENAI_API_KEY": "openai-secret",
-            "SAGE_V2_SOLVER_MODEL": "custom-solver",
-            "SAGE_V2_REVIEWER_MODEL": "custom-reviewer",
+            "SOLVER_MODEL": "custom-solver",
+            "REVIEWER_MODEL": "custom-reviewer",
             "SAGE_VERIFICATION_COMMANDS_JSON": (
                 '[{"id":"focused","command":"pytest -q tests/test_app.py",'
                 '"required":true,"timeout_seconds":20}]'
@@ -171,8 +171,8 @@ def test_langsmith_defaults_to_disabled_named_project() -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "SAGE_V2_SOLVER_MODEL",
-        "SAGE_V2_REVIEWER_MODEL",
+        "SOLVER_MODEL",
+        "REVIEWER_MODEL",
     ],
 )
 def test_settings_rejects_empty_model_names(name: str) -> None:

@@ -11,26 +11,6 @@ inputs:
   gemini-api-key:
     description: Reviewer credential scoped to the solve controller step.
     required: true
-  openai-max-retries:
-    description: Bounded OpenAI SDK retries for temporary rate limits.
-    required: false
-    default: "2"
-  v2-solver-model:
-    description: OpenAI model used for implementation and repair.
-    required: false
-    default: gpt-5.4-mini
-  v2-reviewer-model:
-    description: Gemini model used for semantic review.
-    required: false
-    default: gemini-3.5-flash
-  google-model-context-approved:
-    description: Google context acknowledgement; set false to disable Google calls.
-    required: false
-    default: "true"
-  legion-embeddings-enabled:
-    description: Enable persistent Legion embeddings; set false for lexical memory only.
-    required: false
-    default: "true"
   legion-qdrant-url:
     description: HTTPS URL for the remote Legion Qdrant deployment.
     required: false
@@ -43,10 +23,6 @@ inputs:
   web-search-api-key:
     description: Optional Tavily search key scoped to controller-side research.
     required: false
-  web-search-provider:
-    description: Optional controller-side search provider (currently tavily).
-    required: false
-    default: ""
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -103,11 +79,11 @@ runs:
       shell: bash
       env:
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
-        SAGE_SANDBOX_IMAGE: sage-sandbox:v2
       run: |
         set -euo pipefail
+        sandbox_image="${SAGE_SANDBOX_IMAGE:-sage-sandbox:v2}"
         docker build \
-          --tag "$SAGE_SANDBOX_IMAGE" \
+          --tag "$sandbox_image" \
           --file "$SAGE_CONTROLLER_ROOT/docker/sandbox/Dockerfile" \
           "$SAGE_CONTROLLER_ROOT"
 
@@ -118,15 +94,8 @@ runs:
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
         SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}
-        SAGE_WEB_SEARCH_PROVIDER: ${{ inputs.web-search-provider }}
-        OPENAI_MAX_RETRIES: ${{ inputs.openai-max-retries }}
-        SAGE_V2_SOLVER_MODEL: ${{ inputs.v2-solver-model }}
-        SAGE_V2_REVIEWER_MODEL: ${{ inputs.v2-reviewer-model }}
-        SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: ${{ inputs.google-model-context-approved }}
-        SAGE_LEGION_EMBEDDINGS_ENABLED: ${{ inputs.legion-embeddings-enabled }}
         SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}
         SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}
-        SAGE_LEGION_QDRANT_PATH: ""
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..
@@ -134,8 +103,6 @@ runs:
         SAGE_CONTEXT_DIR: ${{ runner.temp }}/sage-context
         SAGE_DIAGNOSTICS_DIR: ${{ runner.temp }}/sage-diagnostics
         SAGE_RUNNER_TEMP: ${{ runner.temp }}
-        SAGE_RUNS_DIR: ${{ runner.temp }}/sage-runs
-        SAGE_SANDBOX_IMAGE: sage-sandbox:v2
         UV_CACHE_DIR: ${{ runner.temp }}/sage-uv-cache
       run: |
         set -euo pipefail
