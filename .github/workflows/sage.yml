@@ -19,17 +19,10 @@ env:
   SAGE_LEGION_EMBEDDING_CONCURRENCY: "1"
   SAGE_LEGION_EMBEDDING_RETRIES: "1"
   SAGE_LEGION_EMBEDDING_MIN_SIMILARITY: "0.45"
-  SAGE_LEGION_QDRANT_PATH: ""
   OPENAI_MAX_RETRIES: "2"
   SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "true"
   SOLVER_MODEL: "gpt-5.4-mini"
   REVIEWER_MODEL: "gemini-3.5-flash"
-  SAGE_RESEARCH_ENABLED: "true"
-  SAGE_WEB_SEARCH_PROVIDER: ""
-  SAGE_RESEARCH_TIMEOUT_SECONDS: "15"
-  SAGE_RESEARCH_MAX_RESULT_CHARS: "12000"
-  SAGE_RESEARCH_ALLOWED_DOMAINS: ""
-  SAGE_OFFICIAL_DOCUMENTATION_DOMAINS: ""
   SAGE_VERIFICATION_COMMANDS_JSON: "[]"
   SAGE_VERIFICATION_PREFLIGHT: "false"
   SAGE_VERIFICATION_PREFLIGHT_DEPENDENCIES_JSON: "[]"
@@ -105,7 +98,6 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
-          web-search-api-key: ${{ secrets.SAGE_WEB_SEARCH_API_KEY }}
           legion-qdrant-url: ${{ secrets.SAGE_LEGION_QDRANT_URL }}
           legion-qdrant-api-key: ${{ secrets.SAGE_LEGION_QDRANT_API_KEY }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
@@ -120,7 +112,6 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/metadata.json
             ${{ steps.solve.outputs.diagnostics-path }}/github.json
             ${{ steps.solve.outputs.diagnostics-path }}/agent-final.json
-            ${{ steps.solve.outputs.diagnostics-path }}/research-summary.json
             ${{ steps.solve.outputs.diagnostics-path }}/solver-plan.json
             ${{ steps.solve.outputs.diagnostics-path }}/solver-final.json
             ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json

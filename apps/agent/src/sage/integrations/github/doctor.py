@@ -64,7 +64,6 @@ def main() -> int:
         )
         required_workflow_wiring = (
             'SAGE_LEGION_EMBEDDINGS_ENABLED: "true"',
-            'SAGE_LEGION_QDRANT_PATH: ""',
             "secrets.SAGE_LEGION_QDRANT_URL",
             "secrets.SAGE_LEGION_QDRANT_API_KEY",
             'SOLVER_MODEL: "gpt-5.4-mini"',

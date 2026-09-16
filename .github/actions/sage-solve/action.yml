@@ -20,9 +20,6 @@ inputs:
   langsmith-api-key:
     description: Optional LangSmith API key scoped to the solve controller step.
     required: false
-  web-search-api-key:
-    description: Optional Tavily search key scoped to controller-side research.
-    required: false
   base-sha:
     description: Exact SHA accepted by the gate.
     required: true
@@ -93,7 +90,6 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
-        SAGE_WEB_SEARCH_API_KEY: ${{ inputs.web-search-api-key }}
         SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}
         SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}

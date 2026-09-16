@@ -269,17 +269,16 @@ GEMINI_API_KEY
 SAGE_LEGION_QDRANT_URL          # HTTPS endpoint
 SAGE_LEGION_QDRANT_API_KEY
 LANGSMITH_API_KEY               # optional; required when tracing is enabled
-SAGE_WEB_SEARCH_API_KEY         # optional; required for the selected provider
 ```
 
 The installed Action supplies its scoped GitHub token. Secret values belong only
 to the trusted solve controller step; the workflow references them with
 `${{ secrets.NAME }}` and never stores their values in YAML.
 
-Configure every non-secret `.env.example` setting in the top-level `env:` block
-of `.github/workflows/sage.yml`. Values are quoted strings so booleans, numbers,
-empty values and JSON reach the existing typed environment boundary unchanged.
-For example:
+Configure every GitHub-supported non-secret `.env.example` setting in the
+top-level `env:` block of `.github/workflows/sage.yml`. Values are quoted strings
+so booleans, numbers, empty values and JSON reach the existing typed environment
+boundary unchanged. For example:
 
 ```yaml
 env:
@@ -287,15 +286,13 @@ env:
   REVIEWER_MODEL: "gemini-3.5-flash"
   SAGE_LEGION_EMBEDDINGS_ENABLED: "true"  # false selects lexical memory
   SAGE_LEGION_EMBEDDING_MAX_NODES: "2000"
-  SAGE_RESEARCH_ENABLED: "true"
-  SAGE_WEB_SEARCH_PROVIDER: ""
 ```
 
 The action inherits this repository-owned configuration. It exposes inputs only
 for credentials and run identity, preventing hidden input defaults from
-overriding the YAML. GitHub does not permit local Qdrant storage, so keep
-`SAGE_LEGION_QDRANT_PATH` empty. Invalid enabled embedding configuration fails
-before the first model/embedding call.
+overriding the YAML. `SAGE_LEGION_QDRANT_PATH` is local-only and is intentionally
+omitted from the GitHub workflow, which requires remote Qdrant storage. Invalid
+enabled embedding configuration fails before the first model/embedding call.
 
 A live release canary requires a pushed implementation and both Sage Actions
 pinned to its full immutable commit SHA. In a disposable repository, invoke a
