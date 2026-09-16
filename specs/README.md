@@ -12,14 +12,6 @@ under `docs/` for present behavior and commands.
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
 | [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Current behavior-preserving simplification scope and verification record |
 
-## Proposed work
-
-| Document | Status |
-| --- | --- |
-| [`25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](25_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Native graph, retrieval, local Solver integration, and initial embeddings implemented; complete parity and measured savings remain open; GitHub Actions integration is owned by specification 27 |
-| [`26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md`](26_LEGION_MEMORY_RETRIEVAL_EFFICIENCY_GAP_PLAN.md) | Targeted A–E behavior is covered in current responsibility-based tests; Phase F's quality-first benchmark harness and live evaluation remain planned |
-| [`27_GITHUB_ACTIONS_LEGION_MEMORY_IMPLEMENTATION_PLAN.md`](27_GITHUB_ACTIONS_LEGION_MEMORY_IMPLEMENTATION_PLAN.md) | Default-on GitHub Actions integration implemented locally with per-solve ephemeral SQLite graphs and persistent remote Qdrant embeddings; immutable action pinning and the live `/sage solve` canary remain release gates |
-
 ## Implemented consolidation
 
 | Document | Status |

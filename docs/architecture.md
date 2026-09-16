@@ -198,9 +198,6 @@ One `RunArtifacts` instance owns atomic evidence for one run:
 Immutable histories live under `solver-plans/`, `verification/`, and `reviews/`.
 Persisted format identifiers, trace labels, model environment names
 (`SOLVER_MODEL`, `REVIEWER_MODEL`) and `sage-sandbox:v2` remain stable.
-Character ledgers and path overlap do not prove causal memory use or
-billed token savings. Query embedding, retrieval, graph build and preflight
-timings remain separate.
 
 Repository failures and invalid tool arguments provide bounded correction
 feedback. Provider failures, repair limits and candidate guard failures have
@@ -221,8 +218,3 @@ fixture setup, not unrelated assertions. Test names describe behavior rather tha
 implementation phases. Update this map and the [testing guide](testing.md) in the
 same change. Preserve numbered specifications as historical rationale; the
 [refactor plan](refactor-plan.md) records current simplification and verification.
-
-Static graph coverage is targeted, not universal language/framework parity.
-The pinned [reference manifest](../apps/agent/tests/legion_memory/reference_manifest.json)
-records coverage. The benchmark harness and live evaluation in specification 26
-remain planned; no efficiency improvement is inferred from offline tests.

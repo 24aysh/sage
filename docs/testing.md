@@ -228,16 +228,6 @@ CLI exit 0 requires a completed nonempty candidate. Other valid solve outcomes
 return 2; Make reports 2 as a warning unless `REQUIRE_COMPLETED=true`. Failures
 return 1. Inspect the terminal outcome and evidence, not the Make exit alone.
 
-For an efficiency comparison, hold Issue, exact base SHA, models, verification
-and solve budgets constant across plain, lexical-memory and embedding-memory
-runs. Compare only verified/reviewed successful candidates. Record cold indexing
-separately from warm retrieval, repeat trials and keep all run directories.
-`usage.json` records actual model/tool calls and accepted commands;
-`legion-memory.json` records memory exposure, timings and separate embedding
-usage. One cheaper run or a retrieved symbol is not proof of improvement.
-The evaluation harness and `legion-eval-*` commands in specification 26 remain
-planned, not implemented.
-
 ## GitHub publication and installation
 
 Exercise production publication against temporary local Git substitutes:
