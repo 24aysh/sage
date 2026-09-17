@@ -7,7 +7,10 @@ from sage.config import ConfiguredVerificationCommand, Settings
 from sage.domain.solver import SolverAcceptanceCriterion, SolverPlan, SolverPlanTask
 from sage.domain.verification import VerificationSource, VerificationStatus
 from sage.sandbox.base import CommandResult
-from sage.verification.discovery import discover_solver_verification_commands
+from sage.verification.discovery import (
+    discover_solver_verification_commands,
+    is_allowed_solver_verification_command,
+)
 from sage.verification.runner import Verifier
 
 
@@ -77,6 +80,11 @@ def test_discovery_orders_mandatory_then_trusted_configured_commands() -> None:
     assert [item.check_id for item in commands] == ["git-diff-check", "focused"]
     assert commands[1].source is VerificationSource.CONFIGURED
     assert commands[1].timeout_seconds == 30
+
+
+def test_node_builtin_test_runner_is_allowed_without_general_node_execution() -> None:
+    assert is_allowed_solver_verification_command("node --test tests/app.test.js")
+    assert not is_allowed_solver_verification_command("node scripts/release.js")
 
 
 def test_verifier_runs_sequentially_and_redacts_secret_like_logs(tmp_path: Path) -> None:

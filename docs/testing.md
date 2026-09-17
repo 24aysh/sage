@@ -206,7 +206,18 @@ make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
 ```
 
 The sandbox smoke uses the canonical `sage-sandbox:v2` image with networking
-disabled. `first-run` validates inputs, runs offline checks, performs a live
+disabled. The image includes Python 3.14, pytest, Node.js 24, npm, and Node's
+built-in test runner. After pulling a change to `docker/sandbox/Dockerfile`,
+rebuild the local image with `make sandbox-build`; an existing
+`sage-sandbox:v2` image is not updated automatically. `make sandbox-smoke`
+checks that every baseline tool is executable inside a network-disabled
+container.
+
+Repository-specific Python and Node packages are intentionally not installed at
+solve time because the sandbox has no network access. Projects needing packages
+beyond the baseline must use a prepared image via `SAGE_SANDBOX_IMAGE` (or
+`SANDBOX_IMAGE` for Make targets) with those locked dependencies already
+installed. `first-run` validates inputs, runs offline checks, performs a live
 solve and inspects its evidence. For subsequent solves:
 
 ```bash

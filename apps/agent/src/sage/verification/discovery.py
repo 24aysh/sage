@@ -12,6 +12,7 @@ _ALLOWED_PREFIXES = (
     "python ",
     "python3 ",
     "pytest",
+    "node --test",
     "npm test",
     "npm run test",
     "npm run lint",

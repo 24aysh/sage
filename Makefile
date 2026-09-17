@@ -317,7 +317,7 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 		--cap-drop ALL \
 		--security-opt no-new-privileges \
 		"$$image" \
-		bash -lc 'git --version && python3 --version && rg --version'
+		bash -lc 'git --version && python3 --version && pytest --version && python3 -m pytest --version && node --version && npm --version && node --eval "const test = require(\"node:test\"); test(\"sandbox node test runner\", () => {});" && rg --version'
 
 test: ## Run deterministic unit tests (no API call required).
 	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \

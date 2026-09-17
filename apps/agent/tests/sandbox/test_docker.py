@@ -6,6 +6,31 @@ from sage.domain.solve import PreparedRun
 from sage.sandbox.docker import DockerSandbox
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
+
+def test_canonical_image_provides_python_and_node_test_runtimes() -> None:
+    dockerfile = (REPOSITORY_ROOT / "docker/sandbox/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    smoke_target = makefile.split("sandbox-smoke:", 1)[1].split("\ntest:", 1)[0]
+
+    assert "FROM node:24-bookworm-slim AS node-runtime" in dockerfile
+    assert "FROM python:3.14-slim-bookworm" in dockerfile
+    assert "COPY --from=node-runtime /usr/local/bin/node" in dockerfile
+    assert "COPY --from=node-runtime /usr/local/lib/node_modules/npm" in dockerfile
+    assert "python3 -m pip install --no-cache-dir pytest==9.1.1" in dockerfile
+    for probe in (
+        "pytest --version",
+        "python3 -m pytest --version",
+        "node --version",
+        "npm --version",
+        'require(\\"node:test\\")',
+    ):
+        assert probe in smoke_target
+
+
 def test_docker_sandbox_starts_with_only_isolated_workspace(
     tmp_path: Path,
     monkeypatch,
