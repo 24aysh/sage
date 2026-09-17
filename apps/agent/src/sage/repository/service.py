@@ -24,7 +24,9 @@ from sage.repository.git import (
     get_changed_files as read_changed_files,
     get_complete_diff as read_complete_diff,
     get_head_sha as read_head_sha,
+    list_branches as read_branches,
     show_diff as render_diff,
+    switch_branch as switch_repository_branch,
 )
 from sage.repository.output import truncate_text
 from sage.repository.search import search_text as search_repository_text
@@ -138,6 +140,22 @@ class Repository:
             return render_diff(
                 self._sandbox,
                 max_output_chars=self._settings.max_tool_output_chars,
+                timeout_seconds=self._settings.command_timeout_seconds,
+            )
+
+    def list_branches(self) -> str:
+        with _tool_call("list_branches"):
+            return read_branches(
+                self._sandbox,
+                max_output_chars=self._settings.max_tool_output_chars,
+                timeout_seconds=self._settings.command_timeout_seconds,
+            )
+
+    def switch_branch(self, *, branch_name: str) -> str:
+        with _tool_call("switch_branch"):
+            return switch_repository_branch(
+                self._sandbox,
+                branch_name=branch_name,
                 timeout_seconds=self._settings.command_timeout_seconds,
             )
 

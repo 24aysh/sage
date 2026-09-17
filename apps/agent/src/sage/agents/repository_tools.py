@@ -71,6 +71,24 @@ def build_repository_read_tools(
     return [list_tree, search_text, read_file]
 
 
+def build_repository_branch_tools(context: RepositoryContext) -> list[BaseTool]:
+    """Build structured Git branch inspection and switching tools."""
+
+    @tool
+    async def list_branches() -> str:
+        """List local and remote-tracking Git branches in the sandbox."""
+
+        return context.repository.list_branches()
+
+    @tool
+    async def switch_branch(branch_name: str) -> str:
+        """Switch the clean sandbox worktree to an existing Git branch."""
+
+        return context.repository.switch_branch(branch_name=branch_name)
+
+    return [list_branches, switch_branch]
+
+
 def build_show_diff_tool(
     context: RepositoryContext,
     *,

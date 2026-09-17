@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shlex
 
-from sage.errors import CommandExecutionError, CommandTimeoutError
+from sage.errors import CommandExecutionError, CommandTimeoutError, RepositoryError
 from sage.repository.output import truncate_text
 from sage.repository.selection import IGNORED_UNTRACKED_PATHSPECS
 from sage.sandbox.base import CommandResult, Sandbox
@@ -40,6 +40,65 @@ def show_diff(
         f"Diff:\n{diff.stdout or '[no diff]'}"
     )
     return truncate_text(rendered, max_output_chars)
+
+
+def list_branches(
+    sandbox: Sandbox,
+    *,
+    max_output_chars: int,
+    timeout_seconds: int,
+) -> str:
+    """Return bounded local and remote-tracking branch details."""
+
+    result = _required_command(
+        sandbox,
+        "git branch --all --verbose --no-abbrev --no-color",
+        timeout_seconds,
+    )
+    return truncate_text(result.stdout or "[no branches]", max_output_chars)
+
+
+def switch_branch(
+    sandbox: Sandbox,
+    *,
+    branch_name: str,
+    timeout_seconds: int,
+) -> str:
+    """Switch to one existing branch without carrying uncommitted changes."""
+
+    branch = branch_name.strip()
+    if not branch:
+        raise RepositoryError("Branch name cannot be empty.")
+    if len(branch) > 255:
+        raise RepositoryError("Branch name cannot exceed 255 characters.")
+
+    quoted_branch = shlex.quote(branch)
+    _required_command(
+        sandbox,
+        f"git check-ref-format {shlex.quote(f'refs/heads/{branch}')}",
+        timeout_seconds,
+    )
+    status = _required_command(
+        sandbox,
+        "git status --porcelain --untracked-files=all",
+        timeout_seconds,
+    )
+    if status.stdout:
+        raise RepositoryError(
+            "Cannot switch branches while the sandbox worktree has uncommitted changes."
+        )
+
+    _required_command(
+        sandbox,
+        f"git switch -- {quoted_branch}",
+        timeout_seconds,
+    )
+    current = _required_command(
+        sandbox,
+        "git branch --show-current",
+        timeout_seconds,
+    ).stdout.strip()
+    return f"Switched to branch {current or branch}."
 
 
 def get_complete_diff(sandbox: Sandbox, *, timeout_seconds: int) -> str:

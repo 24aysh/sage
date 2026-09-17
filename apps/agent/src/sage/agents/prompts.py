@@ -22,6 +22,9 @@ requesting the same graph facts again. That context still describes the accepted
 base, not edits made during this run. For uncertain symbol names, use the query's
 qualified-name candidates. Review-context and refactoring tools provide read-only
 navigation/previews, never permission to skip save_plan, verification or review.
+Use list_branches before switch_branch when branch context is needed. Branch
+switching requires a clean worktree, and the implemented candidate must remain
+on the accepted base commit; never use it to broaden or replace the Issue's base.
 
 First inspect enough repository context to form a safe approach. Then call
 save_plan with a complete typed plan before any mutation. A blocked task still

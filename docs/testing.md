@@ -206,12 +206,24 @@ make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
 ```
 
 The sandbox smoke uses the canonical `sage-sandbox:v2` image with networking
-disabled. The image includes Python 3.14, pytest, Node.js 24, npm, and Node's
-built-in test runner. After pulling a change to `docker/sandbox/Dockerfile`,
+disabled. The image includes Git, Python 3.14, pytest, Node.js 24, npm, and
+Node's built-in test runner. After pulling a change to `docker/sandbox/Dockerfile`,
 rebuild the local image with `make sandbox-build`; an existing
 `sage-sandbox:v2` image is not updated automatically. `make sandbox-smoke`
 checks that every baseline tool is executable inside a network-disabled
 container.
+
+Solver branch navigation is covered by the focused repository and agent tests:
+
+```bash
+uv run --project apps/agent pytest -c apps/agent/pyproject.toml \
+  apps/agent/tests/repository/test_git.py \
+  apps/agent/tests/agents/test_solver.py
+```
+
+The tests verify branch listing, clean-worktree switching, dirty-worktree
+rejection, and exposure of the structured branch tools to the Solver. The
+accepted-base guard remains authoritative after any branch inspection.
 
 Repository-specific Python and Node packages are intentionally not installed at
 solve time because the sandbox has no network access. Projects needing packages

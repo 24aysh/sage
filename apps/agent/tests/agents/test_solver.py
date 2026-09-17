@@ -73,6 +73,19 @@ class CommandRepository(Repository):
         return result.stdout
 
 
+class BranchRepository(Repository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.current_branch = "main"
+
+    def list_branches(self) -> str:
+        return "* main\n  feature/test"
+
+    def switch_branch(self, *, branch_name: str) -> str:
+        self.current_branch = branch_name
+        return f"Switched to branch {branch_name}."
+
+
 def test_solver_prompt_describes_memory_as_graph_navigation_context() -> None:
     assert "graph-derived navigation context" in SOLVER_INSTRUCTIONS
     assert "Verify locations and behavior against source" in SOLVER_INSTRUCTIONS
@@ -241,6 +254,41 @@ def test_run_command_records_only_policy_approved_executions(tmp_path: Path) -> 
     assert result == "passed"
     assert repository.commands == ["pytest -q"]
     assert recorded == ["pytest -q"]
+
+
+def test_solver_exposes_structured_branch_tools(tmp_path: Path) -> None:
+    repository = BranchRepository()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    context = SolveContext(
+        prepared_run=PreparedRun(
+            run_id="run",
+            source_repo=tmp_path,
+            run_dir=run_dir,
+            workspace_dir=tmp_path,
+            base_ref="HEAD",
+            base_sha="a" * 40,
+        ),
+        repository=repository,  # type: ignore[arg-type]
+        settings=Settings(openai_api_key="test"),
+        artifacts=RunArtifacts(run_dir),
+    )
+    tools = {
+        item.name: item
+        for item in build_solver_tools(
+            context,
+            SolverPlanSession(RunArtifacts(run_dir)),
+        )
+    }
+
+    branches = asyncio.run(tools["list_branches"].ainvoke({}))
+    switched = asyncio.run(
+        tools["switch_branch"].ainvoke({"branch_name": "feature/test"})
+    )
+
+    assert branches == "* main\n  feature/test"
+    assert switched == "Switched to branch feature/test."
+    assert repository.current_branch == "feature/test"
 
 
 def test_memory_context_and_tools_are_added_only_for_a_valid_session(

@@ -169,6 +169,13 @@ external adapters implement those boundaries. Domain contracts form the stable
 foundation. This is a directed dependency graph, not a requirement that every
 operation pass through every layer.
 
+Solver branch navigation follows the same boundary: `repository/git.py` owns
+validated Git operations, `repository/service.py` owns the repository façade,
+and `agents/repository_tools.py` exposes thin `list_branches` and
+`switch_branch` adapters. Switching requires a clean sandbox worktree. It does
+not relax the candidate guard: an implemented result must still be based on the
+accepted commit.
+
 Executable guards in `tests/test_architecture.py` enforce:
 
 - Domain imports only standard-library, Pydantic, and domain contracts.

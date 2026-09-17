@@ -24,6 +24,7 @@ from sage.agents.prompts import (
 )
 from sage.agents.repository_tools import (
     RepositoryContext,
+    build_repository_branch_tools,
     build_repository_read_tools,
     build_show_diff_tool,
 )
@@ -443,6 +444,7 @@ def build_solver_tools(
             context, enrich=context.memory.enrich if context.memory is not None else None,
             output_chars=context.settings.max_tool_output_chars,
         ),
+        *build_repository_branch_tools(context),
         *memory_tools,
         save_plan,
         revise_plan,

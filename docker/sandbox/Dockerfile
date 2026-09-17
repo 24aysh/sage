@@ -16,6 +16,7 @@ RUN apt-get update \
         git \
         ripgrep \
     && rm -rf /var/lib/apt/lists/* \
+    && git --version \
     && ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && python3 -m pip install --no-cache-dir pytest==9.1.1
 
