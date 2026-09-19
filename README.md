@@ -26,26 +26,6 @@ Run the complete model-free development check with:
 make check
 ```
 
-See [architecture](docs/architecture.md) for system ownership and
-[testing](docs/testing.md) for offline, Docker, live-solve, and GitHub checks.
+<img width="4265" height="7502" alt="diagram" src="https://github.com/user-attachments/assets/91d8c53c-b49f-47de-a04b-286a06b18be6" />
 
-## Change map
 
-| I need to change… | Start here |
-| --- | --- |
-| CLI flags, output, or exit policy | `apps/agent/src/sage/cli/` |
-| Solver behavior or tools | `apps/agent/src/sage/agents/solver.py` |
-| Reviewer criteria | `apps/agent/src/sage/agents/reviewer.py` |
-| Solve/repair routing | `apps/agent/src/sage/orchestration/solve.py` |
-| Repository capability | `apps/agent/src/sage/repository/service.py` |
-| Memory indexing or source binding | `apps/agent/src/sage/legion_memory/indexing.py` and `bindings.py` |
-| Memory ranking or session exposure | `apps/agent/src/sage/legion_memory/retrieval.py` and `session.py` |
-| Model/provider behavior | `apps/agent/src/sage/providers/` |
-| GitHub trigger/publication | `apps/agent/src/sage/integrations/github/` and `apps/agent/src/sage/workflows/github.py` |
-| Settings | `apps/agent/src/sage/config.py` and `.env.example` |
-| Run evidence | `apps/agent/src/sage/artifacts/store.py` |
-| Web visual design | `apps/web/DESIGN.md` |
-
-The implemented consolidation record is
-[docs/refactor-plan.md](docs/refactor-plan.md). Retained specifications provide
-design archaeology; current guidance lives under `docs/`.
