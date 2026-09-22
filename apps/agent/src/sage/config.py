@@ -134,10 +134,46 @@ class LegionEmbeddingSettings(BaseModel):
         return settings
 
 
+class JevSettings(BaseModel):
+    """Opt-in local navigation; all limits are shared by its two policies."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    mode: Literal["off", "shadow", "on"] = "off"
+    policy: Literal["excerpts", "actions"] = "excerpts"
+    api_key: str | None = Field(default=None, repr=False, exclude=True)
+    model: str = Field(default="jev-1.13.0", min_length=1, max_length=120)
+    max_followup_actions: Literal[1, 2] = 1
+    timeout_seconds: float = Field(default=2, gt=0, le=2)
+    run_wait_seconds: float = Field(default=8, gt=0, le=8)
+    capture: bool = False
+
+    @model_validator(mode="after")
+    def credential(self) -> JevSettings:
+        if self.mode != "off" and (not self.api_key or not self.api_key.strip()):
+            raise ValueError("TYPESAFE_API_KEY is required for enabled Jev navigation.")
+        return self
+
+    @classmethod
+    def from_env(cls, values: Mapping[str, str]) -> JevSettings:
+        try:
+            return cls(mode=values.get("SAGE_JEV_NAVIGATION_MODE", "off"),
+                policy=values.get("SAGE_JEV_NAVIGATION_POLICY", "excerpts"),
+                api_key=values.get("TYPESAFE_API_KEY"),
+                model=values.get("SAGE_JEV_MODEL", "jev-1.13.0"),
+                max_followup_actions=int(values.get("SAGE_JEV_MAX_FOLLOWUP_ACTIONS", "1")),
+                timeout_seconds=values.get("SAGE_JEV_TIMEOUT_SECONDS", "2"),
+                run_wait_seconds=values.get("SAGE_JEV_RUN_WAIT_SECONDS", "8"),
+                capture=_parse_bool(values.get("SAGE_JEV_CAPTURE", "false"), name="SAGE_JEV_CAPTURE"))
+        except (ValueError, ValidationError):
+            raise ConfigurationError("Invalid Jev settings; check mode, policy, key and budgets.") from None
+
+
 class Settings(BaseModel):
     """Trusted controller settings loaded from the host environment."""
 
     model_config = ConfigDict(frozen=True)
+
+    jev: JevSettings = Field(default_factory=JevSettings)
 
     openai_api_key: str = Field(repr=False)
     gemini_api_key: str | None = Field(default=None, repr=False)
@@ -225,6 +261,7 @@ class Settings(BaseModel):
 
         try:
             return cls(
+                jev=JevSettings.from_env(values),
                 openai_api_key=api_key,
                 gemini_api_key=gemini_api_key,
                 langsmith_api_key=langsmith_api_key,

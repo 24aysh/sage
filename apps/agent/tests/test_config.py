@@ -173,3 +173,17 @@ def test_settings_rejects_invalid_openai_retry_limit(value: str) -> None:
                 "OPENAI_MAX_RETRIES": value,
             }
         )
+def test_jev_is_opt_in_and_credentials_are_redacted():
+    from sage.config import JevSettings
+    from sage.errors import ConfigurationError
+    import pytest
+
+    assert JevSettings.from_env({}).mode == "off"
+    with pytest.raises(ConfigurationError):
+        JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "on"})
+    for key, value in [("SAGE_JEV_MAX_FOLLOWUP_ACTIONS", "3"), ("SAGE_JEV_TIMEOUT_SECONDS", "3"),
+                       ("SAGE_JEV_RUN_WAIT_SECONDS", "9"), ("SAGE_JEV_NAVIGATION_POLICY", "write")]:
+        with pytest.raises(ConfigurationError):
+            JevSettings.from_env({key: value, "TYPESAFE_API_KEY": "private-key"})
+    enabled = JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "shadow", "TYPESAFE_API_KEY": "private-key"})
+    assert "private-key" not in str(enabled) + enabled.model_dump_json()
