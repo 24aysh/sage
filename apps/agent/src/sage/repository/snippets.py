@@ -1,0 +1,39 @@
+"""Shared bounded current-source reads and identities."""
+
+import hashlib
+from collections.abc import Callable
+from pathlib import Path
+
+from sage.errors import RepositoryError
+from sage.repository.filesystem import resolve_workspace_path
+
+
+def source_identity(root: Path, path: str) -> str:
+    """Validate regular current files before optional navigation, capped at 1 MiB."""
+    resolved = resolve_workspace_path(root, path)
+    if not resolved.is_file() or resolved.stat().st_size > 1_048_576:
+        raise RepositoryError("Navigation source is unavailable or too large.")
+    with resolved.open("rb") as stream:
+        content = stream.read(1_048_577)
+    if len(content) > 1_048_576 or b"\0" in content:
+        raise RepositoryError("Navigation source is unavailable or binary.")
+    return hashlib.sha256(content).hexdigest()
+
+
+def source_snippets(nodes: list[dict], reader: Callable[..., str]) -> list[dict]:
+    """Use the source-read boundary; never open graph-supplied paths directly."""
+    result = []
+    remaining = 6000
+    for node in nodes[:5]:
+        if remaining < 200:
+            break
+        start = int(node["line_start"])
+        try:
+            source = reader(path=node["file_path"], start_line=start,
+                            end_line=min(start + 49, int(node["line_end"])))
+        except RepositoryError:
+            source = "Source read unavailable; inspect the current path separately."
+        result.append({"path": node["file_path"], "start_line": start,
+                       "source": source[:remaining], "truncated": len(source) > remaining})
+        remaining -= min(len(source), remaining)
+    return result

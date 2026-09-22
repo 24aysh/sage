@@ -1,10 +1,13 @@
 import asyncio
+import json
 import logging
 from pathlib import Path
 
 import pytest
 
 from sage.config import Settings
+from sage.artifacts.store import RunArtifacts
+from sage.domain.usage import AgentTimingRecord, RunProvenance
 from sage.domain.memory import (
     MemoryBuildResult,
     MemoryBuildType,
@@ -15,7 +18,7 @@ from sage.domain.memory import (
 )
 from sage.domain.solve import PreparedRun, SolveRequest
 from sage.domain.solve import AgentFinalOutput, SolveOutcome
-from sage.errors import AgentRuntimeError, LegionMemoryBuildError, WorkspaceError
+from sage.errors import AgentRuntimeError, ArtifactError, LegionMemoryBuildError, WorkspaceError
 from sage.workflows.solve import solve_issue
 
 
@@ -51,6 +54,10 @@ class EmptyRepository:
 
 
 class FakeStore:
+    def write_workflow_timing(self, duration_ms: float) -> None:
+        assert duration_ms >= 0
+        self.duration_ms = duration_ms
+
     def __init__(self) -> None:
         self.initialized = False
         self.persisted = False
@@ -117,12 +124,43 @@ def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch)
     assert sandbox.stopped is True
     assert store.initialized is True
     assert store.persisted is True
+    assert result.workflow_duration_ms == store.duration_ms
+
+
+@pytest.mark.parametrize("no_change", [False, True])
+def test_workflow_duration_spans_issue_read_through_cleanup(tmp_path, monkeypatch, no_change):
+    from sage.workflows import solve
+
+    request, prepared, settings = _run_values(tmp_path)
+    sandbox, store = FakeSandbox(), FakeStore()
+    timestamps = []
+    read_issue = solve._read_issue
+
+    def clock():
+        if timestamps:
+            assert sandbox.stopped and store.persisted
+            return 75.5
+        timestamps.append(10.0)
+        return 10.0
+
+    def read(request):
+        assert timestamps == [10.0]
+        return read_issue(request)
+
+    monkeypatch.setattr(solve, "perf_counter", clock)
+    monkeypatch.setattr(solve, "_read_issue", read)
+    monkeypatch.setattr(solve, "prepare_run", lambda *_: prepared)
+    result = asyncio.run(solve_issue(request, NoChangeEngine() if no_change else SuccessfulEngine(),
+        settings, sandbox_factory=lambda *_: sandbox,
+        repository_factory=lambda *_: EmptyRepository() if no_change else FakeRepository(), artifacts=store))
+    assert result.workflow_duration_ms == store.duration_ms == 65500.0
 
 
 def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
+    store = FakeStore()
 
     with pytest.raises(AgentRuntimeError, match="model failed"):
         asyncio.run(
@@ -132,12 +170,77 @@ def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch
                 settings,
                 sandbox_factory=lambda *_: sandbox,
                 repository_factory=lambda *_: FakeRepository(),
-                artifacts=FakeStore(),
+                artifacts=store,
             )
         )
 
     assert sandbox.started is True
     assert sandbox.stopped is True
+    assert store.duration_ms >= 0
+
+
+@pytest.mark.parametrize("error_type", [asyncio.CancelledError, KeyboardInterrupt])
+@pytest.mark.parametrize("write_failure", [False, True])
+def test_interruption_reports_snapshot_before_cleanup_and_propagates(
+    tmp_path, monkeypatch, error_type, write_failure,
+):
+    request, prepared, settings = _run_values(tmp_path)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
+    tick = [10.0]
+    monkeypatch.setattr("sage.workflows.solve.perf_counter", lambda: tick[0])
+    store = RunArtifacts(prepared.run_dir)
+    usage = RunProvenance(agent_timings=(AgentTimingRecord(role="solver", stage="solver", duration_ms=3000),))
+
+    class InterruptedEngine:
+        async def solve(self, **kwargs):
+            store.write_usage(usage)
+            tick[0] = 15.0
+            raise error_type()
+
+    class SlowCleanup(FakeSandbox):
+        def stop(self):
+            tick[0] += 7.0
+            super().stop()
+
+    sandbox, reported = SlowCleanup(), []
+
+    def report(partial):
+        assert not sandbox.stopped
+        reported.append(partial)
+
+    if write_failure:
+        def fail(result):
+            raise ArtifactError("cannot write")
+        monkeypatch.setattr(store, "write_interrupted", fail)
+    with pytest.raises(error_type):
+        asyncio.run(solve_issue(request, InterruptedEngine(), settings, artifacts=store,
+            sandbox_factory=lambda *_: sandbox, repository_factory=lambda *_: object(), on_interrupted=report))
+    assert sandbox.stopped
+    partial, = reported
+    assert partial.outcome is SolveOutcome.INTERRUPTED
+    assert partial.provenance == usage
+    assert partial.workflow_duration_ms == 5000
+    assert not (prepared.run_dir / "agent-final.json").exists()
+    assert json.loads((prepared.run_dir / "workflow-timing.json").read_text())["duration_ms"] == 12000
+    if not write_failure:
+        saved = json.loads((prepared.run_dir / "interrupted.json").read_text())
+        assert saved["outcome"] == "interrupted" and saved["workflow_duration_ms"] == 5000
+
+
+def test_interruption_before_model_activity_reports_unknown_usage(tmp_path, monkeypatch):
+    request, prepared, settings = _run_values(tmp_path)
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
+
+    class InterruptedSandbox(FakeSandbox):
+        def start(self):
+            raise asyncio.CancelledError()
+
+    sandbox, reported = InterruptedSandbox(), []
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(solve_issue(request, SuccessfulEngine(), settings,
+            sandbox_factory=lambda *_: sandbox, on_interrupted=reported.append))
+    assert sandbox.stopped
+    assert reported[0].provenance is None
 
 
 def test_solve_issue_preserves_nonpublishable_candidate_for_diagnostics(
@@ -271,6 +374,7 @@ def test_memory_is_prepared_after_sandbox_start_before_solver(
     assert result.memory is not None
     assert result.memory.status is MemoryRetrievalStatus.USED
     assert result.memory.indexed_sha == prepared.base_sha
+    assert result.workflow_duration_ms == store.duration_ms
     assert len(store.memory_artifacts) == 2
     assert store.memory_artifacts[-1].status is MemoryRetrievalStatus.USED
     assert "Legion Memory: graph ready" in caplog.text
@@ -390,9 +494,11 @@ def test_memory_build_failure_falls_back_and_unrelated_failure_propagates(
         )
 
 
+@pytest.mark.parametrize("error_type", [AgentRuntimeError, asyncio.CancelledError])
 def test_memory_session_closes_when_solver_fails(
     tmp_path: Path,
     monkeypatch,
+    error_type,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
     memory_file = tmp_path / "graph.sqlite3"
@@ -412,9 +518,9 @@ def test_memory_session_closes_when_solver_fails(
     class CapturingFailureEngine:
         async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
             captured.append(context.memory)
-            raise AgentRuntimeError("model failed")
+            raise error_type("model failed")
 
-    with pytest.raises(AgentRuntimeError, match="model failed"):
+    with pytest.raises(error_type, match="model failed"):
         asyncio.run(
             solve_issue(
                 request,
@@ -422,7 +528,7 @@ def test_memory_session_closes_when_solver_fails(
                 settings,
                 sandbox_factory=lambda *_: FakeSandbox(),
                 repository_factory=lambda *_: FakeRepository(),
-                artifacts=FakeStore(),
+                artifacts=RunArtifacts(prepared.run_dir),
                 memory_service=MemoryService(),  # type: ignore[arg-type]
             )
         )

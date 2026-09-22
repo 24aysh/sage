@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from time import monotonic, perf_counter
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -13,10 +13,12 @@ from pydantic import BaseModel
 from sage.config import Settings
 from sage.domain.usage import (
     AgentToolCallRecord,
+    AgentTimingRecord,
     AttemptKind,
     ModelCallRecord,
     ModelRole,
     RunProvenance,
+    SemanticCallRecord,
 )
 from sage.errors import AgentRuntimeError
 from sage.observability import agent_trace_config, log_agent_activity, log_agent_finished
@@ -51,6 +53,8 @@ class ModelCalls:
         self._deadline = clock() + settings.run_deadline_seconds
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
+        self._semantic_calls: list[SemanticCallRecord] = []
+        self._agent_timings: list[AgentTimingRecord] = []
         self._tool_calls: list[AgentToolCallRecord] = []
         self._commands: list[str] = []
         self._consecutive_failures: dict[str, int] = {}
@@ -67,14 +71,37 @@ class ModelCalls:
             > self._settings.finalization_reserve_seconds
         )
 
+    def remaining_navigation_seconds(self) -> float:
+        return max(0, self._deadline - self._clock() - self._settings.finalization_reserve_seconds)
+
+    @property
+    def latest_tool_call(self) -> AgentToolCallRecord | None:
+        return self._tool_calls[-1] if self._tool_calls else None
+
+    def record_semantic_call(self, record: SemanticCallRecord) -> None:
+        self._semantic_calls.append(record)
+        self._persist()
+
     def provenance(self) -> RunProvenance:
         return RunProvenance(
             calls=self.records,
+            semantic_calls=tuple(self._semantic_calls),
+            agent_timings=tuple(self._agent_timings),
             tool_calls=tuple(self._tool_calls),
             commands=tuple(self._commands),
             solver_sessions=self.solver_sessions,
             review_cycles=self.review_cycles,
         )
+
+    async def measure_agent[T](self, *, role: str, stage: str, operation: Awaitable[T]) -> T:
+        """Account complete sequential role invocations, even on failure/cancellation."""
+        started = self._clock()
+        try:
+            return await operation
+        finally:
+            self._agent_timings.append(AgentTimingRecord(role=ModelRole(role), stage=stage,
+                duration_ms=max(0.0, self._clock() - started) * 1000))
+            self._persist()
 
     def record_command(self, command: str) -> None:
         """Persist one policy-approved Solver command that reached execution."""
@@ -124,6 +151,7 @@ class ModelCalls:
                     stage=stage,
                     role=role,
                     tool_name=name,
+                    tool_call_id=item.get("id"),
                 )
             )
         self._append_record(
@@ -163,7 +191,7 @@ class ModelCalls:
                 provider="openai",
                 model=self._settings.solver_model,
                 latency_ms=latency_ms,
-                outcome="error",
+                outcome="cancelled" if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt)) else "error",
                 error_category=type(error).__name__[:80],
             )
         )
@@ -275,6 +303,12 @@ class ModelCalls:
                 timeout_seconds=self._settings.model_request_timeout_seconds,
                 runnable_config=config,
             )
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            self._append_record(ModelCallRecord(call_number=call_number, stage=stage,
+                role=ModelRole.REVIEWER, attempt_kind=kind, provider=provider.provider_name,
+                model=provider.model_name, latency_ms=max(0.0, perf_counter() - started) * 1000,
+                outcome="cancelled", retry_count=retry_count))
+            raise
         except ProviderInvocationError as error:
             self._consecutive_failures[provider.provider_name] = (
                 self._consecutive_failures.get(provider.provider_name, 0) + 1

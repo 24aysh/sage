@@ -757,7 +757,7 @@ class LegionMemoryService:
             result["truncated"] = result["truncated"] or impact["truncated"]
         result["data"]["next_tools"] = ["read_file", "query_graph_tool", "get_affected_flows_tool"]
         if source_reader is not None:
-            from sage.legion_memory.context import source_snippets
+            from sage.repository.snippets import source_snippets
 
             result["data"]["source_snippets"] = source_snippets(result["data"]["changed_functions"], source_reader)
         return result

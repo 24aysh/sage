@@ -16,7 +16,9 @@ SECRET_CONFIGURATION = {
     "LANGSMITH_API_KEY",
     "SAGE_LEGION_QDRANT_URL",
     "SAGE_LEGION_QDRANT_API_KEY",
+    "TYPESAFE_API_KEY",
 }
+# GitHub requires remote Qdrant; Jev is supported through trusted opt-in plumbing.
 GITHUB_UNSUPPORTED_CONFIGURATION = {"SAGE_LEGION_QDRANT_PATH"}
 
 
@@ -67,6 +69,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "github-token",
         "openai-api-key",
         "gemini-api-key",
+        "typesafe-api-key",
         "legion-qdrant-url",
         "legion-qdrant-api-key",
         "langsmith-api-key",
@@ -74,6 +77,10 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "status-comment-id",
     }
     assert document["inputs"]["gemini-api-key"]["required"] is True
+    assert document["inputs"]["typesafe-api-key"] == {
+        "description": "Optional Jev credential scoped to the solve controller step.",
+        "required": False,
+    }
     assert document["inputs"]["legion-qdrant-url"]["required"] is False
     assert document["inputs"]["legion-qdrant-api-key"]["required"] is False
     assert document["inputs"]["langsmith-api-key"] == {
@@ -86,6 +93,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "github.action_path" in body
     assert "OPENAI_API_KEY: ${{ inputs.openai-api-key }}" in body
     assert "GEMINI_API_KEY: ${{ inputs.gemini-api-key }}" in body
+    assert "TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}" in body
     assert "LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}" in body
     assert "ANTHROPIC_API_KEY" not in body
     assert "SAGE_V2_SOLVER_MODEL" not in body
@@ -111,6 +119,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         rendered = yaml.safe_dump(step)
         assert "OPENAI_API_KEY" not in rendered
         assert "GEMINI_API_KEY" not in rendered
+        assert "TYPESAFE_API_KEY" not in rendered
         assert "LANGSMITH_API_KEY" not in rendered
         assert "SAGE_LEGION_QDRANT" not in rendered
     assert "docker build" not in yaml.safe_dump(solve_step["env"])
@@ -166,6 +175,9 @@ def test_workflow_configures_every_non_secret_example_value_in_yaml() -> None:
     assert configuration["SOLVER_MODEL"] == "gpt-5.4-mini"
     assert configuration["REVIEWER_MODEL"] == "gemini-3.5-flash"
     assert configuration["SAGE_LEGION_EMBEDDINGS_ENABLED"] == "true"
+    assert configuration["SAGE_JEV_NAVIGATION_MODE"] == "off"
+    assert configuration["SAGE_JEV_LOG_INPUT"] == "false"
+    assert configuration["SAGE_JEV_CAPTURE"] == "false"
     assert "SAGE_LEGION_QDRANT_PATH" not in configuration
 
 
@@ -186,12 +198,15 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "OPENAI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "GEMINI_API_KEY" not in yaml.safe_dump(jobs["finalize"])
+    assert "TYPESAFE_API_KEY" not in yaml.safe_dump(jobs["gate"])
+    assert "TYPESAFE_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "SAGE_LEGION_QDRANT" not in yaml.safe_dump(jobs["gate"])
     assert "SAGE_LEGION_QDRANT" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "secrets.TYPESAFE_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_LEGION_QDRANT_URL" in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_LEGION_QDRANT_API_KEY" in yaml.safe_dump(jobs["solve"])
@@ -209,6 +224,7 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
         "github-token",
         "openai-api-key",
         "gemini-api-key",
+        "typesafe-api-key",
         "langsmith-api-key",
         "legion-qdrant-url",
         "legion-qdrant-api-key",
@@ -233,6 +249,7 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "diff.patch",
         "usage.json",
         "legion-memory.json",
+        "navigation.json",
         "terminal.json",
         "verification-summary.json",
         "review.json",

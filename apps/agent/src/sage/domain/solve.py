@@ -48,6 +48,7 @@ class SolveOutcome(StrEnum):
     VERIFICATION_FAILED = "verification_failed"
     REVIEW_FAILED = "review_failed"
     INVALID_MODEL_OUTPUT = "invalid_model_output"
+    INTERRUPTED = "interrupted"
 
 
 class AgentFinalOutput(BaseModel):
@@ -78,3 +79,4 @@ class SolveResult(BaseModel):
     outcome: SolveOutcome = SolveOutcome.COMPLETED
     provenance: RunProvenance | None = None
     memory: LegionMemoryRunArtifact | None = None
+    workflow_duration_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)

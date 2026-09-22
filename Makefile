@@ -21,11 +21,12 @@ ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
 LEGION_SOLVE ?= false
+BASELINE_SOLVE ?= false
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
-	compile check graph new-issue solve solve-debug \
+	compile check graph new-issue solve solve-baseline solve-debug \
 	legion-memory legion-retrieve legion-solve run-status run-test \
 	clean-runs clean-legion-memory clean-embeddings
 
@@ -65,6 +66,8 @@ help: ## Show the available commands and variables.
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
 		'  make solve REPO=/absolute/path/to/repo ISSUE=/absolute/path/to/issue.md' \
+		'  make solve-baseline REPO=... ISSUE=...' \
+		'                        Solve with repository tools, without Jev or Legion Memory.' \
 		'  make legion-solve REPO=... ISSUE=... MEMORY=...' \
 		'                        Solve with a build/update and Legion Memory retrieval.' \
 		'  make solve-debug REPO=... ISSUE=...' \
@@ -436,7 +439,9 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	image_args=(); \
 	if [[ -n "$(SANDBOX_IMAGE)" ]]; then image_args=(--sandbox-image "$(SANDBOX_IMAGE)"); fi; \
 	memory_args=(); \
-	if [[ "$(LEGION_SOLVE)" == "true" ]]; then \
+	if [[ "$(BASELINE_SOLVE)" == "true" ]]; then \
+		export SAGE_JEV_NAVIGATION_MODE=off; \
+	elif [[ "$(LEGION_SOLVE)" == "true" ]]; then \
 		if [[ -z "$(MEMORY)" ]]; then \
 			echo "ERROR: MEMORY is required for legion-solve." >&2; \
 			echo "Use: make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
@@ -465,6 +470,9 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 		exit 0; \
 	fi; \
 	exit "$$status"
+
+solve-baseline: override BASELINE_SOLVE := true
+solve-baseline: solve ## Run a live solve with tools only; disable Jev and Legion Memory.
 
 solve-debug: DEBUG_FLAG := --debug
 solve-debug: solve ## Run a live solve with debug logs and tracebacks.

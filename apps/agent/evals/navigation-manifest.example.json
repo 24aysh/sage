@@ -1,0 +1,28 @@
+{
+  "baseline": "off",
+  "prices": {},
+  "runs": [
+    {
+      "case_id": "repository/issue-1",
+      "base_sha": "replace-with-fixed-base-sha",
+      "split": "held-out",
+      "repeat": 1,
+      "settings_id": "fixed-models-and-budgets-v1",
+      "cache_state": "warm-vectors",
+      "arm": "off",
+      "run_dir": "/absolute/path/to/baseline-run",
+      "independent_quality_pass": false
+    },
+    {
+      "case_id": "repository/issue-1",
+      "base_sha": "replace-with-fixed-base-sha",
+      "split": "held-out",
+      "repeat": 1,
+      "settings_id": "fixed-models-and-budgets-v1",
+      "cache_state": "warm-vectors",
+      "arm": "actions-2",
+      "run_dir": "/absolute/path/to/two-action-run",
+      "independent_quality_pass": false
+    }
+  ]
+}

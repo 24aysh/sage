@@ -51,6 +51,32 @@ class AgentToolCallRecord(BaseModel):
     stage: str = Field(min_length=1, max_length=100)
     role: ModelRole
     tool_name: str = Field(min_length=1, max_length=100)
+    tool_call_id: str | None = None
+
+
+class SemanticCallRecord(BaseModel):
+    """Navigation usage, separate from generative model turns."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    call_number: int
+    parent_tool_call: int | None = None
+    session: int
+    stage: str
+    policy: str
+    model: str
+    latency_ms: float = Field(ge=0)
+    outcome: str
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+
+
+class AgentTimingRecord(BaseModel):
+    """Elapsed time for one complete role invocation, including tools and waits."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    role: ModelRole
+    stage: str = Field(min_length=1, max_length=100)
+    duration_ms: float = Field(ge=0, allow_inf_nan=False)
 
 
 class RunProvenance(BaseModel):
@@ -60,6 +86,8 @@ class RunProvenance(BaseModel):
     route: str = "single"
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()
+    semantic_calls: tuple[SemanticCallRecord, ...] = ()
+    agent_timings: tuple[AgentTimingRecord, ...] | None = None
     tool_calls: tuple[AgentToolCallRecord, ...] = ()
     commands: tuple[ExecutedCommand, ...] = ()
     solver_sessions: int = Field(default=0, ge=0)

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,13 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
         '{"excerpt":"private repository text"}\n',
         encoding="utf-8",
     )
+    (run_dir / "navigation.json").write_text(json.dumps({"policy_version": "navigation-v1-experimental",
+        "mode": "on", "policy": "actions", "requests": 1, "operations": 1, "records": [{
+            "sequence": 1, "status": "executed", "candidate_count": 2, "objective_digest": "safe-digest",
+            "capture": {"request": {"state": {"source": "private Jev replay"}}},
+            "candidates": [{"action": {"path": "private.py"}}],
+            "action": {"path": "private.py"}, "decision": {"probabilities": {"private.py": 1.0}}}]}))
+    (run_dir / "usage.json").write_text('{"semantic_calls":[{"model":"jev-1.13.0","input_tokens":23}]}')
     (run_dir / "legion-memory.json").write_text(
         '{"status":"used","retrieval":{"context":"private source body",'
         '"context_chars":19}}\n',
@@ -57,6 +65,13 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
     assert '"context_chars": 19' in memory
     assert "private source body" not in memory
     assert not (diagnostics / "unlisted-context.json").exists()
+    navigation = json.loads((diagnostics / "navigation.json").read_text())
+    assert navigation == {"policy_version": "navigation-v1-experimental", "mode": "on", "policy": "actions",
+        "requests": 1, "operations": 1, "records": [{"sequence": 1, "status": "executed",
+            "candidate_count": 2, "objective_digest": "safe-digest"}]}
+    assert "private Jev replay" not in json.dumps(navigation)
+    assert "private.py" not in json.dumps(navigation)
+    assert '"semantic_calls"' in (diagnostics / "usage.json").read_text()
     assert "private repository text" not in "\n".join(
         path.read_text(encoding="utf-8") for path in diagnostics.iterdir()
     )
@@ -89,3 +104,16 @@ def test_github_diagnostics_reject_invalid_memory_artifact(tmp_path: Path) -> No
             diagnostics_dir=tmp_path / "diagnostics",
             run_dir=run_dir,
         )
+
+
+def test_github_diagnostics_reject_invalid_navigation_artifact(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "navigation.json").write_text('{"records":"not-a-list"}', encoding="utf-8")
+    provenance = GitHubProvenance(repository="owner/repository", repository_id=1, issue_number=2,
+        invocation_comment_id=3, actor="maintainer", actions_run_id=4, actions_run_attempt=1,
+        actions_run_url="https://github.com/owner/repository/actions/runs/4", command=SageCommand.SOLVE,
+        base_branch="main", original_base_sha="a" * 40, branch="sage/issue-2", outcome="completed")
+
+    with pytest.raises(ArtifactError, match="Invalid Jev navigation"):
+        persist_github_diagnostics(provenance, diagnostics_dir=tmp_path / "diagnostics", run_dir=run_dir)

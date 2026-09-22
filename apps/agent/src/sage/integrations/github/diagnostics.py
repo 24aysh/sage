@@ -9,8 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
 from sage.errors import ArtifactError
-from sage.integrations.github.models import SageCommand
-from sage.integrations.github.models import GIT_OBJECT_ID_PATTERN, GitHubInvocation
+from sage.integrations.github.models import GIT_OBJECT_ID_PATTERN, GitHubInvocation, SageCommand
 
 _DIAGNOSTIC_FILES = (
     "metadata.json",
@@ -21,10 +20,20 @@ _DIAGNOSTIC_FILES = (
     "diff.patch",
     "usage.json",
     "legion-memory.json",
+    "navigation.json",
     "terminal.json",
     "verification-summary.json",
     "review.json",
 )
+_NAVIGATION_FIELDS = ("policy_version", "mode", "policy", "max_followup_actions",
+    "action_probability_thresholds", "action_confidence_threshold", "model", "requests", "operations",
+    "added_chars", "jev_wait_seconds", "records_truncated")
+_NAVIGATION_RECORD_FIELDS = ("sequence", "session", "stage", "parent_tool_call", "root_tool_call_id", "step",
+    "status", "candidate_count", "candidate_retrieval_ms", "latency_ms", "input_tokens", "output_tokens",
+    "selected", "disabled", "objective_digest", "candidate_set_digest", "selected_probability",
+    "required_probability", "decision_confidence", "required_confidence", "retrieval_ms", "operation",
+    "result_digest", "exposed_chars", "elapsed_ms", "chars", "source_digest", "navigation_ms",
+    "structural_retrieval_ms")
 
 
 class GitHubProvenance(BaseModel):
@@ -43,10 +52,7 @@ class GitHubProvenance(BaseModel):
     command: SageCommand
     base_branch: str = Field(min_length=1, max_length=255)
     original_base_sha: str = Field(pattern=GIT_OBJECT_ID_PATTERN)
-    current_base_sha: str | None = Field(
-        default=None,
-        pattern=GIT_OBJECT_ID_PATTERN,
-    )
+    current_base_sha: str | None = Field(default=None, pattern=GIT_OBJECT_ID_PATTERN)
     branch: str = Field(min_length=1, max_length=255)
     outcome: str = Field(min_length=1, max_length=100)
     local_run_id: str | None = Field(default=None, max_length=100)
@@ -54,39 +60,22 @@ class GitHubProvenance(BaseModel):
     pull_request_url: str | None = Field(default=None, max_length=2_048)
 
 
-def build_github_provenance(
-    invocation: GitHubInvocation,
-    *,
-    branch: str,
-    outcome: str,
-    current_base_sha: str | None = None,
-    local_run_id: str | None = None,
-    pull_request_number: int | None = None,
-    pull_request_url: str | None = None,
-) -> GitHubProvenance:
+def build_github_provenance(invocation: GitHubInvocation, *, branch: str, outcome: str,
+                            current_base_sha: str | None = None, local_run_id: str | None = None,
+                            pull_request_number: int | None = None,
+                            pull_request_url: str | None = None) -> GitHubProvenance:
     """Build provenance only from validated invocation and result metadata."""
 
     if invocation.command is None:
         raise ValueError("GitHub provenance requires a supported command.")
-    return GitHubProvenance(
-        repository=invocation.repository.full_name,
-        repository_id=invocation.repository.repository_id,
-        issue_number=invocation.issue.number,
-        invocation_comment_id=invocation.comment.comment_id,
-        actor=invocation.actor.login,
-        actions_run_id=invocation.actions_run.run_id,
-        actions_run_attempt=invocation.actions_run.attempt,
-        actions_run_url=invocation.actions_run.html_url,
-        command=invocation.command,
-        base_branch=invocation.default_branch,
-        original_base_sha=invocation.base_sha,
-        current_base_sha=current_base_sha,
-        branch=branch,
-        outcome=outcome,
-        local_run_id=local_run_id,
-        pull_request_number=pull_request_number,
-        pull_request_url=pull_request_url,
-    )
+    return GitHubProvenance(repository=invocation.repository.full_name,
+        repository_id=invocation.repository.repository_id, issue_number=invocation.issue.number,
+        invocation_comment_id=invocation.comment.comment_id, actor=invocation.actor.login,
+        actions_run_id=invocation.actions_run.run_id, actions_run_attempt=invocation.actions_run.attempt,
+        actions_run_url=invocation.actions_run.html_url, command=invocation.command,
+        base_branch=invocation.default_branch, original_base_sha=invocation.base_sha,
+        current_base_sha=current_base_sha, branch=branch, outcome=outcome, local_run_id=local_run_id,
+        pull_request_number=pull_request_number, pull_request_url=pull_request_url)
 
 
 def persist_github_diagnostics(
@@ -105,20 +94,16 @@ def persist_github_diagnostics(
     if run_dir is not None:
         source_root = run_dir.expanduser().resolve()
         run_provenance_path = source_root / "github.json"
-        write_json_atomic(
-            run_provenance_path,
-            provenance.model_dump(mode="json"),
-        )
+        write_json_atomic(run_provenance_path, provenance.model_dump(mode="json"))
         for name in _DIAGNOSTIC_FILES:
             source = source_root / name
             if source.is_file():
                 if name == "legion-memory.json":
                     _copy_memory_diagnostic(source, destination / name)
+                elif name == "navigation.json":
+                    _copy_navigation_diagnostic(source, destination / name)
                 else:
-                    write_text_atomic(
-                        destination / name,
-                        source.read_text(encoding="utf-8"),
-                    )
+                    write_text_atomic(destination / name, source.read_text(encoding="utf-8"))
     return provenance_path
 
 
@@ -135,3 +120,19 @@ def _copy_memory_diagnostic(source: Path, destination: Path) -> None:
     if isinstance(retrieval, dict):
         retrieval.pop("context", None)
     write_json_atomic(destination, payload)
+
+
+def _copy_navigation_diagnostic(source: Path, destination: Path) -> None:
+    """Export operational Jev evidence without source-bearing replay data."""
+
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ArtifactError("Invalid Jev navigation diagnostic artifact.") from error
+    records = payload.get("records") if isinstance(payload, dict) else None
+    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
+        raise ArtifactError("Invalid Jev navigation diagnostic artifact.")
+    summary = {key: payload[key] for key in _NAVIGATION_FIELDS if key in payload}
+    summary["records"] = [{key: record[key] for key in _NAVIGATION_RECORD_FIELDS if key in record}
+                          for record in records]
+    write_json_atomic(destination, summary)

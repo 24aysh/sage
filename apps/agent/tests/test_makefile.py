@@ -77,6 +77,29 @@ def test_legion_solve_reuses_baseline_solve_with_explicit_memory() -> None:
     assert "solve ## Run a live solve with Legion Memory enabled." in legion_target
 
 
+def test_solve_baseline_forces_jev_off_and_omits_memory(tmp_path: Path) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text((REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8"), encoding="utf-8")
+    env_file = tmp_path / "baseline.env"
+    env_file.write_text("OPENAI_API_KEY=test\nSAGE_JEV_NAVIGATION_MODE=on\n", encoding="utf-8")
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    uv = binaries / "uv"
+    uv.write_text("#!/bin/sh\nprintf 'jev=%s\\n' \"$SAGE_JEV_NAVIGATION_MODE\"\nprintf 'args=%s\\n' \"$*\"\n",
+                  encoding="utf-8")
+    uv.chmod(0o755)
+
+    result = subprocess.run(["make", "solve-baseline", f"ENV_FILE={env_file}",
+        f"REPO={tmp_path / 'repo'}", f"ISSUE={tmp_path / 'issue.md'}",
+        f"MEMORY={tmp_path / 'graph.sqlite3'}", "LEGION_SOLVE=true", "BASELINE_SOLVE=false"],
+        cwd=tmp_path, env={**os.environ, "PATH": f"{binaries}{os.pathsep}{os.environ['PATH']}"},
+        text=True, capture_output=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    assert "jev=off" in result.stdout
+    assert "--memory-file" not in result.stdout
+
+
 @pytest.mark.parametrize(
     ("target", "directory_name"),
     (

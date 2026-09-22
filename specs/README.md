@@ -12,6 +12,15 @@ under `docs/` for present behavior and commands.
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
 | [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Current behavior-preserving simplification scope and verification record |
 
+## Proposed work
+
+| Document | Status |
+| --- | --- |
+| [`25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md`](25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md) | A–D2 implemented as off-by-default local experiments; live cost/latency/quality promotion gates pending |
+
+This user-requested proposal does not change the current behavior described in
+the guides above.
+
 ## Implemented consolidation
 
 | Document | Status |
@@ -40,6 +49,6 @@ and diagrams in them no longer exist. The completed migration records called
 out above remain useful rationale, but no numbered file before `24` defines
 current behavior.
 
-Retained specifications are historical records. New architecture guidance
+Completed specifications are historical records. New architecture guidance
 updates the current documents by default instead of adding another numbered
 chronological source of truth.

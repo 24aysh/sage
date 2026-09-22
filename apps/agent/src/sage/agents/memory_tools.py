@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from sage.legion_memory.context import minimal_result as _minimal_result, bounded_json as _bounded_json
+
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -312,65 +314,3 @@ def build_legion_memory_tools(
                  "get_community_tool", "get_impact_radius_tool"}
         return [item for item in tools if item.name in names]
     return tools
-
-
-def _minimal_result(result: dict[str, object]) -> dict[str, object]:
-    """Drop repeated node metadata, retaining locators and relationship facts."""
-    def project(value: object) -> object:
-        if isinstance(value, list):
-            return [project(item) for item in value]
-        if not isinstance(value, dict):
-            return value
-        if "qualified_name" in value and "file_path" in value:
-            return {key: item for key, item in value.items() if key in {
-                "qualified_name", "file_path", "line_start", "line_end", "kind",
-                "score", "search_modes", "confidence", "distance", "signature",
-                "degree", "betweenness", "caller_count",
-                "line_count", "risk_score", "tests",
-            }}
-        return {key: project(item) for key, item in value.items() if key != "supported_patterns"}
-    return {**{key: value for key, value in result.items() if key not in {"repository_id", "last_updated"}},
-            "data": project(result.get("data", {}))}
-
-
-def _bounded_json(result: dict[str, object], *, max_chars: int) -> str:
-    rendered = json.dumps(result, sort_keys=True, separators=(",", ":"))
-    if len(rendered) <= max_chars:
-        return rendered
-    bounded = json.loads(rendered)
-    data = bounded.get("data", {})
-    # Keep a useful prefix of the main result collection instead of dropping
-    # every item and forcing the model to repeat a narrower query.
-    for key in ("results", "nodes", "key_entities", "flows", "communities", "steps", "edges"):
-        rows = data.get(key) if isinstance(data, dict) else None
-        if not isinstance(rows, list) or not rows:
-            continue
-        original = len(rows)
-        while rows:
-            rows.pop()
-            bounded.update(truncated=True, returned=max(0, int(result.get("returned", original)) - (original - len(rows))),
-                           omitted=int(result.get("omitted", 0)) + original - len(rows))
-            rendered = json.dumps(bounded, sort_keys=True, separators=(",", ":"))
-            if len(rendered) <= max_chars:
-                return rendered
-    bounded = {
-        key: value
-        for key, value in result.items()
-        if key not in {"data", "summary"}
-    }
-    bounded.update(
-        {
-            "summary": str(result.get("summary", ""))[:500],
-            "returned": 0,
-            "omitted": int(result.get("total", 0) or 0),
-            "truncated": True,
-            "data": {
-                "notice": "Result exceeded the native tool character budget; narrow the query."
-            },
-        }
-    )
-    rendered = json.dumps(bounded, sort_keys=True, separators=(",", ":"))
-    if len(rendered) <= max_chars:
-        return rendered
-    return json.dumps({"status": str(result.get("status", "unknown"))[:40], "returned": 0, "truncated": True,
-                       "summary": "Metadata exceeds budget; narrow the query."})

@@ -11,6 +11,9 @@ inputs:
   gemini-api-key:
     description: Reviewer credential scoped to the solve controller step.
     required: true
+  typesafe-api-key:
+    description: Optional Jev credential scoped to the solve controller step.
+    required: false
   legion-qdrant-url:
     description: HTTPS URL for the remote Legion Qdrant deployment.
     required: false
@@ -89,6 +92,7 @@ runs:
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
         SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}
         SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}
