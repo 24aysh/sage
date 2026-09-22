@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from langchain_core.runnables import RunnableLambda
@@ -54,10 +56,12 @@ class SolveOrchestrator:
         solver: SolverAgent,
         reviewer: ReviewerAgent,
         reviewer_provider: ModelProvider,
+        navigation_factory: Callable | None = None,
     ) -> None:
         self._solver = solver
         self._reviewer = reviewer
         self._reviewer_provider = reviewer_provider
+        self._navigation_factory = navigation_factory
 
     async def solve(
         self,
@@ -108,6 +112,9 @@ class SolveOrchestrator:
         )
 
         try:
+            if self._navigation_factory is not None:
+                context = replace(context, navigation=self._navigation_factory(
+                    context=context, calls=calls, issue=issue_text, plan=lambda: plans.saved))
             solver_result = await self._solver.run(
                 stage="solver",
                 message=build_solver_message(
@@ -267,6 +274,9 @@ class SolveOrchestrator:
             final = failure_terminal(error, calls)
             if final is None:
                 raise
+        finally:
+            if context.navigation is not None:
+                await context.navigation.aclose()
         final = self._persist_terminal(final, context, calls)
         logger.info(
             "Sage solve: finished run=%s outcome=%s model_calls=%d",

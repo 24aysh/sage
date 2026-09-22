@@ -20,6 +20,7 @@ def test_composition_builds_the_single_solve_architecture() -> None:
     )
 
     assert isinstance(orchestrator, SolveOrchestrator)
+    assert orchestrator._navigation_factory is None
     assert isinstance(orchestrator._solver, SolverAgent)
     assert isinstance(orchestrator._reviewer, ReviewerAgent)
     assert (

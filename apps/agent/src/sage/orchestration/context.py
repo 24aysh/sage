@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from sage.domain.solve import AgentFinalOutput, PreparedRun
+from sage.domain.navigation import NavigationHook
 
 if TYPE_CHECKING:
     from sage.artifacts.store import RunArtifacts
@@ -23,6 +24,7 @@ class SolveContext:
     settings: Settings
     artifacts: RunArtifacts
     memory: MemorySession | None = None
+    navigation: NavigationHook | None = None
 
 
 class SolveEngine(Protocol):

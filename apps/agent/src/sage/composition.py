@@ -14,6 +14,8 @@ from sage.errors import ConfigurationError
 from sage.legion_memory.service import LegionMemoryService
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.google import GoogleProvider
+from sage.providers.typesafe import TypeSafeProvider
+from sage.orchestration.navigation import NavigationSession
 
 
 def build_legion_memory_service(*, data_root: Path | None = None,
@@ -58,8 +60,15 @@ def build_orchestrator(settings: Settings) -> SolveOrchestrator:
         model_name=settings.reviewer_model,
         timeout_seconds=settings.model_request_timeout_seconds,
     )
+    def navigation_factory(**arguments) -> NavigationSession:
+        assert settings.jev.api_key is not None
+        provider = TypeSafeProvider(api_key=settings.jev.api_key, model=settings.jev.model,
+                                    capture=settings.jev.capture)
+        return NavigationSession(provider=provider, **arguments)
+
     return SolveOrchestrator(
         solver=SolverAgent(settings=settings, model=solver_model),
         reviewer=ReviewerAgent(settings=settings),
         reviewer_provider=reviewer_provider,
+        navigation_factory=navigation_factory if settings.jev.mode != "off" else None,
     )
