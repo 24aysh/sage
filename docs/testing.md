@@ -153,8 +153,38 @@ Solver/Jev/Reviewer calls, verification/repairs, result persistence and resource
 cleanup. It excludes earlier CLI prerequisite checks, dependency installation,
 and final terminal rendering. It is shown with Jev/memory on or off, including
 returned no-change or unsuccessful outcomes; it is elapsed time, not a success
-claim. Exceptions that prevent a result from being returned do not print a final
-result summary. Legacy results without timing show `unavailable`, not zero.
+claim. Legacy results without timing show `unavailable`, not zero.
+
+### Interrupting a solve with Ctrl-C
+
+Run either `make solve` or `make legion-solve` as above. Once the run is
+initialized, press **Ctrl-C once** while the Solver, Jev, or Reviewer is working.
+The CLI prints `Solve interrupted` with the run/workspace paths, recorded token
+and tool usage, and the same Solver/Jev/Reviewer timing breakdown. The last time
+line is `Elapsed time at interruption`, measured when cancellation reaches the
+workflow, before sandbox/memory cleanup. No candidate is declared completed,
+verified, or unchanged. Wait for cleanup to finish; the CLI retains its nonzero
+interruption exit (1), and Make reports a failed/interrupted command.
+
+Token totals include known Solver, Reviewer **and Jev** input/output usage.
+`Model calls` counts generative requests; `Jev calls` is separate. Cancelled
+in-flight requests may never report usage: those counts remain unknown, the
+summary marks incomplete totals, and the provider may still bill them. Cached
+input tokens are a subset of input tokens and are not added twice. Memory
+embedding usage, when available, remains in the separate Legion Memory section.
+
+Inspect `interrupted.json` for the interruption-time snapshot and `usage.json`
+for recorded calls and elapsed agent sessions. `workflow-timing.json` still
+includes subsequent cleanup, so its duration can exceed the interruption time.
+The partial snapshot deliberately omits candidate diff/changed-file inspection;
+inspect the printed workspace separately if you need to recover unfinished work.
+
+The deterministic CLI tests send a real SIGINT in isolated subprocesses with
+fake model/sandbox boundaries; no paid call is needed. Cancellation during
+synchronous work may not be processed until that operation yields. Interruption
+before run initialization has no run summary; repeated Ctrl-C, forced termination
+or SIGKILL can prevent reporting or cleanup. Other failures retain their existing
+error handling rather than being labelled manual interruption.
 
 Full input logging defaults to **on only in navigation mode `on`**. Logs can
 contain private Issue text, plans and source; do not upload or share them without

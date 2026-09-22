@@ -117,6 +117,16 @@ verification and workflow preparation/cleanup are outside agent totals. Missing
 historical timing is unavailable, not zero or reconstructed API latency. See the
 [testing guide](testing.md#jev-navigation-experiments) for evaluation controls.
 
+For local Ctrl-C, `RunArtifacts` retains its latest immutable usage snapshot in
+memory as well as on disk. Workflow cancellation records an explicitly
+`interrupted` diagnostic result, invokes the CLI reporting callback, then
+re-raises cancellation while preserving cleanup. It performs no final Git
+inspection and does not manufacture a successful terminal result.
+`interrupted.json` captures time at workflow cancellation; `workflow-timing.json`
+continues through cleanup. Role timers and in-flight Solver/Reviewer/Jev records
+survive graceful cancellation with unreported tokens left unknown. Console
+token totals include semantic calls and flag incomplete usage.
+
 ## Find the owner before changing code
 
 All production Python paths below are relative to `apps/agent/src/sage/`.
