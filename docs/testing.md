@@ -31,6 +31,93 @@ uv run --project apps/agent python -m compileall -q apps/agent/src
 The optional pinned-reference test skips when no reference checkout is supplied.
 A skip is not a parity certification.
 
+## Jev navigation experiments
+
+Jev is off by default. Unit tests use scripted judgments and HTTP fixtures;
+they need no TypeSafe key and do not establish live efficiency gains.
+
+```bash
+uv run --project apps/agent pytest \
+  apps/agent/tests/providers/test_typesafe.py \
+  apps/agent/tests/orchestration/test_navigation.py \
+  apps/agent/tests/orchestration/test_navigation_evaluation.py \
+  apps/agent/tests/legion_memory/test_navigation.py \
+  apps/agent/tests/repository/test_search.py
+```
+
+For a local pilot, set `TYPESAFE_API_KEY` privately and use
+`SAGE_JEV_NAVIGATION_MODE=shadow|on`. This opts into sending bounded Issue,
+plan and source evidence to TypeSafe. Set `SAGE_JEV_NAVIGATION_POLICY` to
+`excerpts` (unchanged schemas) or `actions` (optional exploration goal).
+For actions, `SAGE_JEV_MAX_FOLLOWUP_ACTIONS=1|2` selects the bound. Existing
+`make solve` and `make legion-solve` honor these settings; memory is optional.
+Never put credentials in the candidate repository or sandbox.
+
+Time settings may lower, but not exceed, two seconds per request/eight seconds
+total Jev wait. Failures preserve ordinary tool results. Inspect `usage.json`
+(`semantic_calls`), `navigation.json`, and `workflow-timing.json`. Provisional
+Score acceptance is 2/3 with confidence 0.5; action probabilities must reach
+0.65/read, 0.75/search or 0.8/graph with confidence 0.5. These are experimental
+policy values, not calibrated correctness guarantees.
+
+For exact **local** replay, set `SAGE_JEV_CAPTURE=true` before a pilot. Captures
+contain sensitive prompts/source; do not upload `navigation.json`. Ordinary
+navigation artifacts keep digests/locators, not raw objectives or source bodies.
+Replay never contacts a model:
+
+```bash
+uv run --project apps/agent python apps/agent/evals/navigation.py replay \
+  /absolute/run/navigation.json --labels /absolute/labels.json
+```
+
+Labels are separately adjudicated JSON mapping `"sequence:step"` to relevant
+candidate IDs, e.g. `{"1:1": ["c0", "c2"]}`. They never enter runtime selection.
+Replay compares Jev with stable-first selection under equal shortlist/count
+caps. Inspect missing candidates separately from wrong selections. Captured
+second steps belong to the actual trajectory, not a simulated counterfactual.
+Shadow executes nothing and cannot measure a hypothetical second step.
+
+For paired live experiments, the evaluation runner injects controls into the
+same production controller. Every arm still makes paid Solver/Reviewer calls
+and requires the usual Docker/model prerequisites. The normal suite never
+runs this command:
+
+```bash
+uv run --env-file .env --project apps/agent python apps/agent/evals/navigation.py run \
+  --arm actions-2 --repo /absolute/repository --issue-file /absolute/issue.md \
+  --base-ref FIXED_BASE_SHA --allow-paid-solve
+```
+
+Arms: `off`, `deterministic-excerpts`, `jev-excerpts`, `actions-0`, `actions-1`,
+`actions-2`. The zero-action control keeps objective-bearing schemas/prompts
+but executes no follow-ups. Optional `--memory-file` uses normal memory setup.
+Keep model versions, Issue/base, budgets, memory settings and vector-cache
+state fixed within pairs; repeat to measure variance.
+
+Copy `apps/agent/evals/navigation-manifest.example.json`, fill actual run
+directories and independent quality verdicts, then compare:
+
+```bash
+uv run --project apps/agent python apps/agent/evals/navigation.py compare \
+  /absolute/experiment-manifest.json
+```
+
+Supply per-model `prices` with `input_per_million`, `output_per_million`, and
+optionally `cached_input_per_million` in USD applicable to the experiment.
+Missing prices/usage yield unknown cost, not zero. Estimates include semantic
+and embedding usage. Reports cover paired tokens/cost/wall time, Solver and
+Reviewer calls, sessions, operations, added characters and independently
+assessed verified completion. Counts, median/p95 and bootstrap mean intervals
+are reported; one pair has no interval. Small samples are not promotion
+evidence. Keep tuning and held-out runs in separate manifests.
+
+Use fixed cases covering explicit paths, ambiguous symbols, misleading hits,
+long files, test discovery, cross-file work, repairs and memory on/off.
+Historical next-read agreement is only a proxy; inspect redundant reads and
+failed/wasted observations alongside quality. A cheaper selector alone is not
+a whole-solve saving. Live paired quality/cost/latency gates remain pending;
+passing offline tests does not authorize default enablement or GitHub rollout.
+
 ## Select checks by responsibility
 
 Paths in this table are relative to `apps/agent/tests/`.
