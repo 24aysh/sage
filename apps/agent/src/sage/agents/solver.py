@@ -19,6 +19,7 @@ from sage.agents.loop import recursion_limit
 from sage.agents.memory_tools import build_legion_memory_tools
 from sage.agents.prompts import (
     SOLVER_INSTRUCTIONS,
+    NAVIGATION_INSTRUCTIONS,
     build_repair_message,
     build_solver_message,
 )
@@ -95,6 +96,8 @@ class SolverAgent:
         plans: SolverPlanSession,
         calls: ModelCalls,
     ) -> SolverFinalResult:
+        if navigation := getattr(context, "navigation", None):
+            navigation.begin_session(stage=stage)
         if context.memory is not None:
             packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
             if stage == "solver-repair" and packet:
@@ -172,7 +175,8 @@ class SolverAgent:
             model=model,
             tools=tools,
             max_turns=self._settings.max_turns,
-            instructions=SOLVER_INSTRUCTIONS,
+            instructions=SOLVER_INSTRUCTIONS + (NAVIGATION_INSTRUCTIONS
+                if getattr(context, "navigation", None) is not None and context.navigation.action_policy else ""),
             output_schema=output_schema,
             graph_name=f"{SOLVE_GRAPH_NAME}_{stage.replace('-', '_')}",
             role_name=ModelRole.SOLVER.value.capitalize(),
@@ -349,6 +353,8 @@ def build_solver_tools(
         )
         if context.memory is not None:
             context.memory.invalidate(path)
+        if navigation := getattr(context, "navigation", None):
+            navigation.invalidate(path)
         return result
 
     @tool
@@ -367,6 +373,8 @@ def build_solver_tools(
         )
         if context.memory is not None:
             context.memory.invalidate(path)
+        if navigation := getattr(context, "navigation", None):
+            navigation.invalidate(path)
         return result
 
     @tool
@@ -377,6 +385,8 @@ def build_solver_tools(
         result = context.repository.delete_file(path=path)
         if context.memory is not None:
             context.memory.invalidate(path)
+        if navigation := getattr(context, "navigation", None):
+            navigation.invalidate(path)
         return result
 
     @tool
@@ -390,6 +400,8 @@ def build_solver_tools(
         )
         if context.memory is not None:
             context.memory.invalidate(source_path, destination_path)
+        if navigation := getattr(context, "navigation", None):
+            navigation.invalidate(source_path, destination_path)
         return result
 
     @tool
@@ -410,6 +422,8 @@ def build_solver_tools(
                 "run_command accepts verification commands only; use structured "
                 "file tools for mutations."
             )
+        if navigation := getattr(context, "navigation", None):
+            navigation.invalidate()
         result = context.repository.run_command(
             command=command,
             timeout_seconds=timeout_seconds,

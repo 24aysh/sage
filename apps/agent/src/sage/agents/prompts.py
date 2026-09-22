@@ -127,3 +127,11 @@ def build_review_message(
         "</actual-verification>\n\n"
         f"<solver-summary>\n{solver_summary}\n</solver-summary>"
     )
+NAVIGATION_INSTRUCTIONS = """
+Optional read-only navigation: search_text and read_file accept exploration_goal.
+When useful, supply one concrete objective in at most 600 characters. It expires
+after this tool response. Sage may append up to two attributed read-only observations
+within the same response. Reuse useful supplied evidence before requesting it again.
+Navigation cannot edit, verify, approve, or complete work; you retain those decisions.
+Omit the goal when the requested observation alone is sufficient.
+"""
