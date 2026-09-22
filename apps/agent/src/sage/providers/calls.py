@@ -17,6 +17,7 @@ from sage.domain.usage import (
     ModelCallRecord,
     ModelRole,
     RunProvenance,
+    SemanticCallRecord,
 )
 from sage.errors import AgentRuntimeError
 from sage.observability import agent_trace_config, log_agent_activity, log_agent_finished
@@ -51,6 +52,7 @@ class ModelCalls:
         self._deadline = clock() + settings.run_deadline_seconds
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
+        self._semantic_calls: list[SemanticCallRecord] = []
         self._tool_calls: list[AgentToolCallRecord] = []
         self._commands: list[str] = []
         self._consecutive_failures: dict[str, int] = {}
@@ -67,9 +69,21 @@ class ModelCalls:
             > self._settings.finalization_reserve_seconds
         )
 
+    def remaining_navigation_seconds(self) -> float:
+        return max(0, self._deadline - self._clock() - self._settings.finalization_reserve_seconds)
+
+    @property
+    def latest_tool_call(self) -> AgentToolCallRecord | None:
+        return self._tool_calls[-1] if self._tool_calls else None
+
+    def record_semantic_call(self, record: SemanticCallRecord) -> None:
+        self._semantic_calls.append(record)
+        self._persist()
+
     def provenance(self) -> RunProvenance:
         return RunProvenance(
             calls=self.records,
+            semantic_calls=tuple(self._semantic_calls),
             tool_calls=tuple(self._tool_calls),
             commands=tuple(self._commands),
             solver_sessions=self.solver_sessions,
@@ -124,6 +138,7 @@ class ModelCalls:
                     stage=stage,
                     role=role,
                     tool_name=name,
+                    tool_call_id=item.get("id"),
                 )
             )
         self._append_record(
