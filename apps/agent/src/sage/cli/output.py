@@ -46,6 +46,26 @@ def _render_result(result: SolveResult, *, model: str) -> None:
 
     _render_solve_memory_summary(result)
     _render_solve_usage_summary(result)
+    _render_solve_timing_summary(result)
+
+
+def _render_solve_timing_summary(result: SolveResult) -> None:
+    print()
+    print("Elapsed time totals:")
+    provenance = result.provenance
+    solver = reviewer = jev = without_jev = None
+    if provenance is not None and provenance.agent_timings is not None:
+        solver = sum(t.duration_ms for t in provenance.agent_timings if t.role == "solver")
+        reviewer = sum(t.duration_ms for t in provenance.agent_timings if t.role == "reviewer")
+        jev = sum(call.latency_ms for call in provenance.semantic_calls)
+        without_jev = max(0.0, solver - jev)
+    for label, elapsed in (("Solver (including Jev)", solver), ("Solver (without Jev)", without_jev),
+                           ("Jev (decisions only)", jev), ("Reviewer", reviewer)):
+        value = f"{elapsed / 1000:.2f} seconds" if elapsed is not None else "unavailable"
+        print(f"  {label}: {value}")
+    duration = result.workflow_duration_ms
+    print(f"Total solve time: {duration / 1000:.2f} seconds" if duration is not None
+          else "Total solve time: unavailable")
 
 
 def _render_solve_memory_summary(result: SolveResult) -> None:

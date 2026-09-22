@@ -123,6 +123,39 @@ Both solve commands log Jev activity at INFO without `--debug` or replay capture
   including those stages and logging/artifact overhead, but excluding the root
   read/search itself. These measurements overlap: do not add them together.
 
+At the end, both commands print elapsed totals (example):
+
+```text
+Elapsed time totals:
+  Solver (including Jev): 100.00 seconds
+  Solver (without Jev): 98.50 seconds
+  Jev (decisions only): 1.50 seconds
+  Reviewer: 15.00 seconds
+Total solve time: 125.50 seconds
+```
+
+Solver totals sum complete initial/repair sessions, including tools and waits.
+Reviewer totals sum complete reviews/rereviews, including prompt preparation,
+retry backoff, schema repair and validation. Jev totals sum all decision attempts,
+including failures/timeouts, from `usage.json`'s `semantic_calls`. Solver without
+Jev subtracts that decision time; candidate/evidence retrieval remains Solver
+work. It is not an estimate of the runtime with Jev disabled. Jev is already
+included in the Solver total: do not add both together. Preparation, independent
+verification and cleanup explain why whole-solve time exceeds role totals.
+Per-session/stage measurements are recorded in `usage.json`'s `agent_timings`.
+An uninvoked role reports zero for newly measured runs; missing historical
+measurements report `unavailable` rather than inferring wall time from API latency.
+
+The final whole-solve total remains independent of the role subtotals.
+This uses the same duration as `workflow-timing.json`: from just before reading
+the Issue through workspace/sandbox preparation, optional memory setup, all
+Solver/Jev/Reviewer calls, verification/repairs, result persistence and resource
+cleanup. It excludes earlier CLI prerequisite checks, dependency installation,
+and final terminal rendering. It is shown with Jev/memory on or off, including
+returned no-change or unsuccessful outcomes; it is elapsed time, not a success
+claim. Exceptions that prevent a result from being returned do not print a final
+result summary. Legacy results without timing show `unavailable`, not zero.
+
 Full input logging defaults to **on only in navigation mode `on`**. Logs can
 contain private Issue text, plans and source; do not upload or share them without
 review. Authorization headers are never included, the TypeSafe key is redacted

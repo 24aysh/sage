@@ -106,7 +106,15 @@ Shadow logs summaries only. Headers never enter these logs, the TypeSafe key is
 redacted and control characters are escaped, but source/Issue content can still
 contain sensitive data. Console input logging and artifact capture are independent.
 `workflow-timing.json` measures preparation through resource cleanup, separate
-from the post-memory model-call deadline. See the
+from the post-memory model-call deadline. Local `SolveResult.workflow_duration_ms`
+carries that same measurement to the final CLI `Total solve time` summary,
+regardless of Jev or memory enablement. Orchestration times complete Solver and
+Reviewer invocations through `ModelCalls.measure_agent`, including repair,
+retry waits, failures and cancellation. `usage.json.agent_timings` preserves
+per-role/stage durations; the CLI sums them and subtracts semantic decision
+latencies for Solver-without-Jev time. Retrieval stays Solver work; independent
+verification and workflow preparation/cleanup are outside agent totals. Missing
+historical timing is unavailable, not zero or reconstructed API latency. See the
 [testing guide](testing.md#jev-navigation-experiments) for evaluation controls.
 
 ## Find the owner before changing code
