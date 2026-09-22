@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, Annotated
 
 from langchain_core.tools import BaseTool, tool
+from pydantic import Field
 
 if TYPE_CHECKING:
     from sage.repository.service import Repository
@@ -22,6 +23,7 @@ def build_repository_read_tools(
     output_chars: int = 12_000,
 ) -> list[BaseTool]:
     """Build the repository read tools shared by agent roles."""
+    navigation = getattr(context, "navigation", None)
 
     @tool
     async def list_tree(path: str = ".", max_depth: int = 2) -> str:
@@ -37,11 +39,14 @@ def build_repository_read_tools(
     ) -> str:
         """Search repository files for an exact literal text value."""
 
-        result = context.repository.search_text(
-            query=query,
-            path=path,
-            max_results=max_results,
-        )
+        return await search(query, path, max_results)
+
+    async def search(query: str, path: str, max_results: int, goal: str | None = None) -> str:
+        if navigation is not None:
+            result = context.repository.search_matches(query=query, path=path, max_results=max_results)
+            return result.text + await navigation.enrich(tool_name="search_text", source=result.text,
+                matches=result.matches, query=query, path=path, exploration_goal=goal)
+        result = context.repository.search_text(query=query, path=path, max_results=max_results)
         if enrich is not None:
             result += enrich(tool_name="search_text", query=query,
                              source_chars=len(result),
@@ -56,11 +61,17 @@ def build_repository_read_tools(
     ) -> str:
         """Read at most 300 numbered lines from a repository text file."""
 
+        return await read(path, start_line, end_line)
+
+    async def read(path: str, start_line: int, end_line: int | None, goal: str | None = None) -> str:
         result = context.repository.read_file(
             path=path,
             start_line=start_line,
             end_line=end_line,
         )
+        if navigation is not None:
+            return result + await navigation.enrich(tool_name="read_file", source=result, path=path,
+                start_line=start_line, exploration_goal=goal)
         if enrich is not None:
             result += enrich(tool_name="read_file", path=path, start_line=start_line,
                              source_chars=len(result),
@@ -68,6 +79,20 @@ def build_repository_read_tools(
                              available_chars=max(0, output_chars - len(result)))
         return result
 
+    if navigation is not None and navigation.action_policy:
+        @tool("search_text")
+        async def search_with_goal(query: str, path: str = ".", max_results: int = 50,
+                                   exploration_goal: Annotated[str, Field(min_length=1, max_length=600)] | None = None) -> str:
+            """Search literal text; optionally supply a <=600-character read-only exploration goal."""
+            return await search(query, path, max_results, exploration_goal)
+
+        @tool("read_file")
+        async def read_with_goal(path: str, start_line: int = 1, end_line: int | None = None,
+                                 exploration_goal: Annotated[str, Field(min_length=1, max_length=600)] | None = None) -> str:
+            """Read numbered source; optionally supply a <=600-character read-only exploration goal."""
+            return await read(path, start_line, end_line, exploration_goal)
+
+        return [list_tree, search_with_goal, read_with_goal]
     return [list_tree, search_text, read_file]
 
 
@@ -84,7 +109,10 @@ def build_repository_branch_tools(context: RepositoryContext) -> list[BaseTool]:
     async def switch_branch(branch_name: str) -> str:
         """Switch the clean sandbox worktree to an existing Git branch."""
 
-        return context.repository.switch_branch(branch_name=branch_name)
+        result = context.repository.switch_branch(branch_name=branch_name)
+        if navigation := getattr(context, "navigation", None):
+            navigation.invalidate()
+        return result
 
     return [list_branches, switch_branch]
 
