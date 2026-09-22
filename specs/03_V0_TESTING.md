@@ -18,12 +18,12 @@ candidate patch. It covers:
 - recovering from common setup and runtime failures.
 
 The instructions match the implementation described in
-[`V0_IMPLEMENTATION.md`](02_V0_implementation.md). Commands are run from the root
+[`V0_IMPLEMENTATION.md`](02_V0_IMPLEMENTATION.md). Commands are run from the root
 of the Sage repository unless a step explicitly says otherwise.
 
 V0.1 replaces the internal Agents SDK loop with the project-owned LangGraph
 runtime without changing this issue-to-patch workflow. See
-[`06_V0.1_testing.md`](06_V0.1_testing.md) for migration-specific checks and the
+[`06_V0.1_TESTING.md`](06_V0.1_TESTING.md) for migration-specific checks and the
 new all-in-one setup-and-solve command.
 
 All commands and paths in this guide use the current Sage identifiers.

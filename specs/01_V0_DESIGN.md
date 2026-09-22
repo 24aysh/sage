@@ -4,8 +4,8 @@
 > **Historical V0 document:** the bootstrap design below intentionally records
 > the original OpenAI Agents SDK milestone. The active runtime was superseded by
 > the V0.1 LangGraph design and implementation specifications in
-> [`04_V0.1_design.md`](04_V0.1_design.md) and
-> [`05_V0.1_langgraph_implementation.md`](05_V0.1_langgraph_implementation.md).
+> [`04_V0.1_DESIGN.md`](04_V0.1_DESIGN.md) and
+> [`05_V0.1_LANGGRAPH_IMPLEMENTATION.md`](05_V0.1_LANGGRAPH_IMPLEMENTATION.md).
 > Use [`../docs/architecture.md`](../docs/architecture.md) for current behavior.
 > Project identifiers and command examples in this historical document have
 > been updated to the current Sage name; the original V0 design decisions are
