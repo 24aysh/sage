@@ -118,7 +118,6 @@ async def solve_issue(
         )
         run_artifacts.write_result(final_output=final_output, result=result)
         logger.info("agent run completed", extra={"run_id": prepared.run_id})
-        return result
     finally:
         try:
             if sandbox is not None:
@@ -131,7 +130,9 @@ async def solve_issue(
                     finally:
                         memory_session.close()
             finally:
-                run_artifacts.write_workflow_timing((perf_counter() - workflow_started) * 1000)
+                duration_ms = (perf_counter() - workflow_started) * 1000
+                run_artifacts.write_workflow_timing(duration_ms)
+    return result.model_copy(update={"workflow_duration_ms": duration_ms})
 
 
 def _prepare_memory(

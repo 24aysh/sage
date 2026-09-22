@@ -78,3 +78,4 @@ class SolveResult(BaseModel):
     outcome: SolveOutcome = SolveOutcome.COMPLETED
     provenance: RunProvenance | None = None
     memory: LegionMemoryRunArtifact | None = None
+    workflow_duration_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)

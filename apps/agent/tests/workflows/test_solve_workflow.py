@@ -121,12 +121,43 @@ def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch)
     assert sandbox.stopped is True
     assert store.initialized is True
     assert store.persisted is True
+    assert result.workflow_duration_ms == store.duration_ms
+
+
+@pytest.mark.parametrize("no_change", [False, True])
+def test_workflow_duration_spans_issue_read_through_cleanup(tmp_path, monkeypatch, no_change):
+    from sage.workflows import solve
+
+    request, prepared, settings = _run_values(tmp_path)
+    sandbox, store = FakeSandbox(), FakeStore()
+    timestamps = []
+    read_issue = solve._read_issue
+
+    def clock():
+        if timestamps:
+            assert sandbox.stopped and store.persisted
+            return 75.5
+        timestamps.append(10.0)
+        return 10.0
+
+    def read(request):
+        assert timestamps == [10.0]
+        return read_issue(request)
+
+    monkeypatch.setattr(solve, "perf_counter", clock)
+    monkeypatch.setattr(solve, "_read_issue", read)
+    monkeypatch.setattr(solve, "prepare_run", lambda *_: prepared)
+    result = asyncio.run(solve_issue(request, NoChangeEngine() if no_change else SuccessfulEngine(),
+        settings, sandbox_factory=lambda *_: sandbox,
+        repository_factory=lambda *_: EmptyRepository() if no_change else FakeRepository(), artifacts=store))
+    assert result.workflow_duration_ms == store.duration_ms == 65500.0
 
 
 def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     sandbox = FakeSandbox()
+    store = FakeStore()
 
     with pytest.raises(AgentRuntimeError, match="model failed"):
         asyncio.run(
@@ -136,12 +167,13 @@ def test_solve_issue_cleans_up_after_runtime_failure(tmp_path: Path, monkeypatch
                 settings,
                 sandbox_factory=lambda *_: sandbox,
                 repository_factory=lambda *_: FakeRepository(),
-                artifacts=FakeStore(),
+                artifacts=store,
             )
         )
 
     assert sandbox.started is True
     assert sandbox.stopped is True
+    assert store.duration_ms >= 0
 
 
 def test_solve_issue_preserves_nonpublishable_candidate_for_diagnostics(
@@ -275,6 +307,7 @@ def test_memory_is_prepared_after_sandbox_start_before_solver(
     assert result.memory is not None
     assert result.memory.status is MemoryRetrievalStatus.USED
     assert result.memory.indexed_sha == prepared.base_sha
+    assert result.workflow_duration_ms == store.duration_ms
     assert len(store.memory_artifacts) == 2
     assert store.memory_artifacts[-1].status is MemoryRetrievalStatus.USED
     assert "Legion Memory: graph ready" in caplog.text
