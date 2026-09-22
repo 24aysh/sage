@@ -86,6 +86,19 @@ Without Legion Memory:
 make solve REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
 ```
 
+For a tools-only benchmark baseline, use:
+
+```bash
+make solve-baseline REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
+```
+
+`solve-baseline` loads the selected `ENV_FILE`, then forcibly sets Jev navigation
+to `off` and never passes a memory database to the solve. This remains true even
+if the env file enables Jev or the command receives `MEMORY`/`LEGION_SOLVE`
+values. The Solver retains its ordinary repository and mutation tools; normal
+verification and Reviewer behavior are unchanged. Use the same Issue, base
+commit, models and other settings when comparing this baseline with `legion-solve`.
+
 With Legion Memory, first build the graph and then run a memory-enabled solve:
 
 ```bash
