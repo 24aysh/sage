@@ -2,9 +2,10 @@
 
 ## Status and scope
 
-- Status: A–D2 code implemented on `jev`; offline verification is documented in
-  the current testing guide. Live pilot and held-out promotion gates remain
-  pending. No paid evaluation or efficiency claim has been made.
+- Status: A–E code implemented on `jev`; offline verification is documented in
+  the current testing guide. Batch E remains off by default and its disposable
+  live canary plus held-out promotion gates are pending. No paid evaluation or
+  efficiency claim has been made.
 - Prepared: 21 September 2026.
 - Inspected baseline: `9bf1c8a`, including the user's uncommitted
   [integration analysis](../jev_sage_integration_analysis.md) and
@@ -23,9 +24,14 @@ Score-based excerpts; Choice-based one/two-action controller; offline replay
 and explicit paid-run comparison harness. Deterministic selection and the
 objective-bearing zero-action control live only in the evaluation harness.
 Provisional acceptance thresholds are versioned and still require calibration.
-No GitHub opt-in plumbing (E), reranking, adaptive preparation, pre-review gate,
-or model routing has been implemented. A–D2's live exit conditions are not
-marked satisfied by offline tests.
+GitHub opt-in plumbing and sanitized navigation diagnostics (E) are implemented.
+Reranking, adaptive preparation, pre-review gating and model routing remain
+unimplemented. A–E live exit conditions are not marked satisfied by offline tests.
+
+Batch E checkpoint (23 September 2026): the optional TypeSafe secret is scoped
+to the trusted GitHub solve step; all bounded policy settings are repository-owned
+with mode off and sensitive logs/captures disabled; uploaded navigation evidence
+is rebuilt from an operational allowlist. The immutable-SHA live canary is pending.
 
 ## 1. Recommended decision
 

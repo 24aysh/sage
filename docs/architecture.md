@@ -36,7 +36,7 @@ Three different facts must stay distinct:
 Memory cannot satisfy acceptance criteria, grant mutation authority, or replace
 current source. Model summaries cannot define a diff or changed-file list.
 
-## Experimental Jev navigation (local opt-in)
+## Experimental Jev navigation (local and trusted GitHub opt-in)
 
 Jev is an optional evidence selector, not another Solver or Reviewer. Independent
 Score questions rank excerpts; one Choice selects a complete action or
@@ -48,7 +48,9 @@ declared directly, with no retries or SDK dependency.
 requirement, schema change or request. `shadow` makes decisions but executes
 no follow-ups. `on` appends selected observations to the original tool response.
 Enabled modes send bounded Issue/plan/source evidence to TypeSafe. Live savings
-and quality promotion gates remain pending; GitHub rollout is deferred.
+and quality promotion gates remain pending. GitHub wiring is available but stays
+`off` by default; the optional TypeSafe secret reaches only the trusted solve
+controller, never target repository code or the network-disabled sandbox.
 
 With `SAGE_JEV_NAVIGATION_POLICY=excerpts`, successful searches use one
 `rg --json` operation, preserving the text display while retaining typed anchors.
@@ -103,11 +105,14 @@ Composition supplies a lazy run-scoped factory. The orchestrator constructs
 navigation after preflight and closes the client in `finally`, including
 cancellation. Agents see a domain protocol, not the concrete controller.
 `usage.json` records `semantic_calls` separately; failed usage stays unknown.
-Bounded `navigation.json` records candidate locators, decisions, configured
+Bounded local `navigation.json` records candidate locators, decisions, configured
 action thresholds, digests, exposure and stop reasons. Optional
 `SAGE_JEV_CAPTURE=true` adds sensitive exact
 requests/responses for local replay only (16,000-byte request and 256,000-byte
-aggregate capture caps). This file is excluded from GitHub diagnostics.
+aggregate capture caps). The shipped GitHub workflow keeps capture and full input
+logging off. Its allowlisted `navigation.json` is reconstructed from operational
+fields and omits captures, candidates, complete actions, paths, queries, source
+and provider bodies.
 Both local solve commands use the existing INFO logging configuration. Navigation
 summaries expose candidate-retrieval, decision, selected-operation and total
 enrichment timings, provider-reported usage (unknown on failure), and stop reasons.

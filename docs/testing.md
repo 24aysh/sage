@@ -245,8 +245,10 @@ On rejection, the INFO summary and `navigation.json` record both observed and
 required values; the artifact also records all configured thresholds.
 
 For exact **local** replay, set `SAGE_JEV_CAPTURE=true` before a pilot. Captures
-contain sensitive prompts/source; do not upload `navigation.json`. Ordinary
-navigation artifacts keep digests/locators, not raw objectives or source bodies.
+contain sensitive prompts/source; never upload the local `navigation.json`.
+GitHub creates a separate allowlisted summary and does not copy replay captures.
+Ordinary navigation artifacts keep digests/locators, not raw objectives or source
+bodies.
 Replay never contacts a model:
 
 ```bash
@@ -550,6 +552,7 @@ Configure credentials only as repository or environment Secrets:
 ```text
 OPENAI_API_KEY
 GEMINI_API_KEY
+TYPESAFE_API_KEY               # optional; required when GitHub Jev mode is shadow/on
 SAGE_LEGION_QDRANT_URL          # HTTPS endpoint
 SAGE_LEGION_QDRANT_API_KEY
 LANGSMITH_API_KEY               # optional; required when tracing is enabled
@@ -570,13 +573,20 @@ env:
   REVIEWER_MODEL: "gemini-3.5-flash"
   SAGE_LEGION_EMBEDDINGS_ENABLED: "true"  # false selects lexical memory
   SAGE_LEGION_EMBEDDING_MAX_NODES: "2000"
+  SAGE_JEV_NAVIGATION_MODE: "off"         # change only for an explicit canary
+  SAGE_JEV_NAVIGATION_POLICY: "excerpts"  # or actions
+  SAGE_JEV_LOG_INPUT: "false"
+  SAGE_JEV_CAPTURE: "false"
 ```
 
 The action inherits this repository-owned configuration. It exposes inputs only
 for credentials and run identity, preventing hidden input defaults from
 overriding the YAML. `SAGE_LEGION_QDRANT_PATH` is local-only and is intentionally
 omitted from the GitHub workflow, which requires remote Qdrant storage. Invalid
-enabled embedding configuration fails before the first model/embedding call.
+enabled embedding or Jev configuration fails before the first model/embedding
+call. The TypeSafe secret is optional while mode is `off`; `shadow` and `on`
+require it. Keep `SAGE_JEV_LOG_INPUT=false` and `SAGE_JEV_CAPTURE=false` on GitHub:
+raw Issue/source bodies belong only in deliberate local evaluation evidence.
 
 A live release canary requires a pushed implementation and both Sage Actions
 pinned to its full immutable commit SHA. In a disposable repository, invoke a
@@ -589,6 +599,16 @@ bounded Issue naming a known symbol and verify:
 4. Allowlisted diagnostics without checkout, Issue body, rendered memory context,
    Qdrant endpoint or credentials.
 5. Idempotent finalization; a second same-SHA Issue reuses eligible vectors.
+
+For a Jev canary, add the `TYPESAFE_API_KEY` repository/environment Secret and
+first set `SAGE_JEV_NAVIGATION_MODE: "shadow"` with one explicit policy. Verify
+`usage.json` contains separately accounted semantic calls and the uploaded
+`navigation.json` contains timings, counts, digests and decisions but no capture,
+candidate/action arguments, paths, queries, objectives, Issue text or source.
+Shadow must perform no internal operation. Only an explicitly approved second
+canary should use `on`; restore mode to `off` afterward. Compare it with a fixed
+Issue/base/model baseline and do not treat a successful canary as promotion or
+an efficiency result.
 
 A lexical-only canary sets `SAGE_LEGION_EMBEDDINGS_ENABLED: "false"` in the
 workflow YAML and must retain the graph with vectors disabled. Restore the
