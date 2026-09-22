@@ -6,7 +6,7 @@ from sage.cli import app as cli
 from sage.cli.app import _build_parser
 from sage.cli.output import _render_result
 from sage.domain.solve import SolveOutcome, SolveResult
-from sage.domain.usage import AgentTimingRecord, RunProvenance, SemanticCallRecord
+from sage.domain.usage import AgentTimingRecord, ModelCallRecord, RunProvenance, SemanticCallRecord
 
 
 def test_cli_uses_sage_name(capsys, tmp_path: Path) -> None:
@@ -84,3 +84,26 @@ def test_unavailable_agent_timings_differ_from_agents_not_invoked(capsys, tmp_pa
     output = capsys.readouterr().out
     for label in ("Solver (including Jev)", "Solver (without Jev)", "Jev (decisions only)", "Reviewer"):
         assert f"{label}: {expected}" in output
+
+
+def test_interrupted_summary_reports_known_tokens_including_jev_without_claiming_completion(capsys, tmp_path):
+    usage = RunProvenance(agent_timings=(AgentTimingRecord(role="solver", stage="solver", duration_ms=3000),),
+        calls=(ModelCallRecord(call_number=1, stage="solver", role="solver", attempt_kind="primary",
+            provider="openai", model="solver", latency_ms=100, input_tokens=20, output_tokens=5, outcome="success"),),
+        semantic_calls=(
+            SemanticCallRecord(call_number=1, session=1, stage="solver", policy="actions", model="jev",
+                latency_ms=500, outcome="decided", input_tokens=10, output_tokens=2),
+            SemanticCallRecord(call_number=2, session=1, stage="solver", policy="actions", model="jev",
+                latency_ms=1000, outcome="cancelled")))
+    result = SolveResult(run_id="interrupted-run", base_sha="a" * 40, summary="Interrupted",
+        remaining_uncertainty=[], changed_files=[], diff="", run_dir=tmp_path, workspace_dir=tmp_path,
+        outcome=SolveOutcome.INTERRUPTED, provenance=usage, workflow_duration_ms=5500)
+    _render_result(result, model="solver")
+    output = capsys.readouterr().out
+    assert "Solve interrupted" in output and "Agent completed" not in output
+    assert "Jev calls: 2" in output and "Total tokens: 37" in output
+    assert "Token usage incomplete: 1 call(s)" in output
+    assert "Solver (including Jev): 3.00 seconds" in output
+    assert "Solver (without Jev): 1.50 seconds" in output
+    assert "Elapsed time at interruption: 5.50 seconds" in output
+    assert "unreported in-flight tokens may still be billed" in output

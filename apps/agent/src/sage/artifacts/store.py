@@ -26,6 +26,7 @@ class RunArtifacts:
 
     def __init__(self, run_dir: Path) -> None:
         self._run_dir = run_dir
+        self.latest_usage: RunProvenance | None = None
 
     def initialize(
         self,
@@ -123,7 +124,11 @@ class RunArtifacts:
         return path
 
     def write_usage(self, value: RunProvenance) -> Path:
+        self.latest_usage = value
         return self._json("usage.json", value)
+
+    def write_interrupted(self, result: SolveResult) -> Path:
+        return self._json("interrupted.json", result)
 
     def write_navigation(self, value: dict[str, object]) -> Path:
         return self._json("navigation.json", value)

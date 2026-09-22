@@ -48,6 +48,7 @@ class SolveOutcome(StrEnum):
     VERIFICATION_FAILED = "verification_failed"
     REVIEW_FAILED = "review_failed"
     INVALID_MODEL_OUTPUT = "invalid_model_output"
+    INTERRUPTED = "interrupted"
 
 
 class AgentFinalOutput(BaseModel):

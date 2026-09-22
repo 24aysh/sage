@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from time import perf_counter
 from collections.abc import Callable
@@ -10,7 +11,7 @@ from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
 from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus, MemoryRetrievalBudgets
 from sage.domain.solve import PreparedRun, SolveOutcome, SolveRequest, SolveResult
-from sage.errors import LegionMemoryBuildError, LegionMemoryError, WorkspaceError
+from sage.errors import ArtifactError, LegionMemoryBuildError, LegionMemoryError, WorkspaceError
 from sage.legion_memory.service import LegionMemoryService
 from sage.legion_memory.session import MemorySession, unavailable_memory_artifact
 from sage.observability import log_legion_memory
@@ -36,6 +37,7 @@ async def solve_issue(
     repository_factory: RepositoryFactory | None = None,
     artifacts: RunArtifacts | None = None,
     memory_service: LegionMemoryService | None = None,
+    on_interrupted: Callable[[SolveResult], None] | None = None,
 ) -> SolveResult:
     """Execute one issue solve while guaranteeing sandbox cleanup."""
     workflow_started = perf_counter()
@@ -118,6 +120,22 @@ async def solve_issue(
         )
         run_artifacts.write_result(final_output=final_output, result=result)
         logger.info("agent run completed", extra={"run_id": prepared.run_id})
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        # Report before workflow cleanup; no Git inspection or model work after interruption.
+        partial = SolveResult(run_id=prepared.run_id, base_sha=prepared.base_sha,
+            summary="Interrupted; candidate changes have not been finalized or verified.",
+            remaining_uncertainty=[], changed_files=[], diff="", run_dir=prepared.run_dir,
+            workspace_dir=prepared.workspace_dir, outcome=SolveOutcome.INTERRUPTED,
+            provenance=run_artifacts.latest_usage,
+            memory=memory_session.artifact() if memory_session else memory_artifact,
+            workflow_duration_ms=(perf_counter() - workflow_started) * 1000)
+        try:
+            run_artifacts.write_interrupted(partial)
+        except ArtifactError:
+            logger.warning("Unable to persist interruption summary; reporting available in-memory usage.")
+        if on_interrupted is not None:
+            on_interrupted(partial)
+        raise
     finally:
         try:
             if sandbox is not None:

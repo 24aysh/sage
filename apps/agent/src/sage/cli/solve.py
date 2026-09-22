@@ -54,10 +54,12 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
                 orchestrator,
                 settings,
                 memory_service=_memory_service(arguments),
+                on_interrupted=lambda partial: _render_result(partial, model=settings.solver_model),
             )
         )
     else:
-        result = asyncio.run(solve_issue(request, orchestrator, settings))
+        result = asyncio.run(solve_issue(request, orchestrator, settings,
+            on_interrupted=lambda partial: _render_result(partial, model=settings.solver_model)))
     _render_result(
         result,
         model=settings.solver_model,

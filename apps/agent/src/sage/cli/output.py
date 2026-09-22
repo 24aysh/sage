@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sage.domain.embeddings import VectorStatus, VectorUsage
 from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
-from sage.domain.solve import SolveResult
+from sage.domain.solve import SolveOutcome, SolveResult
 
 
 def _render_result(result: SolveResult, *, model: str) -> None:
@@ -17,7 +17,12 @@ def _render_result(result: SolveResult, *, model: str) -> None:
     print(f"Base: {result.base_sha[:12]}")
     print(f"Model: {model}")
     print()
-    if result.changed_files:
+    if result.outcome is SolveOutcome.INTERRUPTED:
+        print("Solve interrupted — partial usage and elapsed time at cancellation.")
+        print("Candidate changes are unverified; this is not a completed solve.")
+        print(f"Run artifacts: {result.run_dir}")
+        print(f"Workspace: {result.workspace_dir}")
+    elif result.changed_files:
         print("Changed files:")
         for path in result.changed_files:
             print(f"  {path}")
@@ -47,6 +52,8 @@ def _render_result(result: SolveResult, *, model: str) -> None:
     _render_solve_memory_summary(result)
     _render_solve_usage_summary(result)
     _render_solve_timing_summary(result)
+    if result.outcome is SolveOutcome.INTERRUPTED:
+        print("Cleanup continues; unreported in-flight tokens may still be billed.", flush=True)
 
 
 def _render_solve_timing_summary(result: SolveResult) -> None:
@@ -64,8 +71,8 @@ def _render_solve_timing_summary(result: SolveResult) -> None:
         value = f"{elapsed / 1000:.2f} seconds" if elapsed is not None else "unavailable"
         print(f"  {label}: {value}")
     duration = result.workflow_duration_ms
-    print(f"Total solve time: {duration / 1000:.2f} seconds" if duration is not None
-          else "Total solve time: unavailable")
+    label = "Elapsed time at interruption" if result.outcome is SolveOutcome.INTERRUPTED else "Total solve time"
+    print(f"{label}: {duration / 1000:.2f} seconds" if duration is not None else f"{label}: unavailable")
 
 
 def _render_solve_memory_summary(result: SolveResult) -> None:
@@ -105,13 +112,15 @@ def _render_solve_usage_summary(result: SolveResult) -> None:
         print("  Commands: unavailable")
         print("  Total tokens: unavailable")
         return
-    input_tokens = sum(call.input_tokens or 0 for call in provenance.calls)
-    output_tokens = sum(call.output_tokens or 0 for call in provenance.calls)
+    records = (*provenance.calls, *provenance.semantic_calls)
+    input_tokens = sum(call.input_tokens or 0 for call in records)
+    output_tokens = sum(call.output_tokens or 0 for call in records)
     cached_tokens = sum(call.cached_tokens or 0 for call in provenance.calls)
     tool_counts: dict[str, int] = {}
     for call in provenance.tool_calls:
         tool_counts[call.tool_name] = tool_counts.get(call.tool_name, 0) + 1
     print(f"  Model calls: {len(provenance.calls)}")
+    print(f"  Jev calls: {len(provenance.semantic_calls)}")
     print(f"  Total tool calls: {len(provenance.tool_calls)}")
     print(
         "  Tools: "
@@ -127,6 +136,9 @@ def _render_solve_usage_summary(result: SolveResult) -> None:
     print(f"  Output tokens: {output_tokens}")
     print(f"  Cached input tokens: {cached_tokens}")
     print(f"  Total tokens: {input_tokens + output_tokens}")
+    missing = sum(call.input_tokens is None or call.output_tokens is None for call in records)
+    if missing:
+        print(f"  Token usage incomplete: {missing} call(s) have unreported usage; totals include known tokens only.")
 
 
 def _render_memory_retrieval(
