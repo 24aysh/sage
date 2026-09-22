@@ -38,7 +38,7 @@ async def solve_issue(
     memory_service: LegionMemoryService | None = None,
 ) -> SolveResult:
     """Execute one issue solve while guaranteeing sandbox cleanup."""
-
+    workflow_started = perf_counter()
     effective_settings = settings
     if request.sandbox_image:
         effective_settings = settings.model_copy(
@@ -124,11 +124,14 @@ async def solve_issue(
             if sandbox is not None:
                 sandbox.stop()
         finally:
-            if memory_session is not None:
-                try:
-                    run_artifacts.write_legion_memory(memory_session.artifact())
-                finally:
-                    memory_session.close()
+            try:
+                if memory_session is not None:
+                    try:
+                        run_artifacts.write_legion_memory(memory_session.artifact())
+                    finally:
+                        memory_session.close()
+            finally:
+                run_artifacts.write_workflow_timing((perf_counter() - workflow_started) * 1000)
 
 
 def _prepare_memory(

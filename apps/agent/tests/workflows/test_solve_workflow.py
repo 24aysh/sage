@@ -51,6 +51,10 @@ class EmptyRepository:
 
 
 class FakeStore:
+    def write_workflow_timing(self, duration_ms: float) -> None:
+        assert duration_ms >= 0
+        self.duration_ms = duration_ms
+
     def __init__(self) -> None:
         self.initialized = False
         self.persisted = False
