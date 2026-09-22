@@ -23,6 +23,8 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
         '{"excerpt":"private repository text"}\n',
         encoding="utf-8",
     )
+    (run_dir / "navigation.json").write_text('{"capture":{"source":"private Jev replay"}}')
+    (run_dir / "usage.json").write_text('{"semantic_calls":[{"model":"jev-1.13.0","input_tokens":23}]}')
     (run_dir / "legion-memory.json").write_text(
         '{"status":"used","retrieval":{"context":"private source body",'
         '"context_chars":19}}\n',
@@ -57,6 +59,8 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
     assert '"context_chars": 19' in memory
     assert "private source body" not in memory
     assert not (diagnostics / "unlisted-context.json").exists()
+    assert not (diagnostics / "navigation.json").exists()
+    assert '"semantic_calls"' in (diagnostics / "usage.json").read_text()
     assert "private repository text" not in "\n".join(
         path.read_text(encoding="utf-8") for path in diagnostics.iterdir()
     )
