@@ -63,7 +63,8 @@ def build_orchestrator(settings: Settings) -> SolveOrchestrator:
     def navigation_factory(**arguments) -> NavigationSession:
         assert settings.jev.api_key is not None
         provider = TypeSafeProvider(api_key=settings.jev.api_key, model=settings.jev.model,
-                                    capture=settings.jev.capture)
+            capture=settings.jev.capture, log_input=settings.jev.mode == "on" and settings.jev.log_input,
+            run_id=arguments["context"].prepared_run.run_id)
         return NavigationSession(provider=provider, **arguments)
 
     return SolveOrchestrator(

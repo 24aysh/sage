@@ -146,6 +146,7 @@ class JevSettings(BaseModel):
     timeout_seconds: float = Field(default=2, gt=0, le=2)
     run_wait_seconds: float = Field(default=8, gt=0, le=8)
     capture: bool = False
+    log_input: bool = True
 
     @model_validator(mode="after")
     def credential(self) -> JevSettings:
@@ -163,6 +164,7 @@ class JevSettings(BaseModel):
                 max_followup_actions=int(values.get("SAGE_JEV_MAX_FOLLOWUP_ACTIONS", "1")),
                 timeout_seconds=values.get("SAGE_JEV_TIMEOUT_SECONDS", "2"),
                 run_wait_seconds=values.get("SAGE_JEV_RUN_WAIT_SECONDS", "8"),
+                log_input=_parse_bool(values.get("SAGE_JEV_LOG_INPUT", "true"), name="SAGE_JEV_LOG_INPUT"),
                 capture=_parse_bool(values.get("SAGE_JEV_CAPTURE", "false"), name="SAGE_JEV_CAPTURE"))
         except (ValueError, ValidationError):
             raise ConfigurationError("Invalid Jev settings; check mode, policy, key and budgets.") from None

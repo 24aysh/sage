@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import sqlite3
 from pathlib import PurePosixPath
 from time import monotonic
@@ -20,6 +21,8 @@ from sage.repository.snippets import source_identity
 from sage.repository.filesystem import workspace_relative_path
 from sage.orchestration.context import SolveContext
 from sage.providers.calls import ModelCalls
+
+logger = logging.getLogger(__name__)
 
 
 class NavigationSession:
@@ -86,6 +89,17 @@ class NavigationSession:
 
     def _record(self, **values) -> None:
         parent = self.calls.latest_tool_call
+        if values.get("status") not in {"explicit_read", "step_limit"} and logger.isEnabledFor(logging.INFO):
+            # Deliberate allowlist: source, action arguments and replay captures stay out of summaries.
+            summary = {key: values[key] for key in ("status", "step", "candidate_count",
+                "candidate_retrieval_ms", "retrieval_ms", "latency_ms", "navigation_ms",
+                "structural_retrieval_ms", "input_tokens", "output_tokens", "selected", "operation",
+                "exposed_chars", "disabled") if key in values}
+            logger.info("Jev navigation %s", json.dumps({"run_id": getattr(self.context.prepared_run, "run_id", None),
+                "session": self.session, "stage": self.stage, "sequence": self.sequence,
+                "request": self.requests, "root_tool_call_id": parent.tool_call_id if parent else None,
+                "mode": self.settings.mode, "policy": self.settings.policy, "model": self.provider.model,
+                **summary}, ensure_ascii=True, separators=(",", ":")))
         if len(self.records) < 128:
             self.records.append({"sequence": self.sequence, "session": self.session, "stage": self.stage,
                 "parent_tool_call": parent.call_number if parent else None,
@@ -147,6 +161,9 @@ class NavigationSession:
             else:
                 self.capture_bytes += size
             self._record(step=step, status=status, latency_ms=elapsed * 1000,
+                input_tokens=decision.input_tokens if decision and decision.input_tokens is not None else "unknown",
+                output_tokens=decision.output_tokens if decision and decision.output_tokens is not None else "unknown",
+                selected=list(decision.selected) if decision else [], disabled=self.disabled,
                 objective_digest=digest(state["goal"]), candidate_set_digest=digest(
                     json.dumps([c.model_dump() for c in candidates], sort_keys=True)),
                 candidates=[{"id": c.id, "action": c.action.model_dump()} for c in candidates],
@@ -156,6 +173,7 @@ class NavigationSession:
     async def enrich(self, *, tool_name: str, source: str, path: str, query: str = "",
                      matches: tuple[SearchMatch, ...] = (), start_line: int = 1,
                      exploration_goal: str | None = None) -> str:
+        started = self.clock()
         self.sequence += 1
         deadline = self.clock() + min(8.0, self.calls.remaining_navigation_seconds())
         cap = max(0, min(3000, self.context.settings.max_tool_output_chars - len(source),
@@ -165,10 +183,13 @@ class NavigationSession:
             self._mark_visible(path, source)
             self._record(status="explicit_read", path=path, source_digest=digest(source), chars=len(source))
         addition = ""
+        structural_ms = 0.0
         if self.memory is not None and not self.graph_disabled:
+            structural_started = self.clock()
             addition = self.memory.enrich(tool_name=tool_name, source_chars=len(source), available_chars=cap,
                 path=path if tool_name == "read_file" else None, query=query or None,
                 start_line=start_line, end_line=max(numbered_lines(source), default=start_line))
+            structural_ms = (self.clock() - structural_started) * 1000
         goal = (exploration_goal or "").strip() if self.action_policy else query
         eligible = (0 < len(goal) <= 600 and (self.action_policy or tool_name == "search_text"))
         if eligible and cap - len(addition) >= 300:
@@ -178,7 +199,8 @@ class NavigationSession:
             self._record(status="no_goal_or_output_budget")
         self.total_chars += len(addition)
         self.session_chars += len(addition)
-        self._record(status="returned", exposed_chars=len(addition))
+        self._record(status="returned", exposed_chars=len(addition),
+            navigation_ms=(self.clock() - started) * 1000, structural_retrieval_ms=structural_ms)
         return addition
 
     async def _explore(self, *, tool_name: str, source: str, path: str, query: str,
@@ -198,9 +220,12 @@ class NavigationSession:
                 break
             saved = self.plan()
             anchors = (*self.anchors, *(saved.plan.relevant_paths if saved else ()))
+            candidate_started = self.clock()
             candidates, identities = shortlist(root=self.root, matches=matches, source=source,
                 path=path, scope=scope, query=query, actions=self.action_policy, nodes=nodes,
                 visible=self.visible, attempted=self.attempted, anchors=anchors)
+            self._record(step=step, status="candidates", candidate_count=len(candidates),
+                candidate_retrieval_ms=(self.clock() - candidate_started) * 1000)
             if len(candidates) < (1 if self.action_policy else 2):
                 self._record(step=step, status="no_candidates")
                 break
@@ -240,7 +265,13 @@ class NavigationSession:
                     self.operations += 1
                     self.session_operations += 1
                     self.attempted.add(fingerprint(action))
-                    result, new_matches, graph = self._dispatch(action, deadline, room - len(output))
+                    retrieval_started, retrieval_status = self.clock(), "retrieval_failed"
+                    try:
+                        result, new_matches, graph = self._dispatch(action, deadline, room - len(output))
+                        retrieval_status = "retrieved"
+                    finally:
+                        self._record(step=step, status=retrieval_status, operation=action.kind,
+                            retrieval_ms=(self.clock() - retrieval_started) * 1000)
                     result_id = digest(result)
                     if result_id in result_digests or not result.strip() or result == "[no matches]":
                         self._record(step=step, status="no_novel_evidence", action=action.model_dump())

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -77,6 +78,115 @@ def root_search(nav, **kwargs):
     return asyncio.run(nav.enrich(tool_name="search_text", source="app.py:1:1:def calculate():",
         query="calculate", path=".", matches=(SearchMatch(path="app.py", line=1, column=1,
         text="def calculate():"),), exploration_goal="Find implementation and callers", **kwargs))
+
+
+def test_logs_separate_candidate_decision_and_retrieval_times(setup_navigation, caplog, monkeypatch):
+    import sage.orchestration.navigation as module
+
+    caplog.set_level(logging.INFO, logger=module.__name__)
+    tick = [0.0]
+
+    def choose(candidates):
+        tick[0] += .125
+        return "read_file"
+
+    nav, context, _, _, _ = setup_navigation([choose], steps=1)
+    context.prepared_run.run_id = "run-1"
+    nav.clock = lambda: tick[0]
+    original_shortlist, original_dispatch = module.shortlist, nav._dispatch
+
+    def shortlist(**kwargs):
+        tick[0] += .010
+        return original_shortlist(**kwargs)
+
+    def dispatch(*args):
+        tick[0] += .250
+        return original_dispatch(*args)
+
+    monkeypatch.setattr(module, "shortlist", shortlist)
+    monkeypatch.setattr(nav, "_dispatch", dispatch)
+    assert "return 42" in root_search(nav)
+    events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records
+              if r.name == module.__name__]
+    by_status = {e["status"]: e for e in events}
+    assert by_status["candidates"]["candidate_retrieval_ms"] == pytest.approx(10)
+    assert by_status["decided"]["latency_ms"] == pytest.approx(125)
+    assert by_status["decided"]["input_tokens"] == 100
+    assert by_status["decided"]["output_tokens"] == 10
+    assert by_status["retrieved"]["retrieval_ms"] == pytest.approx(250)
+    assert by_status["retrieved"]["operation"] == "read_file"
+    assert by_status["returned"]["navigation_ms"] == pytest.approx(385)
+    assert by_status["returned"]["structural_retrieval_ms"] == 0
+    assert all(e["run_id"] == "run-1" and e["sequence"] == 1 for e in events)
+    assert by_status["decided"]["request"] == 1
+    assert "Fix calculate" not in caplog.text and "return 42" not in caplog.text
+    recorded = json.loads((context.prepared_run.workspace_dir / "artifacts" / "navigation.json").read_text())
+    assert any(r.get("retrieval_ms") == pytest.approx(250) for r in recorded["records"])
+
+
+@pytest.mark.parametrize("failure", [NavigationUnavailable("http_529"), asyncio.CancelledError()])
+def test_failed_decision_logs_unknown_tokens(setup_navigation, caplog, failure):
+    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    nav, _, _, _, _ = setup_navigation([failure])
+    if isinstance(failure, asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError):
+            root_search(nav)
+    else:
+        root_search(nav)
+    events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
+    decision = next(e for e in events if "input_tokens" in e)
+    assert decision["input_tokens"] == decision["output_tokens"] == "unknown"
+    assert decision["latency_ms"] >= 0
+
+
+def test_failed_retrieval_logs_time_without_exception_body(setup_navigation, caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    nav, _, _, _, _ = setup_navigation(["read_file"], steps=1)
+
+    def fail(*args):
+        raise RepositoryError("private exception source")
+
+    monkeypatch.setattr(nav, "_dispatch", fail)
+    root_search(nav)
+    events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
+    assert next(e for e in events if e["status"] == "retrieval_failed")["retrieval_ms"] >= 0
+    assert "private exception source" not in caplog.text
+
+
+def test_shadow_logs_decisions_but_no_retrieval(setup_navigation, caplog):
+    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    nav, _, _, _, _ = setup_navigation(["read_file"], mode="shadow")
+    root_search(nav)
+    events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
+    assert any(e["status"] == "decided" and e["input_tokens"] == 100 for e in events)
+    assert any(e["status"] == "shadow_no_dispatch" for e in events)
+    assert not any("retrieval_ms" in e for e in events)
+
+
+def test_zero_usage_is_not_logged_as_unknown(setup_navigation, caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    nav, _, provider, _, _ = setup_navigation([None])
+    choose = provider.choose_action
+
+    async def zero_usage(**kwargs):
+        decision = await choose(**kwargs)
+        return decision.model_copy(update={"input_tokens": 0, "output_tokens": 0})
+
+    monkeypatch.setattr(provider, "choose_action", zero_usage)
+    root_search(nav)
+    events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
+    decision = next(e for e in events if e["status"] == "decided")
+    assert decision["input_tokens"] == decision["output_tokens"] == 0
+
+
+def test_skipped_navigation_logs_reason_without_inventing_usage(setup_navigation, caplog):
+    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    nav, _, provider, _, _ = setup_navigation()
+    asyncio.run(nav.enrich(tool_name="read_file", source="1 | def calculate():", path="app.py"))
+    events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
+    assert any(e["status"] == "no_goal_or_output_budget" for e in events)
+    assert not any("input_tokens" in e for e in events)
+    assert not provider.requests
 
 
 def test_two_dependent_actions_and_one_tool_message(setup_navigation):

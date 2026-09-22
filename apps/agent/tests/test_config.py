@@ -179,10 +179,13 @@ def test_jev_is_opt_in_and_credentials_are_redacted():
     import pytest
 
     assert JevSettings.from_env({}).mode == "off"
+    assert JevSettings.from_env({}).log_input is True
+    assert JevSettings.from_env({"SAGE_JEV_LOG_INPUT": "false"}).log_input is False
     with pytest.raises(ConfigurationError):
         JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "on"})
     for key, value in [("SAGE_JEV_MAX_FOLLOWUP_ACTIONS", "3"), ("SAGE_JEV_TIMEOUT_SECONDS", "3"),
-                       ("SAGE_JEV_RUN_WAIT_SECONDS", "9"), ("SAGE_JEV_NAVIGATION_POLICY", "write")]:
+                       ("SAGE_JEV_RUN_WAIT_SECONDS", "9"), ("SAGE_JEV_NAVIGATION_POLICY", "write"),
+                       ("SAGE_JEV_LOG_INPUT", "invalid")]:
         with pytest.raises(ConfigurationError):
             JevSettings.from_env({key: value, "TYPESAFE_API_KEY": "private-key"})
     enabled = JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "shadow", "TYPESAFE_API_KEY": "private-key"})

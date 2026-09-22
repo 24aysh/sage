@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import math
 from typing import Literal
 
@@ -15,6 +16,7 @@ SCORE_LEVELS = ["Unrelated or already visible evidence.",
                 "Possibly useful background, unlikely to avoid a Solver read.",
                 "Directly relevant new source likely needed for the current task.",
                 "Strong direct evidence addressing the query and current task."]
+logger = logging.getLogger(__name__)
 
 
 class _Answer(BaseModel):
@@ -49,10 +51,13 @@ def build_request(model: str, state: dict, candidates: tuple[ActionCandidate, ..
 
 class TypeSafeProvider:
     def __init__(self, *, api_key: str, model: str = "jev-1.13.0", capture: bool = False,
+                 log_input: bool = False, run_id: str | None = None,
                  transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.model = model
         self.capture: dict | None = None
         self._capture_enabled = capture
+        self._log_input, self._run_id, self._requests = log_input, run_id, 0
+        self._redacted_key = json.dumps(api_key, ensure_ascii=True)[1:-1]
         self._client = httpx.AsyncClient(transport=transport, follow_redirects=False,
             headers={"Authorization": f"Bearer {api_key}"},
             limits=httpx.Limits(max_connections=1, max_keepalive_connections=1))
@@ -68,12 +73,20 @@ class TypeSafeProvider:
     async def _request(self, state: dict, candidates: tuple[ActionCandidate, ...],
                        timeout: float, *, actions: bool) -> NavigationDecision:
         self.capture = None
+        self._requests += 1
         payload = build_request(self.model, state, candidates, actions=actions)
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
         if len(encoded) > 16_000:
             raise NavigationUnavailable("request_size")
         if self._capture_enabled:
             self.capture = {"request": payload}
+        if self._log_input and logger.isEnabledFor(logging.INFO):
+            # Preserve the complete body, but escape terminal controls and never log auth headers.
+            message = json.dumps({"run_id": self._run_id, "request": self._requests,
+                                  "input": payload}, ensure_ascii=True, separators=(",", ":"))
+            if self._redacted_key:
+                message = message.replace(self._redacted_key, "[REDACTED]")
+            logger.info("Jev request %s", message)
         try:
             async with asyncio.timeout(timeout):
                 async with self._client.stream("POST", "https://api.typesafe.ai/v1/systemone",
