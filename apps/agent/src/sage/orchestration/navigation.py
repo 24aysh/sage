@@ -134,7 +134,7 @@ class NavigationSession:
             status = "decided"
             self.failures = 0
             return decision
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, KeyboardInterrupt):
             status = "cancelled"
             raise
         except (NavigationUnavailable, TimeoutError) as error:

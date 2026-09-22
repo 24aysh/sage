@@ -94,6 +94,38 @@ def test_agent_elapsed_time_includes_entire_operation_and_persists_on_exit(failu
     assert not manager.records
 
 
+def test_reviewer_cancellation_records_unknown_usage_and_does_not_retry():
+    class CancelledProvider(Provider):
+        async def invoke_structured(self, **kwargs):
+            self.calls.append(kwargs)
+            raise asyncio.CancelledError()
+
+    provider, snapshots = CancelledProvider([]), []
+    manager = ModelCalls(settings=_settings(), reviewer=provider, usage_writer=snapshots.append)
+
+    async def run():
+        await manager.measure_agent(role="reviewer", stage="review", operation=manager.invoke_reviewer(
+            stage="review", messages=[], schema=Result))
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
+    call, = manager.records
+    assert len(provider.calls) == 1 and call.outcome == "cancelled"
+    assert call.input_tokens is None and call.output_tokens is None
+    assert call.latency_ms >= 0
+    assert snapshots[-1].agent_timings[0].role is ModelRole.REVIEWER
+
+
+def test_solver_cancellation_is_recorded_without_fabricating_tokens():
+    manager = ModelCalls(settings=_settings(), reviewer=Provider([]))
+    number = manager.start_coding_call(role=ModelRole.SOLVER, stage="solver")
+    manager.fail_coding_call(role=ModelRole.SOLVER, stage="solver", call_number=number,
+        error=asyncio.CancelledError(), latency_ms=123)
+    call, = manager.records
+    assert call.outcome == "cancelled" and call.input_tokens is None
+    assert call.latency_ms == 123
+
+
 def test_schema_error_gets_one_bounded_repair() -> None:
     provider = Provider(
         [

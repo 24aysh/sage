@@ -191,7 +191,7 @@ class ModelCalls:
                 provider="openai",
                 model=self._settings.solver_model,
                 latency_ms=latency_ms,
-                outcome="error",
+                outcome="cancelled" if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt)) else "error",
                 error_category=type(error).__name__[:80],
             )
         )
@@ -303,6 +303,12 @@ class ModelCalls:
                 timeout_seconds=self._settings.model_request_timeout_seconds,
                 runnable_config=config,
             )
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            self._append_record(ModelCallRecord(call_number=call_number, stage=stage,
+                role=ModelRole.REVIEWER, attempt_kind=kind, provider=provider.provider_name,
+                model=provider.model_name, latency_ms=max(0.0, perf_counter() - started) * 1000,
+                outcome="cancelled", retry_count=retry_count))
+            raise
         except ProviderInvocationError as error:
             self._consecutive_failures[provider.provider_name] = (
                 self._consecutive_failures.get(provider.provider_name, 0) + 1
