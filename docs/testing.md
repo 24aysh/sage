@@ -61,6 +61,10 @@ Set these in the `.env` loaded by Make (or your selected `ENV_FILE`):
 SAGE_JEV_NAVIGATION_MODE=on
 SAGE_JEV_NAVIGATION_POLICY=actions
 SAGE_JEV_MAX_FOLLOWUP_ACTIONS=1
+SAGE_JEV_READ_PROBABILITY_THRESHOLD=0.65
+SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD=0.75
+SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD=0.80
+SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD=0.50
 SAGE_JEV_LOG_INPUT=true
 SAGE_JEV_CAPTURE=false
 ```
@@ -205,9 +209,27 @@ terminal/file output itself can add overhead.
 Time settings may lower, but not exceed, two seconds per request/eight seconds
 total Jev wait. Failures preserve ordinary tool results. Inspect `usage.json`
 (`semantic_calls`), `navigation.json`, and `workflow-timing.json`. Provisional
-Score acceptance is 2/3 with confidence 0.5; action probabilities must reach
-0.65/read, 0.75/search or 0.8/graph with confidence 0.5. These are experimental
-policy values, not calibrated correctness guarantees.
+Score acceptance is 2/3 with confidence 0.5 and is not configured by the action
+variables below.
+
+For `policy=actions`, Sage dispatches only when the selected candidate probability
+is greater than or equal to its configured operation threshold **and** overall
+Choice confidence is greater than or equal to its configured threshold:
+
+- `SAGE_JEV_READ_PROBABILITY_THRESHOLD` (default `0.65`)
+- `SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD` (default `0.75`)
+- `SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD` (default `0.80`)
+- `SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD` (default `0.50`)
+
+All accept finite values from `0` through `1`. Candidate probability is Jev's
+relative weight for that action among the offered candidates (including the
+handback), while confidence describes how decisive the complete distribution is;
+neither is a measured correctness rate. Lower values allow more internal work
+but risk irrelevant evidence, context and operation latency. Higher values hand
+back more often but do not remove the already-incurred Jev request latency.
+Defaults are experimental policy values, not calibrated correctness guarantees.
+On rejection, the INFO summary and `navigation.json` record both observed and
+required values; the artifact also records all configured thresholds.
 
 For exact **local** replay, set `SAGE_JEV_CAPTURE=true` before a pilot. Captures
 contain sensitive prompts/source; do not upload `navigation.json`. Ordinary
