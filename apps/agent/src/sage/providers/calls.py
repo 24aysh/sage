@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from time import monotonic, perf_counter
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sage.config import Settings
 from sage.domain.usage import (
     AgentToolCallRecord,
+    AgentTimingRecord,
     AttemptKind,
     ModelCallRecord,
     ModelRole,
@@ -53,6 +54,7 @@ class ModelCalls:
         self._lock = asyncio.Lock()
         self._records: list[ModelCallRecord] = []
         self._semantic_calls: list[SemanticCallRecord] = []
+        self._agent_timings: list[AgentTimingRecord] = []
         self._tool_calls: list[AgentToolCallRecord] = []
         self._commands: list[str] = []
         self._consecutive_failures: dict[str, int] = {}
@@ -84,11 +86,22 @@ class ModelCalls:
         return RunProvenance(
             calls=self.records,
             semantic_calls=tuple(self._semantic_calls),
+            agent_timings=tuple(self._agent_timings),
             tool_calls=tuple(self._tool_calls),
             commands=tuple(self._commands),
             solver_sessions=self.solver_sessions,
             review_cycles=self.review_cycles,
         )
+
+    async def measure_agent[T](self, *, role: str, stage: str, operation: Awaitable[T]) -> T:
+        """Account complete sequential role invocations, even on failure/cancellation."""
+        started = self._clock()
+        try:
+            return await operation
+        finally:
+            self._agent_timings.append(AgentTimingRecord(role=ModelRole(role), stage=stage,
+                duration_ms=max(0.0, self._clock() - started) * 1000))
+            self._persist()
 
     def record_command(self, command: str) -> None:
         """Persist one policy-approved Solver command that reached execution."""

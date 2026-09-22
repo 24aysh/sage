@@ -67,6 +67,33 @@ def test_reviewer_activity_is_named_and_prompt_content_is_not_logged(caplog) -> 
     assert provider.calls[0]["runnable_config"]["run_name"] == "Reviewer"
 
 
+@pytest.mark.parametrize("failure", [None, RuntimeError("failed"), asyncio.CancelledError()])
+def test_agent_elapsed_time_includes_entire_operation_and_persists_on_exit(failure):
+    tick, snapshots = [10.0], []
+    manager = ModelCalls(settings=_settings(), reviewer=Provider([]), clock=lambda: tick[0],
+                         usage_writer=snapshots.append)
+
+    async def operation():
+        tick[0] += 3.5  # Includes tool execution or retry backoff, not just model HTTP time.
+        if failure is not None:
+            raise failure
+        return "result"
+
+    async def run():
+        return await manager.measure_agent(role="solver", stage="solver-repair", operation=operation())
+
+    if failure is None:
+        assert asyncio.run(run()) == "result"
+    else:
+        with pytest.raises(type(failure)):
+            asyncio.run(run())
+    timing, = manager.provenance().agent_timings
+    assert timing.role is ModelRole.SOLVER
+    assert timing.stage == "solver-repair" and timing.duration_ms == 3500
+    assert snapshots[-1].agent_timings == (timing,)
+    assert not manager.records
+
+
 def test_schema_error_gets_one_bounded_repair() -> None:
     provider = Provider(
         [

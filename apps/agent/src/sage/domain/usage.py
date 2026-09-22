@@ -70,6 +70,15 @@ class SemanticCallRecord(BaseModel):
     output_tokens: int | None = Field(default=None, ge=0)
 
 
+class AgentTimingRecord(BaseModel):
+    """Elapsed time for one complete role invocation, including tools and waits."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    role: ModelRole
+    stage: str = Field(min_length=1, max_length=100)
+    duration_ms: float = Field(ge=0, allow_inf_nan=False)
+
+
 class RunProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -78,6 +87,7 @@ class RunProvenance(BaseModel):
     profile: str = "constrained-cross-provider"
     calls: tuple[ModelCallRecord, ...] = ()
     semantic_calls: tuple[SemanticCallRecord, ...] = ()
+    agent_timings: tuple[AgentTimingRecord, ...] | None = None
     tool_calls: tuple[AgentToolCallRecord, ...] = ()
     commands: tuple[ExecutedCommand, ...] = ()
     solver_sessions: int = Field(default=0, ge=0)

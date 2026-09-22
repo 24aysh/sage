@@ -115,18 +115,21 @@ class SolveOrchestrator:
             if self._navigation_factory is not None:
                 context = replace(context, navigation=self._navigation_factory(
                     context=context, calls=calls, issue=issue_text, plan=lambda: plans.saved))
-            solver_result = await self._solver.run(
-                stage="solver",
-                message=build_solver_message(
-                    base_sha=context.prepared_run.base_sha,
-                    issue_text=issue_text,
-                    memory_context=(
-                        context.memory.initial_context if context.memory else None
+            solver_result = await calls.measure_agent(
+                role="solver", stage="solver",
+                operation=self._solver.run(
+                    stage="solver",
+                    message=build_solver_message(
+                        base_sha=context.prepared_run.base_sha,
+                        issue_text=issue_text,
+                        memory_context=(
+                            context.memory.initial_context if context.memory else None
+                        ),
                     ),
+                    context=context,
+                    plans=plans,
+                    calls=calls,
                 ),
-                context=context,
-                plans=plans,
-                calls=calls,
             )
             review_version = 0
             verification_pass = 0
@@ -186,28 +189,34 @@ class SolveOrchestrator:
                         )
                         return self._persist_terminal(final, context, calls)
                     prior_progress = progress
-                    solver_result = await self._solver.run(
-                        stage="solver-repair",
-                        message=build_repair_message(
-                            issue_text=issue_text,
-                            plan_json=plans.saved.model_dump_json(indent=2),
-                            candidate_diff=snapshot.diff,
-                            findings_json=verification.model_dump_json(indent=2),
+                    solver_result = await calls.measure_agent(
+                        role="solver", stage="solver-repair",
+                        operation=self._solver.run(
+                            stage="solver-repair",
+                            message=build_repair_message(
+                                issue_text=issue_text,
+                                plan_json=plans.saved.model_dump_json(indent=2),
+                                candidate_diff=snapshot.diff,
+                                findings_json=verification.model_dump_json(indent=2),
+                            ),
+                            context=context,
+                            plans=plans,
+                            calls=calls,
                         ),
-                        context=context,
-                        plans=plans,
-                        calls=calls,
                     )
                     continue
 
                 review_version += 1
-                review = await self._reviewer.review(
-                    issue_text=issue_text,
-                    snapshot=snapshot,
-                    verification=verification,
-                    plan=plans.saved,
-                    calls=calls,
-                    rereview=review_version > 1,
+                review = await calls.measure_agent(
+                    role="reviewer", stage="rereview" if review_version > 1 else "review",
+                    operation=self._reviewer.review(
+                        issue_text=issue_text,
+                        snapshot=snapshot,
+                        verification=verification,
+                        plan=plans.saved,
+                        calls=calls,
+                        rereview=review_version > 1,
+                    ),
                 )
                 artifacts.write_review(review, version=review_version)
                 if review.verdict is ReviewVerdict.PASS:
@@ -252,23 +261,26 @@ class SolveOrchestrator:
                     )
                     return self._persist_terminal(final, context, calls)
                 prior_progress = progress
-                solver_result = await self._solver.run(
-                    stage="solver-repair",
-                    message=build_repair_message(
-                        issue_text=issue_text,
-                        plan_json=plans.saved.model_dump_json(indent=2),
-                        candidate_diff=snapshot.diff,
-                        findings_json=json.dumps(
-                            [
-                                finding.model_dump(mode="json")
-                                for finding in review.blocking_findings
-                            ],
-                            indent=2,
+                solver_result = await calls.measure_agent(
+                    role="solver", stage="solver-repair",
+                    operation=self._solver.run(
+                        stage="solver-repair",
+                        message=build_repair_message(
+                            issue_text=issue_text,
+                            plan_json=plans.saved.model_dump_json(indent=2),
+                            candidate_diff=snapshot.diff,
+                            findings_json=json.dumps(
+                                [
+                                    finding.model_dump(mode="json")
+                                    for finding in review.blocking_findings
+                                ],
+                                indent=2,
+                            ),
                         ),
+                        context=context,
+                        plans=plans,
+                        calls=calls,
                     ),
-                    context=context,
-                    plans=plans,
-                    calls=calls,
                 )
         except Exception as error:
             final = failure_terminal(error, calls)

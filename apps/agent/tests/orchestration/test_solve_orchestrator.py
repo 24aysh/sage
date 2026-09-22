@@ -237,6 +237,12 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
     assert result.provenance is not None
     assert result.provenance.solver_sessions == 3
     assert result.provenance.review_cycles == 3
+    assert [(t.role.value, t.stage) for t in result.provenance.agent_timings] == [
+        ("solver", "solver"), ("reviewer", "review"),
+        ("solver", "solver-repair"), ("reviewer", "rereview"),
+        ("solver", "solver-repair"), ("reviewer", "rereview"),
+    ]
+    assert all(t.duration_ms >= 0 for t in result.provenance.agent_timings)
     assert len(result.provenance.calls) > 6
     assert len(reviewer.messages) == 3
     assert "Change app.py" in reviewer.messages[0]

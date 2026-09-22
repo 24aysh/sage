@@ -169,7 +169,8 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
 
     # CLI command owners and repository indexing replace two oversized modules.
     assert len(files) <= 106
-    assert nonblank_lines <= 16_300
+    # Allow bounded per-role elapsed accounting without adding modules or dependencies.
+    assert nonblank_lines <= 16_350
     assert orchestrator_lines <= 400
     for path in files:
         assert len(_sage_imports(path)) <= 14, path
