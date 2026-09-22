@@ -305,8 +305,12 @@ mapping, covered with HTTP contract fixtures. Do not upgrade unrelated packages.
 The official SDK is a valid alternative if implementation reveals significant
 contract complexity. Its async API supports explicit timeout and disabling
 retries; do not inherit its retry policy invisibly. It also warns that body
-logging is not redacted. Whichever transport is used, keep bodies out of normal
-logs. [Async SDK reference](https://docs.typesafe.ai/sdk/python/api/clients/async),
+logging is not redacted. The original plan kept bodies out of normal logs.
+The subsequent user-requested local logging extension enables complete bounded
+input logs at INFO in navigation mode `on`, with `SAGE_JEV_LOG_INPUT=false` as
+the privacy opt-out; shadow remains summary-only. See the current testing guide
+for timing/usage fields and sensitive-log handling. Artifact capture remains a
+separate opt-in. [Async SDK reference](https://docs.typesafe.ai/sdk/python/api/clients/async),
 [retry configuration](https://docs.typesafe.ai/sdk/python/api/retries)
 
 The current source tree contains 100 Python modules and architecture tests cap

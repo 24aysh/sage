@@ -97,6 +97,14 @@ Bounded `navigation.json` records candidate locators, decisions, digests,
 exposure and stop reasons. Optional `SAGE_JEV_CAPTURE=true` adds sensitive exact
 requests/responses for local replay only (16,000-byte request and 256,000-byte
 aggregate capture caps). This file is excluded from GitHub diagnostics.
+Both local solve commands use the existing INFO logging configuration. Navigation
+summaries expose candidate-retrieval, decision, selected-operation and total
+enrichment timings, provider-reported usage (unknown on failure), and stop reasons.
+The provider logs the complete bounded request body in mode `on` by default;
+`SAGE_JEV_LOG_INPUT=false` suppresses bodies without suppressing summaries.
+Shadow logs summaries only. Headers never enter these logs, the TypeSafe key is
+redacted and control characters are escaped, but source/Issue content can still
+contain sensitive data. Console input logging and artifact capture are independent.
 `workflow-timing.json` measures preparation through resource cleanup, separate
 from the post-memory model-call deadline. See the
 [testing guide](testing.md#jev-navigation-experiments) for evaluation controls.

@@ -53,6 +53,92 @@ For actions, `SAGE_JEV_MAX_FOLLOWUP_ACTIONS=1|2` selects the bound. Existing
 `make solve` and `make legion-solve` honor these settings; memory is optional.
 Never put credentials in the candidate repository or sandbox.
 
+### Console logs for solve and legion-solve
+
+Set these in the `.env` loaded by Make (or your selected `ENV_FILE`):
+
+```dotenv
+SAGE_JEV_NAVIGATION_MODE=on
+SAGE_JEV_NAVIGATION_POLICY=actions
+SAGE_JEV_MAX_FOLLOWUP_ACTIONS=1
+SAGE_JEV_LOG_INPUT=true
+SAGE_JEV_CAPTURE=false
+```
+
+Also configure `OPENAI_API_KEY`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY` privately
+in that file. Run commands from the Sage checkout, with Docker running and the
+sandbox image available (`make bootstrap` for first-time setup; `make doctor`
+to check an existing setup). These solve commands make paid model requests.
+Put Jev settings in the loaded env file: Make sources it before solving, so its
+values override conflicting variables exported in your shell.
+
+Use a committed target repository and an Issue requiring source exploration,
+such as tracing a function's callers and tests. Replace the absolute example
+paths below. Keep the Issue file and memory database outside the target repository.
+
+Without Legion Memory:
+
+```bash
+make solve REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
+```
+
+With Legion Memory, first build the graph and then run a memory-enabled solve:
+
+```bash
+make legion-memory REPO=/absolute/repo \
+  MEMORY_FILE=/absolute/sage-memory/graph.sqlite3 EMBEDDINGS=off
+
+make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  MEMORY=/absolute/sage-memory/graph.sqlite3 EMBEDDINGS=off BASE_REF=HEAD
+```
+
+`legion-memory` builds committed-source memory; it does **not** call Jev, even
+when navigation mode is on. Jev runs during `solve` or `legion-solve` exploration.
+The build target uses `MEMORY_FILE`; the solve target uses `MEMORY`. Disabling
+embeddings here isolates Jev from embedding cost/network activity; it does not
+disable the graph. Keep the same repository/commit between build and solve.
+
+The `actions` policy needs the Solver to supply `exploration_goal` on a read or
+search; without it, navigation logs a skip. Set `SAGE_JEV_MAX_FOLLOWUP_ACTIONS=2`
+to test dependent steps, though Jev may hand back before the second step.
+Alternatively, set `SAGE_JEV_NAVIGATION_POLICY=excerpts` to test search-result
+ranking without changed tool arguments; it needs at least two eligible windows.
+Neither policy guarantees a Jev call on every Issue or tool invocation.
+
+Both solve commands log Jev activity at INFO without `--debug` or replay capture:
+
+- `Jev request`: the complete bounded JSON input (`model`, `state`, `questions`),
+  including candidate evidence and criteria. Input is logged before sending,
+  so it is visible even if the request fails. Oversized rejected inputs are not logged.
+- `Jev navigation`: run/session/sequence/step and request correlation, candidate
+  count, decisions/selected IDs, stop reasons and exposed character counts.
+  `input_tokens` and `output_tokens` are provider-reported counts after a valid
+  response, not estimates. Failed/unavailable usage is `"unknown"`, not zero.
+- `candidate_retrieval_ms` measures local shortlist construction;
+  `latency_ms` measures the complete Jev decision attempt, including request
+  construction, HTTP wait and validation; `retrieval_ms` measures the selected
+  read/search/graph operation, including failed retrieval attempts.
+  `structural_retrieval_ms` measures optional Legion enrichment.
+  `navigation_ms` is the total enrichment time for a returned root-tool result,
+  including those stages and logging/artifact overhead, but excluding the root
+  read/search itself. These measurements overlap: do not add them together.
+
+Full input logging defaults to **on only in navigation mode `on`**. Logs can
+contain private Issue text, plans and source; do not upload or share them without
+review. Authorization headers are never included, the TypeSafe key is redacted
+if present in input, and terminal controls are escaped. Other secrets embedded
+in source are **not automatically detected**. Set `SAGE_JEV_LOG_INPUT=false`
+to retain timing/token/status summaries without body logs, including at DEBUG.
+`shadow` logs summaries only; `off` constructs no Jev client and emits no Jev logs.
+No eligible goal/candidates or exhausted budgets produce skip reasons rather
+than a request; do not expect input/token logs for calls that never happen.
+Timing events also appear in `navigation.json`; full request/response artifact
+capture remains independently controlled by `SAGE_JEV_CAPTURE`.
+For paired latency comparisons keep logging settings and output sinks identical;
+terminal/file output itself can add overhead.
+
+### Budgets, captures and evaluation
+
 Time settings may lower, but not exceed, two seconds per request/eight seconds
 total Jev wait. Failures preserve ordinary tool results. Inspect `usage.json`
 (`semantic_calls`), `navigation.json`, and `workflow-timing.json`. Provisional
