@@ -1091,6 +1091,7 @@ version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "igraph" },
     { name = "langchain-core" },
     { name = "langchain-google-genai" },
@@ -1113,6 +1114,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "google-genai", specifier = ">=1,<3" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "igraph", specifier = ">=1,<2" },
     { name = "langchain-core", specifier = ">=1.0,<2" },
     { name = "langchain-google-genai", specifier = ">=4,<5" },
