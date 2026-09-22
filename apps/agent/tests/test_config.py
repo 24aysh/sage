@@ -178,15 +178,26 @@ def test_jev_is_opt_in_and_credentials_are_redacted():
     from sage.errors import ConfigurationError
     import pytest
 
-    assert JevSettings.from_env({}).mode == "off"
-    assert JevSettings.from_env({}).log_input is True
+    defaults = JevSettings.from_env({})
+    assert defaults.mode == "off"
+    assert defaults.log_input is True
+    assert (defaults.read_probability_threshold, defaults.search_probability_threshold,
+            defaults.graph_probability_threshold, defaults.action_confidence_threshold) == (.65, .75, .8, .5)
     assert JevSettings.from_env({"SAGE_JEV_LOG_INPUT": "false"}).log_input is False
     with pytest.raises(ConfigurationError):
         JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "on"})
     for key, value in [("SAGE_JEV_MAX_FOLLOWUP_ACTIONS", "3"), ("SAGE_JEV_TIMEOUT_SECONDS", "3"),
                        ("SAGE_JEV_RUN_WAIT_SECONDS", "9"), ("SAGE_JEV_NAVIGATION_POLICY", "write"),
-                       ("SAGE_JEV_LOG_INPUT", "invalid")]:
+                       ("SAGE_JEV_LOG_INPUT", "invalid"),
+                       ("SAGE_JEV_READ_PROBABILITY_THRESHOLD", "-0.1"),
+                       ("SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD", "1.1"),
+                       ("SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD", "nan"),
+                       ("SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD", "inf")]:
         with pytest.raises(ConfigurationError):
             JevSettings.from_env({key: value, "TYPESAFE_API_KEY": "private-key"})
-    enabled = JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "shadow", "TYPESAFE_API_KEY": "private-key"})
+    enabled = JevSettings.from_env({"SAGE_JEV_NAVIGATION_MODE": "shadow", "TYPESAFE_API_KEY": "private-key",
+        "SAGE_JEV_READ_PROBABILITY_THRESHOLD": ".2", "SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD": ".3",
+        "SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD": ".4", "SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD": ".1"})
+    assert (enabled.read_probability_threshold, enabled.search_probability_threshold,
+            enabled.graph_probability_threshold, enabled.action_confidence_threshold) == (.2, .3, .4, .1)
     assert "private-key" not in str(enabled) + enabled.model_dump_json()

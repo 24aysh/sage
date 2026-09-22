@@ -65,3 +65,7 @@ def test_exact_capture_replays_without_provider(evaluator, tmp_path):
     assert result["cases"][0]["candidate_coverage"]
     assert result["cases"][0]["jev_selected"] == ("c0",)
     assert result["kind"] == "offline_selection_proxy"
+
+    path.write_text(json.dumps({"policy": "actions", "action_probability_thresholds": {"read_file": .96},
+        "action_confidence_threshold": .5, "records": [{"sequence": 1, "step": 1, "capture": capture}]}))
+    assert evaluator.replay(path)["cases"][0]["jev_selected"] == ()

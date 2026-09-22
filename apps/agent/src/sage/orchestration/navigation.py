@@ -33,6 +33,9 @@ class NavigationSession:
         self.context, self.provider, self.calls = context, provider, calls
         self.settings = context.settings.jev
         self.action_policy = self.settings.policy == "actions"
+        self.action_thresholds = {"read_file": self.settings.read_probability_threshold,
+            "search_text": self.settings.search_probability_threshold,
+            "query_graph_tool": self.settings.graph_probability_threshold}
         self.issue, self.plan, self.clock = issue[:2400], plan, clock
         self.anchors = extract_issue_signals(self.issue, max_chars=2400).paths if self.issue.strip() else ()
         self.root = context.prepared_run.workspace_dir
@@ -94,7 +97,8 @@ class NavigationSession:
             summary = {key: values[key] for key in ("status", "step", "candidate_count",
                 "candidate_retrieval_ms", "retrieval_ms", "latency_ms", "navigation_ms",
                 "structural_retrieval_ms", "input_tokens", "output_tokens", "selected", "operation",
-                "exposed_chars", "disabled") if key in values}
+                "exposed_chars", "disabled", "selected_probability", "required_probability",
+                "decision_confidence", "required_confidence") if key in values}
             logger.info("Jev navigation %s", json.dumps({"run_id": getattr(self.context.prepared_run, "run_id", None),
                 "session": self.session, "stage": self.stage, "sequence": self.sequence,
                 "request": self.requests, "root_tool_call_id": parent.tool_call_id if parent else None,
@@ -107,6 +111,8 @@ class NavigationSession:
         self.context.artifacts.write_navigation({"policy_version": POLICY_VERSION,
             "mode": self.settings.mode, "policy": self.settings.policy,
             "max_followup_actions": self.settings.max_followup_actions,
+            "action_probability_thresholds": self.action_thresholds,
+            "action_confidence_threshold": self.settings.action_confidence_threshold,
             "model": self.provider.model, "requests": self.requests, "operations": self.operations,
             "added_chars": self.total_chars, "jev_wait_seconds": self.wait_seconds,
             "records": self.records, "records_truncated": len(self.records) >= 128})
@@ -242,8 +248,13 @@ class NavigationSession:
             chosen = [c for id in decision.selected for c in candidates if c.id == id]
             if self.action_policy:
                 chosen = chosen[:1]
-                if not accept_action(decision, chosen[0]):
-                    self._record(step=step, status="uncertain")
+                probability = decision.probabilities.get(chosen[0].id, 0)
+                required = self.action_thresholds[chosen[0].action.kind]
+                if not accept_action(decision, chosen[0], probability_threshold=required,
+                                     confidence_threshold=self.settings.action_confidence_threshold):
+                    self._record(step=step, status="uncertain", selected_probability=probability,
+                        required_probability=required, decision_confidence=decision.confidence,
+                        required_confidence=self.settings.action_confidence_threshold)
                     break
             if self.settings.mode == "shadow":
                 self._record(step=step, status="shadow_no_dispatch")

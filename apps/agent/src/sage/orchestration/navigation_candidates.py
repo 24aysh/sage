@@ -10,6 +10,8 @@ from sage.errors import RepositoryError
 from sage.repository.snippets import source_identity
 
 POLICY_VERSION = "navigation-v1-experimental"
+DEFAULT_ACTION_PROBABILITY_THRESHOLDS = {"read_file": .65, "search_text": .75, "query_graph_tool": .8}
+DEFAULT_ACTION_CONFIDENCE_THRESHOLD = .5
 
 
 def digest(value: str) -> str:
@@ -27,9 +29,10 @@ def excerpt_selection(decision: NavigationDecision) -> tuple[str, ...]:
         key=lambda key: (-decision.scores[key], key))[:2])
 
 
-def accept_action(decision: NavigationDecision, candidate: ActionCandidate) -> bool:
-    threshold = {"read_file": .65, "search_text": .75, "query_graph_tool": .8}[candidate.action.kind]
-    return decision.confidence >= .5 and decision.probabilities.get(candidate.id, 0) >= threshold
+def accept_action(decision: NavigationDecision, candidate: ActionCandidate, *,
+                  probability_threshold: float, confidence_threshold: float) -> bool:
+    return (decision.confidence >= confidence_threshold
+            and decision.probabilities.get(candidate.id, 0) >= probability_threshold)
 
 
 def numbered_lines(source: str) -> set[int]:

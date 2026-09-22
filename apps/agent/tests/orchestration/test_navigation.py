@@ -51,9 +51,9 @@ def setup_navigation(tmp_path, settings):
     (tmp_path / "app.py").write_text("def calculate():\n    return 42\n")
     (tmp_path / "tests.py").write_text("def test_calculate():\n    assert calculate() == 42\n")
 
-    def make(choices=(), *, mode="on", policy="actions", steps=2, cap=12000):
+    def make(choices=(), *, mode="on", policy="actions", steps=2, cap=12000, thresholds=None):
         config = settings.model_copy(update={"jev": JevSettings(mode=mode, policy=policy,
-            api_key="test", max_followup_actions=steps), "max_tool_output_chars": cap})
+            api_key="test", max_followup_actions=steps, **(thresholds or {})), "max_tool_output_chars": cap})
         repository = Repository(workspace_root=tmp_path, sandbox=None, settings=config)
         searches = []
 
@@ -367,6 +367,26 @@ def test_low_probability_handback_does_not_substitute(setup_navigation):
                                   probabilities={kw["candidates"][0].id: .6}, confidence=.4)
     provider.choose_action = uncertain
     assert root_search(nav) == "" and nav.operations == 0
+    expected = {"status": "uncertain", "selected_probability": .6, "required_probability": .65,
+        "decision_confidence": .4, "required_confidence": .5}
+    rejection = next(record for record in reversed(nav.records) if record["status"] == "uncertain")
+    assert {key: rejection[key] for key in expected} == expected
+
+    nav, _, provider, _, _ = setup_navigation([], thresholds={
+        "read_probability_threshold": .6, "action_confidence_threshold": .4})
+    provider.choose_action = uncertain
+    assert "return 42" in root_search(nav) and nav.operations == 1
+
+
+def test_action_thresholds_map_to_their_operation_and_artifact(setup_navigation):
+    nav, context, _, _, _ = setup_navigation([], thresholds={"read_probability_threshold": .1,
+        "search_probability_threshold": .2, "graph_probability_threshold": .3,
+        "action_confidence_threshold": .4})
+    nav._record(status="test")
+    artifact = json.loads((context.prepared_run.workspace_dir / "artifacts/navigation.json").read_text())
+    assert artifact["action_probability_thresholds"] == {
+        "read_file": .1, "search_text": .2, "query_graph_tool": .3}
+    assert artifact["action_confidence_threshold"] == .4
 
 
 def test_internal_search_respects_real_timeout_and_remaining_reserve(setup_navigation):

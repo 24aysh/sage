@@ -13,7 +13,8 @@ import statistics
 from pathlib import Path
 
 from sage.domain.navigation import ActionCandidate, NavigationDecision
-from sage.orchestration.navigation_candidates import excerpt_selection, accept_action
+from sage.orchestration.navigation_candidates import (DEFAULT_ACTION_CONFIDENCE_THRESHOLD,
+    DEFAULT_ACTION_PROBABILITY_THRESHOLDS, accept_action, excerpt_selection)
 from sage.providers.typesafe import parse_response
 
 
@@ -48,7 +49,11 @@ async def solve_arm(args) -> dict:
         mode="on", policy="actions" if args.arm.startswith("actions-") else "excerpts",
         max_followup_actions=2 if args.arm == "actions-2" else 1,
         api_key="evaluation-control" if deterministic else settings.jev.api_key,
-        model=settings.jev.model, capture=settings.jev.capture)
+        model=settings.jev.model, capture=settings.jev.capture,
+        read_probability_threshold=settings.jev.read_probability_threshold,
+        search_probability_threshold=settings.jev.search_probability_threshold,
+        graph_probability_threshold=settings.jev.graph_probability_threshold,
+        action_confidence_threshold=settings.jev.action_confidence_threshold)
     settings = settings.model_copy(update={"jev": jev})
     orchestrator = build_orchestrator(settings)
     if deterministic:
@@ -64,6 +69,8 @@ async def solve_arm(args) -> dict:
 
 def replay(path: Path, labels: dict | None = None) -> dict:
     artifact = json.loads(path.read_text())
+    probability_thresholds = artifact.get("action_probability_thresholds", DEFAULT_ACTION_PROBABILITY_THRESHOLDS)
+    confidence_threshold = artifact.get("action_confidence_threshold", DEFAULT_ACTION_CONFIDENCE_THRESHOLD)
     cases = []
     for record in artifact["records"]:
         capture = record.get("capture")
@@ -76,7 +83,10 @@ def replay(path: Path, labels: dict | None = None) -> dict:
         selected = decision.selected if actions else excerpt_selection(decision)
         if actions and selected:
             candidate = next(c for c in candidates if c.id == selected[0])
-            if not accept_action(decision, candidate):
+            probability_threshold = probability_thresholds.get(candidate.action.kind,
+                DEFAULT_ACTION_PROBABILITY_THRESHOLDS[candidate.action.kind])
+            if not accept_action(decision, candidate, probability_threshold=probability_threshold,
+                                 confidence_threshold=confidence_threshold):
                 selected = ()
         key = f"{record['sequence']}:{record['step']}"
         relevant = set((labels or {}).get(key, []))
