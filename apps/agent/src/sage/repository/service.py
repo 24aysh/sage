@@ -11,6 +11,7 @@ from time import perf_counter
 from typing import Iterator
 
 from sage.config import Settings
+from sage.domain.navigation import SearchResult
 from sage.repository.commands import run_command as execute_command
 from sage.repository.filesystem import (
     WriteMode,
@@ -90,6 +91,18 @@ class Repository:
                 end_line=end_line,
                 max_output_chars=self._settings.max_tool_output_chars,
             )
+
+    def search_matches(self, *, query: str, path: str = ".", max_results: int = 50,
+                       timeout_seconds: int | None = None) -> SearchResult:
+        """Structured counterpart using the same search, limits, and sandbox."""
+        with _tool_call("search_text"):
+            result = search_repository_text(self._workspace_root, self._sandbox,
+                query=query, path=path, max_results=max_results, structured=True,
+                max_output_chars=self._settings.max_tool_output_chars,
+                timeout_seconds=min(timeout_seconds or self._settings.command_timeout_seconds,
+                                    self._settings.command_timeout_seconds))
+            assert isinstance(result, SearchResult)
+            return result
 
     def replace_text(
         self,
