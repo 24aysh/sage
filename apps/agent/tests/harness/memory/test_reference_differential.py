@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from sage.legion_memory.store import GraphStore
+from sage.harness.memory.store import GraphStore
 from .conftest import apply_files
 
 HERE = Path(__file__).parent

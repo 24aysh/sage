@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sage.legion_memory.context import minimal_result as _minimal_result, bounded_json as _bounded_json
+from sage.harness.memory.context import minimal_result as _minimal_result, bounded_json as _bounded_json
 
 import json
 from collections.abc import Callable
@@ -13,7 +13,7 @@ from typing import Literal
 from langchain_core.tools import BaseTool, tool
 
 from sage.errors import LegionMemoryQueryError
-from sage.legion_memory.service import LegionMemoryService
+from sage.harness.memory.service import LegionMemoryService
 
 DEFAULT_MEMORY_TOOL_OUTPUT_CHARS = 12_000
 
@@ -86,7 +86,7 @@ def build_legion_memory_tools(
         return invoke(service.get_minimal_context_tool, task=task)
 
     @tool
-    async def semantic_search_nodes_tool(
+    async def search_nodes_tool(
         query: str,
         kind: Literal["File", "Class", "Type", "Function", "Test", "Element", "Selector", "Endpoint", "Event", "ConfigKey"] | None = None,
         limit: int = 5,
@@ -95,7 +95,7 @@ def build_legion_memory_tools(
         """Find graph nodes by identifier, path, signature, or task terms."""
 
         return invoke(
-            service.semantic_search_nodes_tool,
+            service.search_nodes_tool,
             query=query,
             detail_level=detail_level,
             kind=kind,
@@ -289,7 +289,7 @@ def build_legion_memory_tools(
     tools = [
         list_graph_stats_tool,
         get_minimal_context_tool,
-        semantic_search_nodes_tool,
+        search_nodes_tool,
         query_graph_tool,
         traverse_graph_tool,
         get_impact_radius_tool,
@@ -310,7 +310,7 @@ def build_legion_memory_tools(
         get_review_context_tool,
     ]
     if profile == "solve":
-        names = {"semantic_search_nodes_tool", "query_graph_tool", "get_flow_tool",
+        names = {"search_nodes_tool", "query_graph_tool", "get_flow_tool",
                  "get_community_tool", "get_impact_radius_tool"}
         return [item for item in tools if item.name in names]
     return tools

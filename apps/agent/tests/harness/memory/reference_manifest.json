@@ -29,15 +29,13 @@
       "optional all-17-hash pinned reference check",
       "normalized Python nodes, resolved calls, flows, communities and query against authored golden"
     ],
-    "test_vectors.py": [
-      "node documents",
-      "one vector per Gemini request",
-      "rank-only RRF",
-      "semantic-only seeds",
-      "incremental reuse and crash recovery",
-      "query cache and native usage",
-      "safe failure fallback",
-      "post-publication scoped cleanup and no-change retry"
+    "test_local_only.py": [
+      "graph build and retrieval without credentials or network",
+      "obsolete provider configuration cannot enable embeddings",
+      "fail-fast build serialization and lock release"
+    ],
+    "test_store.py": [
+      "schema 4 removes obsolete vector state while preserving graph rows"
     ],
     "test_tools.py": [
       "all 21 native tools, closed schemas and repository-bound invocation",
@@ -66,7 +64,7 @@
       "ancestor Git root rejection"
     ],
     "test_retrieval.py": [
-      "lexical preservation under semantic distraction",
+      "explicit symbols outrank unrelated lexical candidates",
       "exact unresolved edge identity"
     ],
     "test_parsing.py": [
@@ -80,17 +78,14 @@
   "intentional_adaptations": [
     "native tools instead of MCP/editor hooks",
     "accepted committed snapshot",
-    "Gemini Embedding 2",
-    "Qdrant collections instead of SQLite vectors",
+    "lexical and graph retrieval only; embeddings and Qdrant removed",
     "bounded flow depth/nodes",
     "Issue-specific path preservation",
-    "provisional cosine floor",
     "compact source verification",
-    "bounded deduplicated enrichment without hidden embedding calls",
+    "bounded deduplicated local graph enrichment",
     "conservative whole-file change impact against HEAD",
     "read-only refactor candidates; no apply tokens or mutation",
-    "single-repository scope excludes registry/wiki/product administration tools",
-    "vector cleanup scoped to current repository and embedding identity; other identities remain intact"
+    "single-repository scope excludes registry/wiki/product administration tools"
   ],
   "remaining": [
     "exhaustive all-language/framework differential certification beyond documented static-pattern matrix",

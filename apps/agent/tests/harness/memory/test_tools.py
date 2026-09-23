@@ -4,14 +4,14 @@ import asyncio
 import json
 from pathlib import Path
 
-from sage.agents.memory_tools import _bounded_json, build_legion_memory_tools
-from sage.legion_memory.service import LegionMemoryService
+from sage.harness.memory.tools import _bounded_json, build_legion_memory_tools
+from sage.harness.memory.service import LegionMemoryService
 
 
 EXPECTED_TOOLS = {
     "list_graph_stats_tool",
     "get_minimal_context_tool",
-    "semantic_search_nodes_tool",
+    "search_nodes_tool",
     "query_graph_tool",
     "traverse_graph_tool",
     "get_impact_radius_tool",
@@ -69,7 +69,7 @@ def test_every_native_adapter_invokes_and_returns_json(
     calls = {
         "list_graph_stats_tool": {},
         "get_minimal_context_tool": {"task": "fix helper"},
-        "semantic_search_nodes_tool": {"query": "helper"},
+        "search_nodes_tool": {"query": "helper"},
         "query_graph_tool": {"pattern": "callers_of", "target": "helper"},
         "traverse_graph_tool": {"target": "helper"},
         "get_impact_radius_tool": {"changed_files": ["service.py"]},
@@ -115,7 +115,7 @@ def test_adapters_report_unavailable_graph_and_bound_output(
             memory_file=missing,
             output_chars=1_000,
         )
-        if item.name == "semantic_search_nodes_tool"
+        if item.name == "search_nodes_tool"
     )
 
     rendered = asyncio.run(tool.ainvoke({"query": "x"}))
@@ -151,7 +151,7 @@ def test_large_tool_payload_remains_valid_json_within_budget() -> None:
 
 
 def test_review_context_uses_bound_source_reader_and_refactor_is_read_only(fixture_repo, built_memory):
-    from sage.agents.memory_tools import build_legion_memory_tools
+    from sage.harness.memory.tools import build_legion_memory_tools
 
     service, database = built_memory
     reads = []
