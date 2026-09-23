@@ -39,101 +39,6 @@ class ConfiguredVerificationCommand(BaseModel):
         return self
 
 
-class LegionEmbeddingSettings(BaseModel):
-    """Independent memory configuration; graph commands need no chat keys."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    enabled: bool = False
-    model: Literal["gemini-embedding-2"] = "gemini-embedding-2"
-    dimensions: Literal[768, 1536, 3072] = 3072
-    api_key: str | None = Field(default=None, repr=False)
-    qdrant_path: Path | None = None
-    qdrant_url: str | None = None
-    qdrant_api_key: str | None = Field(default=None, repr=False)
-    max_nodes: int = Field(default=2000, ge=1, le=100_000)
-    deadline_seconds: int = Field(default=300, ge=1, le=3600)
-    request_timeout_seconds: int = Field(default=30, ge=1, le=60)
-    retries: int = Field(default=1, ge=0, le=3)
-    concurrency: int = Field(default=1, ge=1, le=8)
-    min_similarity: float = Field(default=0.45, ge=0, le=1)
-
-    @model_validator(mode="after")
-    def validate_storage(self) -> LegionEmbeddingSettings:
-        if self.qdrant_path and self.qdrant_url:
-            raise ValueError("Configure Qdrant path OR URL, not both.")
-        if self.qdrant_url:
-            from urllib.parse import urlsplit
-
-            parsed = urlsplit(self.qdrant_url)
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname or (
-                parsed.username or parsed.password or parsed.query or parsed.fragment
-            ):
-                raise ValueError("Qdrant URL must be HTTP(S), without credentials or query.")
-            if self.qdrant_api_key and parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-                raise ValueError("Remote Qdrant credentials require HTTPS.")
-        return self
-
-    @classmethod
-    def from_env(cls, environ: Mapping[str, str] | None = None, *, enabled: bool | None = None) -> LegionEmbeddingSettings:
-        values = os.environ if environ is None else environ
-        active = enabled if enabled is not None else _parse_bool(
-            values.get("SAGE_LEGION_EMBEDDINGS_ENABLED", "false"), name="SAGE_LEGION_EMBEDDINGS_ENABLED",
-        )
-        if not active:
-            return cls()  # Disabled commands do not validate unused credentials/adapters.
-        if not _parse_bool(values.get("SAGE_GOOGLE_MODEL_CONTEXT_APPROVED", "true"), name="SAGE_GOOGLE_MODEL_CONTEXT_APPROVED"):
-            raise ConfigurationError("Google context sharing is disabled.")
-        try:
-            return cls(
-                enabled=True,
-                api_key=values.get("GEMINI_API_KEY", "").strip() or None,
-                model=values.get("SAGE_LEGION_EMBEDDING_MODEL", "gemini-embedding-2"),
-                dimensions=int(values.get("SAGE_LEGION_EMBEDDING_DIMENSIONS", "3072")),
-                qdrant_path=values.get("SAGE_LEGION_QDRANT_PATH", "").strip() or None,
-                qdrant_url=values.get("SAGE_LEGION_QDRANT_URL", "").strip() or None,
-                qdrant_api_key=(
-                    values.get("SAGE_LEGION_QDRANT_API_KEY", "").strip() or None
-                ),
-                max_nodes=values.get("SAGE_LEGION_EMBEDDING_MAX_NODES", "2000"),
-                deadline_seconds=values.get("SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS", "300"),
-                request_timeout_seconds=values.get("SAGE_LEGION_EMBEDDING_TIMEOUT_SECONDS", "30"),
-                concurrency=values.get("SAGE_LEGION_EMBEDDING_CONCURRENCY", "1"),
-                retries=values.get("SAGE_LEGION_EMBEDDING_RETRIES", "1"),
-                min_similarity=values.get("SAGE_LEGION_EMBEDDING_MIN_SIMILARITY", "0.45"),
-            )
-        except (ValueError, ValidationError):
-            raise ConfigurationError("Invalid Legion embedding settings; check model, dimensions, budgets and Qdrant configuration.") from None
-
-    @classmethod
-    def from_github_env(
-        cls,
-        environ: Mapping[str, str] | None = None,
-    ) -> LegionEmbeddingSettings:
-        """Load the default-on, remote-only GitHub embedding policy."""
-
-        values = os.environ if environ is None else environ
-        active = _parse_bool(
-            values.get("SAGE_LEGION_EMBEDDINGS_ENABLED", "true"),
-            name="SAGE_LEGION_EMBEDDINGS_ENABLED",
-        )
-        settings = cls.from_env(values, enabled=active)
-        if not settings.enabled:
-            return settings
-        if settings.qdrant_path is not None:
-            raise ConfigurationError(
-                "GitHub Legion embeddings require remote Qdrant storage."
-            )
-        if settings.qdrant_url is None or not settings.qdrant_api_key:
-            raise ConfigurationError(
-                "GitHub Legion embeddings require a Qdrant URL and API key."
-            )
-        if not settings.api_key:
-            raise ConfigurationError(
-                "GEMINI_API_KEY is required for GitHub Legion embeddings."
-            )
-        return settings
-
-
 class JevSettings(BaseModel):
     """Opt-in local navigation; all limits are shared by its two policies."""
 
@@ -210,6 +115,8 @@ class Settings(BaseModel):
     sandbox_image: str = "sage-sandbox:v2"
     command_timeout_seconds: int = Field(default=60, ge=1)
     max_tool_output_chars: int = Field(default=12_000, ge=1_000)
+    solver_instructions_file: str = Field(default="sage-solver.md", min_length=1, max_length=240)
+    reviewer_instructions_file: str = Field(default="sage-reviewer.md", min_length=1, max_length=240)
     max_rate_limit_retries_per_call: int = Field(default=1, ge=0, le=1)
     max_retry_after_seconds: int = Field(default=30, ge=0, le=60)
     model_request_timeout_seconds: int = Field(default=600, ge=1, le=900)
@@ -272,6 +179,8 @@ class Settings(BaseModel):
         try:
             return cls(
                 jev=JevSettings.from_env(values),
+                solver_instructions_file=values.get("SAGE_SOLVER_INSTRUCTIONS_FILE", "sage-solver.md").strip(),
+                reviewer_instructions_file=values.get("SAGE_REVIEWER_INSTRUCTIONS_FILE", "sage-reviewer.md").strip(),
                 openai_api_key=api_key,
                 gemini_api_key=gemini_api_key,
                 langsmith_api_key=langsmith_api_key,
