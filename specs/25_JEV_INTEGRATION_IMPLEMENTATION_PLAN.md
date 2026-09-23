@@ -1,5 +1,15 @@
 # Jev Integration with Sage: Implementation and Evaluation Plan
 
+> Harness refactor update (24 September 2026): Jev's session, candidate policy,
+> and HTTP adapter now live in `sage/harness/jev/`; context delivery lives in
+> `sage/harness/context/`, and graph memory in `sage/harness/memory/`. A–E modes,
+> payloads, thresholds, limits, fallback, timing, and capture behavior are
+> preserved. Legion embeddings and Qdrant are removed. References below to
+> embedding arms, caches, old module paths or embedding prerequisites are
+> historical and superseded by the current architecture/testing guides.
+> Future experiments compare graph-only memory and unchanged Jev policies;
+> all cost totals cover Solver, Reviewer, and Jev, with no embedding calls.
+
 ## Status and scope
 
 - Status: A–E code implemented on `jev`; offline verification is documented in
