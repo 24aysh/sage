@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 
 from sage.errors import LegionMemoryQueryError
-from sage.legion_memory.store import GraphStore, _public_node
+from sage.harness.memory.store import GraphStore, _public_node
 
 EDGE_PATTERNS = {
     "callers_of": (("CALLS",), "incoming"),
@@ -58,7 +58,7 @@ def query_graph(store: GraphStore, pattern: str, target: str, limit: int) -> dic
     if pattern == "imports_of" and candidates:
         resolved = str(candidates[0]["file_path"])
     if pattern == "tests_for" and candidates:
-        from sage.legion_memory.review import transitive_tests
+        from sage.harness.memory.review import transitive_tests
 
         names = transitive_tests(store, resolved)
         results = [{**_public_node(store.exact_node(name)), "edge_kind": "TESTED_BY"}

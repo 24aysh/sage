@@ -7,8 +7,8 @@ from pathlib import PurePosixPath
 import re
 
 from sage.errors import LegionMemoryQueryError
-from sage.legion_memory.queries import symbol_candidates
-from sage.legion_memory.store import GraphStore, _public_node
+from sage.harness.memory.queries import symbol_candidates
+from sage.harness.memory.store import GraphStore, _public_node
 
 
 def large_nodes(store: GraphStore, min_lines: int, kind: str | None, pattern: str, limit: int) -> dict:

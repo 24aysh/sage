@@ -1,7 +1,7 @@
 """Graph query counts, ambiguity, shared identities, and deletion reconciliation."""
 
-from sage.legion_memory.queries import EDGE_PATTERNS, query_graph
-from sage.legion_memory.store import GraphStore
+from sage.harness.memory.queries import EDGE_PATTERNS, query_graph
+from sage.harness.memory.store import GraphStore
 from .conftest import apply_files
 
 

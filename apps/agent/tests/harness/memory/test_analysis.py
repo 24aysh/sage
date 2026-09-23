@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from sage.errors import LegionMemoryQueryError
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.store import GraphStore
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.store import GraphStore
 
 from .conftest import apply_files
 
@@ -16,7 +16,7 @@ def test_search_query_traversal_and_impact_return_provenance(
     built_memory: tuple[LegionMemoryService, Path],
 ) -> None:
     service, memory_file = built_memory
-    search = service.semantic_search_nodes_tool(
+    search = service.search_nodes_tool(
         query="helper",
         repo_root=fixture_repo,
         memory_file=memory_file,
@@ -138,7 +138,7 @@ def unused():
 
 def test_weighted_leiden_is_deterministic_and_test_follows_production():
     import networkx as nx
-    from sage.legion_memory.communities import community_groups
+    from sage.harness.memory.communities import community_groups
 
     graph = nx.DiGraph()
     for name in ("checkout", "persist", "stock", "other", "test_checkout"):

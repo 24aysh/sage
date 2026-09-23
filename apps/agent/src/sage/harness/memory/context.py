@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from sage.legion_memory.store import GraphStore, _public_node
+from sage.harness.memory.store import GraphStore, _public_node
 
 
 def structural_context(
@@ -12,8 +12,7 @@ def structural_context(
 ) -> list[dict[str, object]]:
     """Return reference-style callers/callees, communities, flows and tests.
 
-    Search enrichment is lexical only: ordinary source reads must not make
-    implicit embedding requests. File enrichment respects the requested range.
+    Search enrichment is lexical. File enrichment respects the requested range.
     """
     if path is not None:
         nodes = store.rows(

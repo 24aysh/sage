@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from sage.legion_memory.store import GraphStore, _public_node
+from sage.harness.memory.store import GraphStore, _public_node
 
 _SECURITY_KEYWORDS = frozenset({
     "auth", "login", "password", "token", "session", "crypt", "secret",
