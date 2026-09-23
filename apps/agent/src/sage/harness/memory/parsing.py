@@ -15,8 +15,8 @@ from pathlib import Path, PurePosixPath
 
 from tree_sitter import Node
 from tree_sitter_language_pack import get_parser
-from sage.legion_memory.symbol_metadata import python_metadata, tree_metadata
-from sage.legion_memory.tsconfig import parse_tsconfig
+from sage.harness.memory.symbol_metadata import python_metadata, tree_metadata
+from sage.harness.memory.tsconfig import parse_tsconfig
 
 PARSER_VERSION = "legion-tree-sitter-v5"
 MAX_FILE_BYTES = 2_000_000

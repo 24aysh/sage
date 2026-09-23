@@ -1,4 +1,4 @@
-"""Bounded Python symbol metadata used by resolution and embedding recipes."""
+"""Bounded Python symbol metadata used by resolution and source navigation."""
 
 from __future__ import annotations
 

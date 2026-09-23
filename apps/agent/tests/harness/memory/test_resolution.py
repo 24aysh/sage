@@ -2,9 +2,8 @@
 
 import json
 
-from sage.legion_memory.queries import query_graph
-from sage.legion_memory.store import GraphStore
-from sage.legion_memory.vectors import node_text
+from sage.harness.memory.queries import query_graph
+from sage.harness.memory.store import GraphStore
 from .conftest import apply_files
 
 
@@ -129,9 +128,6 @@ class Service:
         assert "Restore stock" in extra["docstring"]
         assert "product_id: str" in extra["params"]
         assert extra["return_type"] == "bool"
-        text = node_text(cancel)
-        assert "Service.cancel" in text
-        assert "Restore stock" in text
         edges = store.rows("SELECT target_qualified FROM edges WHERE source_qualified='service.py::Service.cancel' AND kind='CALLS'")
         assert edges == [{"target_qualified": "products.py::ProductRepository.release"}]
 
@@ -238,7 +234,7 @@ def test_jsonc_inherited_paths_resolve_relative_to_declaring_config(tmp_path):
 
 def test_jsonc_preserves_strings_and_rejects_external_extends():
     import pytest
-    from sage.legion_memory.tsconfig import parse_tsconfig
+    from sage.harness.memory.tsconfig import parse_tsconfig
     assert parse_tsconfig(b'{"compilerOptions":{"paths":{"url":["https://host/*"]}}}')['paths']['url'] == ['https://host/*']
     with pytest.raises(ValueError, match="relative"):
         parse_tsconfig(b'{"extends":"some-package/config"}')

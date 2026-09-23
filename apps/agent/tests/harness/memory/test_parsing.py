@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from sage.legion_memory.parsing import (
+from sage.harness.memory.parsing import (
     EXTENSION_TO_LANGUAGE,
     MAX_FILE_BYTES,
     CodeParser,
