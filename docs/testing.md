@@ -399,6 +399,14 @@ mode automatically; no separate cold/warm command is needed.
 The corresponding automated tests exercise these transitions in isolated
 temporary repositories. They are preferable to copying a large manual fixture.
 
+For an HTML/CSS repository, commit an `.html` page and its `.css` files before
+building, then confirm `Languages` includes `html` and `css`. A selector named
+in an Issue (for example, `.checkout-button`) should appear in retrieval, while
+local `<link rel="stylesheet">`, `<script src>`, and CSS `@import` paths should
+be visible through `imports_of`/`importers_of`. Inline `<style>` content,
+anonymous tags, remote URLs, and runtime-generated class names are intentionally
+not inferred.
+
 Retrieval prints status, modes, reasons, timings and truncation. It atomically
 writes `graph.context.md` and `graph.retrieval.json` beside the database for
 available results, including `no_match`; unavailable retrieval does not write

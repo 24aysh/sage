@@ -205,8 +205,12 @@ memory-specific exclusions added explicitly.
 
 Tree-sitter supplies grammar extraction, NetworkX graph analysis, and igraph
 seeded weighted Leiden communities. The supported language table lives in
-`parsing.py`. Stored relationships include containment, imports, calls,
-inheritance, tests, references, routes, events and configuration keys. Updates
+`parsing.py`; HTML and CSS contribute stable-id elements, class/id selectors,
+local stylesheet/script imports, and selector references. Anonymous HTML tags
+and remote resources are omitted to bound graph size and noise. Selector nodes
+remain lexical/graph-only to avoid low-value embedding calls. Stored
+relationships include containment, imports, calls, inheritance, tests,
+references, routes, events and configuration keys. Updates
 reconcile aliases and shared identities after deletion. Ambiguous or dynamic
 dispatch remains unresolved. Indexed JSONC/relative single-parent tsconfig
 inheritance is bounded; package-based or multiple-parent inheritance is unsupported.
