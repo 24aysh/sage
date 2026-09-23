@@ -8,8 +8,8 @@ import pytest
 
 from sage.domain.memory import MemoryBuildType, MemoryStatus
 from sage.errors import LegionMemoryBuildError, LegionMemoryQueryError
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.store import GraphStore
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.store import GraphStore
 
 
 
@@ -233,7 +233,7 @@ def test_failed_postprocessing_preserves_the_previous_ready_graph(
 def test_nested_fixture_does_not_index_ancestor(fixture_repo):
     import pytest
     from sage.errors import LegionMemoryBuildError
-    from sage.legion_memory.service import LegionMemoryService
+    from sage.harness.memory.service import LegionMemoryService
     nested = fixture_repo / "standalone"
     nested.mkdir()
     with pytest.raises(LegionMemoryBuildError, match="ancestor Git root"):

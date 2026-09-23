@@ -10,15 +10,15 @@ from time import perf_counter
 
 from sage.domain.memory import MemoryBuildResult, MemoryBuildType
 from sage.errors import LegionMemoryBuildError
-from sage.legion_memory.parsing import PARSER_VERSION, CodeParser, ParsedFile, detect_language, normalize_path
-from sage.legion_memory.store import GraphStore, SCHEMA_VERSION
+from sage.harness.memory.parsing import PARSER_VERSION, CodeParser, ParsedFile, detect_language, normalize_path
+from sage.harness.memory.store import GraphStore, SCHEMA_VERSION
 from sage.repository.selection import IGNORED_NAMES
 
 _IGNORED_PARTS = IGNORED_NAMES | {".hg", ".svn", ".cache", ".sage", ".legion-memory"}
 
 
 class RepositoryIndex:
-    """Own committed-source provenance independently of query and vector policy."""
+    """Own committed-source provenance independently of query policy."""
 
     def __init__(self, data_root: Path | None = None) -> None:
         self._data_root = data_root
