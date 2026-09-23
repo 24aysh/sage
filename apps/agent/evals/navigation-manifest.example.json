@@ -8,7 +8,7 @@
       "split": "held-out",
       "repeat": 1,
       "settings_id": "fixed-models-and-budgets-v1",
-      "cache_state": "warm-vectors",
+      "cache_state": "ready-graph",
       "arm": "off",
       "run_dir": "/absolute/path/to/baseline-run",
       "independent_quality_pass": false
@@ -19,7 +19,7 @@
       "split": "held-out",
       "repeat": 1,
       "settings_id": "fixed-models-and-budgets-v1",
-      "cache_state": "warm-vectors",
+      "cache_state": "ready-graph",
       "arm": "actions-2",
       "run_dir": "/absolute/path/to/two-action-run",
       "independent_quality_pass": false

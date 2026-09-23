@@ -13,9 +13,9 @@ import statistics
 from pathlib import Path
 
 from sage.domain.navigation import ActionCandidate, NavigationDecision
-from sage.orchestration.navigation_candidates import (DEFAULT_ACTION_CONFIDENCE_THRESHOLD,
+from sage.harness.jev.candidates import (DEFAULT_ACTION_CONFIDENCE_THRESHOLD,
     DEFAULT_ACTION_PROBABILITY_THRESHOLDS, accept_action, excerpt_selection)
-from sage.providers.typesafe import parse_response
+from sage.harness.jev.provider import parse_response
 
 
 class DeterministicSelector:
@@ -36,9 +36,9 @@ class DeterministicSelector:
 
 async def solve_arm(args) -> dict:
     from sage.composition import build_orchestrator, build_legion_memory_service
-    from sage.config import Settings, JevSettings, LegionEmbeddingSettings
+    from sage.config import Settings, JevSettings
     from sage.domain.solve import SolveRequest
-    from sage.orchestration.navigation import NavigationSession
+    from sage.harness.jev.session import NavigationSession
     from sage.workflows.solve import solve_issue
 
     if not args.allow_paid_solve:
@@ -61,7 +61,7 @@ async def solve_arm(args) -> dict:
         orchestrator._navigation_factory = lambda **kw: NavigationSession(provider=DeterministicSelector(), **kw)
     request = SolveRequest(repo_path=args.repo, issue_path=args.issue_file, base_ref=args.base_ref,
                            memory_file=args.memory_file)
-    memory = build_legion_memory_service(embeddings=LegionEmbeddingSettings.from_env()) if args.memory_file else None
+    memory = build_legion_memory_service() if args.memory_file else None
     result = await solve_issue(request, orchestrator, settings, memory_service=memory)
     return {"arm": args.arm, "run_dir": str(result.run_dir), "outcome": result.outcome.value,
             "base_sha": result.base_sha}
@@ -128,11 +128,8 @@ def run_metrics(row: dict, prices: dict) -> dict:
     calls = [*usage.get("calls", []), *usage.get("semantic_calls", [])]
     memory_path = root / "legion-memory.json"
     memory = json.loads(memory_path.read_text()) if memory_path.exists() else {}
-    embedding = memory.get("embedding_usage") or {}
-    if embedding.get("document_calls", 0) + embedding.get("query_calls", 0):
-        vectors = (memory.get("build") or {}).get("vectors") or {}
-        calls.append({"model": vectors.get("model", "unknown-embedding"),
-                      "input_tokens": embedding.get("input_tokens"), "output_tokens": 0})
+    if memory.get("embedding_usage"):
+        raise ValueError("Legacy embedding runs require the historical evaluator; do not compare them as graph-only runs.")
     known = [c["input_tokens"] for c in calls if c.get("input_tokens") is not None]
     unknown = sum(c.get("input_tokens") is None or c.get("output_tokens") is None for c in calls)
     navigation_path = root / "navigation.json"
