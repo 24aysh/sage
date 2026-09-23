@@ -36,6 +36,47 @@ Three different facts must stay distinct:
 Memory cannot satisfy acceptance criteria, grant mutation authority, or replace
 current source. Model summaries cannot define a diff or changed-file list.
 
+## The harness: one evidence lifecycle
+
+The harness lives in `apps/agent/src/sage/harness/`. It supports an agent's
+working context without deciding whether the Issue is solved. Each boundary has
+a single question to answer:
+
+| Layer | Question | Owner |
+| --- | --- | --- |
+| Task and policy | What must this role accomplish and obey? | Issue, `agents/prompts.py`, `harness/context/instructions.py` |
+| Context | What evidence belongs in this invocation? | `harness/context/packets.py`, `run.py`, `tools.py` |
+| Memory | Where should I inspect, and why? | `harness/memory/` |
+| Optional judgment | Which bounded read-only observation may help next? | `harness/jev/` |
+| Current facts | What does the candidate actually contain? | `repository/` |
+| Decision and proof | Is the candidate verified, reviewed, and safe to publish? | `orchestration/`, `verification/`, `artifacts/` |
+
+The flow is one accepted base, immutable role guidance, bounded initial graph
+context, current source reads, optional attributed enrichment, a saved plan,
+edits with stale-location invalidation, verification, and independent review.
+Every repair gets a fresh history with the same role guidance and base identity.
+Evidence deduplication resets with that history; it must not suppress facts that
+the new session has never seen. Within a history, previously exposed graph facts
+are not repeatedly appended. Source reads retain priority when budgets run out.
+
+`sage-solver.md` and `sage-reviewer.md` are discovered automatically in the
+accepted checkout. `SAGE_SOLVER_INSTRUCTIONS_FILE` and
+`SAGE_REVIEWER_INSTRUCTIONS_FILE` in `sage.yml` (or local `.env`) select relative
+paths. Missing files mean no additional role guidance. Files are UTF-8, capped
+at 12,000 bytes each, and cannot escape the repository. They are read once before
+models start and kept in each role's system message for every invocation,
+including repairs and rereviews. This costs input tokens on each request;
+keep guidance concise. No implicit summarizer or extra model call is added.
+Sage's role, Issue scope, plan gate, verification, safety, and output contracts
+take precedence. Edits during a solve cannot rewrite its active guidance.
+
+The harness is composed of focused capabilities, not a global state manager.
+Its context object is frozen; mutable visibility and budgets belong to explicit
+run-scoped sessions. `composition.py` constructs services and optional Jev clients.
+`config.py` remains the environment boundary. Shared provider-neutral contracts
+remain in `domain/`, so repositories and accounting need not import a concrete
+Jev adapter. CLI and GitHub Issue collection stay with their transport owners.
+
 ## Experimental Jev navigation (local and trusted GitHub opt-in)
 
 Jev is an optional evidence selector, not another Solver or Reviewer. Independent
@@ -158,8 +199,9 @@ Tests mirror owners under `apps/agent/tests/`.
 | Solve/repair decisions | `orchestration/solve.py`, `validation.py` | Bounded routing independent of provider wire formats |
 | Candidate truth | `orchestration/candidate.py` | Git-derived paths/diff and final digest guard |
 | Solver role and mutation gate | `agents/solver.py`, `prompts.py` | Persist implementable plan before mutation |
-| Tool/session execution | `agents/loop.py`, `repository_tools.py`, `memory_tools.py` | Typed, bounded capabilities |
-| Optional Jev navigation | `orchestration/navigation.py`, `navigation_candidates.py`, `domain/navigation.py`, `providers/typesafe.py` | Complete read-only candidates, bounded judgments, no new authority |
+| Role loop execution | `agents/loop.py` | Typed, bounded model/tool loop |
+| Context and tool delivery | `harness/context/`, `harness/memory/tools.py` | One evidence path, immutable instructions, bounded output |
+| Optional Jev navigation | `harness/jev/session.py`, `candidates.py`, `provider.py`, `domain/navigation.py` | Complete read-only candidates, bounded judgments, no new authority |
 | Reviewer packet and contract | `agents/reviewer.py`, `domain/review.py` | Independent judgment and complete criterion coverage |
 | File, search, Git, command operations | `repository/` | Validated paths, command allowlist, bounded output |
 | Verification | `verification/` | Deterministic checks; preflight is tooling readiness, not test evidence |
@@ -169,17 +211,18 @@ Tests mirror owners under `apps/agent/tests/`.
 | Sandbox | `sandbox/` | Disposable, resource-bounded, network-disabled execution |
 | Web presentation | `apps/web/DESIGN.md` from repository root | Independent of backend solve control |
 
-`domain/` holds typed contracts; `orchestration/context.py` carries run-scoped
+`domain/` holds typed contracts; `harness/context/run.py` carries run-scoped
 dependencies. Package names describe responsibilities. A generic helper or
 another runtime layer is not needed to connect them.
 
-## Memory has four distinct responsibilities
+## Local graph memory
 
 `LegionMemoryService` remains the public repository-bound capability. Its
 implementation delegates committed-source indexing to `RepositoryIndex`,
-using the existing parser, store, and vector index.
+using the existing parser and SQLite store. Memory requires no model credentials
+and performs no network calls.
 
-| Responsibility | Owner in `legion_memory/` |
+| Responsibility | Owner in `harness/memory/` |
 | --- | --- |
 | Git root, identity, source inventory, full/incremental/no-change build | `indexing.py` |
 | Grammar extraction and symbol metadata | `parsing.py`, `symbol_metadata.py` |
@@ -187,8 +230,8 @@ using the existing parser, store, and vector index.
 | SQLite transactions, migrations, graph reconciliation | `store.py`, `migrations.py` |
 | Communities and structural diagnostics | `communities.py`, `analysis.py` |
 | Validated read operations and result provenance | `service.py`, `queries.py`, `review.py` |
-| Issue signals, ranking, expansion, bounded packet | `retrieval.py`, `search.py` |
-| Content vectors, publication and retention | `vectors.py` |
+| Issue signals, lexical ranking, expansion, bounded packet | `retrieval.py` |
+| Accepted-base preparation and build serialization | `preparation.py`, `locking.py` |
 | Run/session visibility, deduplication and edit invalidation | `session.py`, `context.py` |
 
 `bindings.py` infers dependency bindings from parsed source. It never constructs
@@ -207,8 +250,7 @@ Tree-sitter supplies grammar extraction, NetworkX graph analysis, and igraph
 seeded weighted Leiden communities. The supported language table lives in
 `parsing.py`; HTML and CSS contribute stable-id elements, class/id selectors,
 local stylesheet/script imports, and selector references. Anonymous HTML tags
-and remote resources are omitted to bound graph size and noise. Selector nodes
-remain lexical/graph-only to avoid low-value embedding calls. Stored
+and remote resources are omitted to bound graph size and noise. Stored
 relationships include containment, imports, calls, inheritance, tests,
 references, routes, events and configuration keys. Updates
 reconcile aliases and shared identities after deletion. Ambiguous or dynamic
@@ -223,10 +265,9 @@ storage; that database is not cached or uploaded.
 
 The workflow builds after sandbox startup and optional tooling preflight, before
 model calls. Retrieval uses bounded Issue paths, identifiers and terms, exact/FTS
-ranking, and bounded relationship/flow/community expansion. Hybrid retrieval adds
-vectors with reciprocal-rank fusion (constant 60), preserves explicit anchors,
-and falls back to the lexical scorer on vector errors. The cosine floor is
-provisional, not evidence of universal relevance.
+ranking, and bounded relationship/flow/community expansion. Exact identifiers
+and explicit paths anchor the ranking; results include reasons and source
+locations. There is no vector index, semantic seed retrieval, or embedding API.
 
 | Retrieval result | Solver exposure |
 | --- | --- |
@@ -234,10 +275,11 @@ provisional, not evidence of universal relevance.
 | `no_match` | No initial packet, graph tools, or enrichment queries |
 | `unavailable` | Normal source inspection with an explicit fallback artifact |
 
-The five solve tools are semantic search, query patterns, flow, community, and
+The five solve tools are lexical `search_nodes_tool`, query patterns, flow, community, and
 impact. The full native registry retains 21 operations for explicit use. All are
 read-only, accept neither arbitrary SQL nor a database path from the model, and
-retain existing schemas/defaults/order. The Reviewer receives candidate evidence
+retain bounded schemas/defaults/order. The former `semantic_search_nodes_tool`
+is renamed to `search_nodes_tool` to accurately describe its lexical behavior. The Reviewer receives candidate evidence
 without memory tools.
 
 Initial solve context defaults to 4,000 characters. Read/search enrichment is
@@ -247,31 +289,21 @@ output limits, and 3,000-character per-call, 16,000-character history and
 stale enrichment and remove old line ranges from native responses. Duplicate
 visible responses are suppressed. Source output survives enrichment failures.
 
-### Optional vectors
+### Storage migration and concurrency
 
-`composition.py` injects Gemini and Qdrant adapters; independent
-`LegionEmbeddingSettings` needs no chat credentials for standalone commands.
-Local memory defaults to lexical retrieval. GitHub embeddings default on and
-require remote Qdrant configuration; disabling embeddings preserves lexical
-memory and constructs neither adapter.
+Schema 4 removes obsolete `vector_nodes`, `vectors:*` metadata and the unused
+memory namespace. The ordered schema history remains solely to upgrade existing
+graphs safely. Graph rows, provenance, source bindings, and FTS remain intact.
+Builds apply migrations before deciding full/incremental/no-change processing;
+read-only queries require a current schema and ask for a build when outdated.
+Writers retain a nonblocking per-database file lock; SQLite WAL supports ready
+graph readers. Standalone build/status/retrieve need only local Git and SQLite.
 
-SQLite schema 3 and parser v3 preserve existing migration/rebuild behavior.
-Qdrant collections derive identity from repository plus embedding identity.
-Immutable content-cache points permit reuse across fresh SQLite graphs; snapshot
-points restrict search to the generation published for the accepted SHA.
-Only acknowledged, identity-validated batches enter the publication manifest.
-
-Writers take a nonblocking per-database file lock; semantic readers take a shared
-lock. Network calls never hold SQLite write transactions. Qdrant clients close
-after each operation. Local storage defaults beside SQLite and permits one owner;
-GitHub uses a configured remote service. Bounded embedding concurrency is 1–8
-(default 1), with existing deadlines, retries and 32-node checkpoints.
-
-Publish the complete generation before cleanup. Retain snapshots for at least
-24 hours and content cache for at least 30 days; never prune the current
-generation or another repository/embedding identity. Failed indexing preserves
-recovery data. Failed cleanup leaves a ready generation and retries next build.
-Copying SQLite alone preserves lexical use, not vectors.
+Embedding adapters, Qdrant integration, hybrid ranking, usage fields, settings,
+CLI flags, Make overrides and secrets are removed. Existing external collections
+and local Qdrant directories are not opened or deleted. Unused environment
+variables cannot enable embeddings. `--embeddings` is no longer accepted.
+Google's SDK remains transitively installed for the independent Reviewer.
 
 ## Dependency rules
 
@@ -283,7 +315,7 @@ operation pass through every layer.
 
 Solver branch navigation follows the same boundary: `repository/git.py` owns
 validated Git operations, `repository/service.py` owns the repository façade,
-and `agents/repository_tools.py` exposes thin `list_branches` and
+and `harness/context/tools.py` exposes thin `list_branches` and
 `switch_branch` adapters. Switching requires a clean sandbox worktree. It does
 not relax the candidate guard: an implemented result must still be based on the
 accepted commit.
@@ -293,7 +325,8 @@ Executable guards in `tests/test_architecture.py` enforce:
 - Domain imports only standard-library, Pydantic, and domain contracts.
 - Agents/orchestration never reach into CLI, workflows, GitHub or concrete Docker.
 - Providers and deterministic capabilities never reach back into agent control.
-- Memory never imports CLI, orchestration, providers, integrations or workflows.
+- The harness never imports agents, orchestration, CLI, workflows, GitHub or Docker.
+- Memory never imports providers, Jev, or model configuration; retrieval is deterministic.
 - Internal module imports are acyclic, including imports through package names.
 - Initializers contain no implementation; the CLI only re-exports `main` for
   entrypoint compatibility.
