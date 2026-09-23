@@ -18,118 +18,35 @@ from tree_sitter_language_pack import get_parser
 from sage.legion_memory.symbol_metadata import python_metadata, tree_metadata
 from sage.legion_memory.tsconfig import parse_tsconfig
 
-PARSER_VERSION = "legion-tree-sitter-v4"
+PARSER_VERSION = "legion-tree-sitter-v5"
 MAX_FILE_BYTES = 2_000_000
 
+_LANGUAGE_EXTENSIONS = {
+    "json": ".json .jsonc", "python": ".py", "javascript": ".js .jsx .mjs",
+    "typescript": ".ts", "tsx": ".tsx", "html": ".html .htm", "css": ".css",
+    "go": ".go", "rust": ".rs", "java": ".java", "csharp": ".cs", "ruby": ".rb",
+    "cpp": ".cpp .cc .cxx .hpp .hh", "c": ".c .h", "kotlin": ".kt .kts",
+    "swift": ".swift", "php": ".php", "scala": ".scala", "dart": ".dart",
+    "lua": ".lua", "bash": ".sh .bash .zsh", "elixir": ".ex .exs", "zig": ".zig",
+    "julia": ".jl", "hcl": ".tf .hcl", "sql": ".sql", "yaml": ".yaml .yml",
+    "nix": ".nix", "powershell": ".ps1 .psm1", "svelte": ".svelte", "vue": ".vue",
+    "r": ".r", "perl": ".pl .pm", "objc": ".m", "solidity": ".sol",
+}
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
-    ".json": "json",
-    ".jsonc": "json",
-    ".py": "python",
-    ".js": "javascript",
-    ".jsx": "javascript",
-    ".mjs": "javascript",
-    ".ts": "typescript",
-    ".tsx": "tsx",
-    ".go": "go",
-    ".rs": "rust",
-    ".java": "java",
-    ".cs": "csharp",
-    ".rb": "ruby",
-    ".cpp": "cpp",
-    ".cc": "cpp",
-    ".cxx": "cpp",
-    ".hpp": "cpp",
-    ".hh": "cpp",
-    ".c": "c",
-    ".h": "c",
-    ".kt": "kotlin",
-    ".kts": "kotlin",
-    ".swift": "swift",
-    ".php": "php",
-    ".scala": "scala",
-    ".dart": "dart",
-    ".lua": "lua",
-    ".sh": "bash",
-    ".bash": "bash",
-    ".zsh": "bash",
-    ".ex": "elixir",
-    ".exs": "elixir",
-    ".zig": "zig",
-    ".jl": "julia",
-    ".tf": "hcl",
-    ".hcl": "hcl",
-    ".sql": "sql",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".nix": "nix",
-    ".ps1": "powershell",
-    ".psm1": "powershell",
-    ".svelte": "svelte",
-    ".vue": "vue",
-    ".r": "r",
-    ".pl": "perl",
-    ".pm": "perl",
-    ".m": "objc",
-    ".sol": "solidity",
+    extension: language for language, extensions in _LANGUAGE_EXTENSIONS.items()
+    for extension in extensions.split()
 }
 
-_CLASS_TYPES = frozenset(
-    {
-        "class_definition",
-        "class_declaration",
-        "interface_declaration",
-        "type_alias_declaration",
-        "enum_declaration",
-        "struct_item",
-        "enum_item",
-        "trait_item",
-        "type_spec",
-        "class_specifier",
-        "struct_specifier",
-        "record_declaration",
-        "object_declaration",
-        "protocol_declaration",
-    }
-)
-_FUNCTION_TYPES = frozenset(
-    {
-        "function_definition",
-        "function_declaration",
-        "method_definition",
-        "method_declaration",
-        "function_item",
-        "method",
-        "singleton_method",
-        "constructor_declaration",
-        "local_function_statement",
-        "function_signature",
-        "arrow_function",
-        "function_expression",
-    }
-)
-_IMPORT_TYPES = frozenset(
-    {
-        "import_statement",
-        "import_from_statement",
-        "import_declaration",
-        "use_declaration",
-        "namespace_use_declaration",
-        "preproc_include",
-        "include_statement",
-        "using_directive",
-    }
-)
-_CALL_TYPES = frozenset(
-    {
-        "call",
-        "call_expression",
-        "function_call",
-        "method_invocation",
-        "invocation_expression",
-        "command",
-        "macro_invocation",
-    }
-)
+_CLASS_TYPES = frozenset("""class_definition class_declaration interface_declaration
+type_alias_declaration enum_declaration struct_item enum_item trait_item type_spec
+class_specifier struct_specifier record_declaration object_declaration protocol_declaration""".split())
+_FUNCTION_TYPES = frozenset("""function_definition function_declaration method_definition
+method_declaration function_item method singleton_method constructor_declaration
+local_function_statement function_signature arrow_function function_expression""".split())
+_IMPORT_TYPES = frozenset("""import_statement import_from_statement import_declaration
+use_declaration namespace_use_declaration preproc_include include_statement using_directive""".split())
+_CALL_TYPES = frozenset("""call call_expression function_call method_invocation
+invocation_expression command macro_invocation""".split())
 _IMPL_TYPES = frozenset({"impl_item", "extension_declaration"})
 @dataclass(frozen=True)
 class NodeRecord:
@@ -302,6 +219,10 @@ class _Extractor:
             )
             node_text = self._text(node)
             child_context = (scopes, parent_qualified, callable_qn)
+            if self.language == "html" and node_type in {"element", "script_element"}:
+                self._html_element(node, line_start, line_end)
+            elif self.language == "css" and node_type == "rule_set":
+                self._css_rule(node, line_start, line_end)
             if node_type in _IMPORT_TYPES:
                 for target in _import_targets(self.language, node_text):
                     self.edges.append(
@@ -442,6 +363,66 @@ class _Extractor:
                     break
             else:
                 return
+
+    def _html_element(self, node: Node, line_start: int, line_end: int) -> None:
+        start = next(
+            (child for child in node.named_children if child.type == "start_tag"), None)
+        if start is None:
+            return
+        attrs: dict[str, str] = {}
+        for attribute in (
+            child for child in start.named_children if child.type == "attribute"
+        ):
+            parts = attribute.named_children
+            if parts:
+                attrs[self._text(parts[0]).casefold()] = self._text(parts[-1]).strip("'\"")
+        tag = self._text(start.named_children[0]).casefold() if start.named_children else ""
+        resource = attrs.get("src") if tag == "script" else (
+            attrs.get("href") if tag == "link"
+            and attrs.get("rel", "").casefold() == "stylesheet" else None)
+        target = _local_resource(resource or "")
+        if target:
+            self.edges.append(EdgeRecord("IMPORTS_FROM", self.file_path, target,
+                                         self.file_path, line_start))
+        identifier, owner = _clean_name(attrs.get("id", "")), self.file_path
+        if identifier:
+            qn = self._qualified((f"element:{identifier}",))
+            if qn not in self._qualified_names:
+                self._qualified_names.add(qn)
+                self.nodes.append(NodeRecord(
+                    "Element", identifier, qn, self.file_path, line_start, line_end,
+                    self.language, self.file_path, self._signature(self._text(start))))
+                self.edges.append(EdgeRecord(
+                    "CONTAINS", self.file_path, qn, self.file_path, line_start))
+                owner = qn
+        references = ([f"#{identifier}"] if identifier else []) + [
+            f".{name}" for name in attrs.get("class", "").split() if _clean_name(name)]
+        self.edges.extend(EdgeRecord("REFERENCES", owner, target, self.file_path,
+                                     line_start, 0.9, {"declarative": True}) for target in references)
+
+    def _css_rule(self, node: Node, line_start: int, line_end: int) -> None:
+        selectors = next(
+            (child for child in node.named_children if child.type == "selectors"), None)
+        pending = [selectors] if selectors else []
+        names: list[str] = []
+        while pending:
+            current = pending.pop()
+            if current.type in {"class_name", "id_name"} and current.parent is not None \
+                    and current.parent.type in {"class_selector", "id_selector"}:
+                name = ("." if current.type == "class_name" else "#") + self._text(current)
+                if name not in names:
+                    names.append(name)
+            pending.extend(reversed(current.named_children))
+        for name in names:
+            qn = self._qualified((f"selector:{name}",))
+            if qn in self._qualified_names:
+                continue
+            self._qualified_names.add(qn)
+            self.nodes.append(NodeRecord(
+                "Selector", name, qn, self.file_path, line_start, line_end,
+                self.language, self.file_path, self._signature(self._text(selectors))))
+            self.edges.append(EdgeRecord(
+                "CONTAINS", self.file_path, qn, self.file_path, line_start))
 
     def _symbol_kind(self, node_type: str) -> str | None:
         if node_type in _CLASS_TYPES:
@@ -648,6 +629,8 @@ def _import_targets(language: str, text: str) -> tuple[str, ...]:
             r"\bimport\s+['\"]([^'\"]+)['\"]",
             r"\brequire\s*\(\s*['\"]([^'\"]+)['\"]",
         )
+    elif language == "css":
+        patterns = (r"@import\s+(?:url\(\s*)?['\"]?([^'\"\s;)]+)",)
     elif language == "go":
         patterns = (r"['\"]([^'\"]+)['\"]",)
     elif language == "java" or language in {"kotlin", "scala"}:
@@ -664,9 +647,18 @@ def _import_targets(language: str, text: str) -> tuple[str, ...]:
     for pattern in patterns:
         for match in re.findall(pattern, text):
             target = " ".join(match.split()).strip("'\"` ")[:500]
+            if language == "css":
+                target = _local_resource(target) or ""
             if target and target not in found:
                 found.append(target)
     return tuple(found[:50])
+
+
+def _local_resource(value: str) -> str | None:
+    value = value.strip()
+    return (
+        None if not value or re.match(r"(?:[a-z][\w+.-]*:|//|#)", value, re.IGNORECASE)
+        else re.split(r"[?#]", value, maxsplit=1)[0] or None)
 
 
 def _inheritance_targets(language: str, text: str) -> tuple[str, ...]:

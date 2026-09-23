@@ -114,3 +114,31 @@ function persist(id) { return id; }
     assert "customerId" in nodes["checkout"].extra["params"]
     assert "idempotent per customer" in nodes["checkout"].extra["docstring"]
     assert any(e.source_qualified == nodes["checkout"].qualified_name and e.target_qualified == "persist" for e in parsed.edges)
+
+
+def test_html_and_css_extract_stable_elements_selectors_and_resources():
+    parser = CodeParser()
+    html = parser.parse_bytes(b'''<link rel="stylesheet" href="./styles/site.css?v=2">
+<script src="https://cdn.example/app.js"></script>
+<main id="content" class="page hero"><button class="cta">Go</button></main>
+''', relative_path="index.html")
+    css = parser.parse_bytes(b'''@import url("./theme.css");
+.page.hero, #content { color: red; }
+.cta:hover { color: blue; }
+''', relative_path="styles/site.css")
+
+    assert html.language == "html"
+    assert [(node.kind, node.name) for node in html.nodes] == [
+        ("File", "index.html"), ("Element", "content")]
+    assert {edge.target_qualified for edge in html.edges if edge.kind == "IMPORTS_FROM"} == {
+        "./styles/site.css"
+    }
+    assert {edge.target_qualified for edge in html.edges if edge.kind == "REFERENCES"} == {
+        "#content", ".page", ".hero", ".cta"
+    }
+    assert {node.name for node in css.nodes if node.kind == "Selector"} == {
+        ".page", ".hero", "#content", ".cta"
+    }
+    assert {edge.target_qualified for edge in css.edges if edge.kind == "IMPORTS_FROM"} == {
+        "./theme.css"
+    }
