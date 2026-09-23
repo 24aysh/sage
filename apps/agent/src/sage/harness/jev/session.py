@@ -13,13 +13,13 @@ from sage.domain.navigation import (NavigationProvider, NavigationUnavailable, R
 from sage.domain.solver import SavedSolverPlan
 from sage.domain.usage import SemanticCallRecord
 from sage.errors import RepositoryError, LegionMemoryError
-from sage.legion_memory.context import minimal_result, bounded_json
-from sage.legion_memory.retrieval import extract_issue_signals
-from sage.orchestration.navigation_candidates import (POLICY_VERSION, digest, fingerprint,
+from sage.harness.memory.context import minimal_result, bounded_json
+from sage.harness.memory.retrieval import extract_issue_signals
+from sage.harness.jev.candidates import (POLICY_VERSION, digest, fingerprint,
     numbered_lines, shortlist, render_observation, excerpt_selection, accept_action)
 from sage.repository.snippets import source_identity
 from sage.repository.filesystem import workspace_relative_path
-from sage.orchestration.context import SolveContext
+from sage.harness.context.run import SolveContext
 from sage.providers.calls import ModelCalls
 
 logger = logging.getLogger(__name__)

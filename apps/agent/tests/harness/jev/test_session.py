@@ -8,12 +8,12 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import ToolMessage
 
-from sage.agents.repository_tools import build_repository_read_tools
+from sage.harness.context.tools import build_repository_read_tools
 from sage.artifacts.store import RunArtifacts
 from sage.config import JevSettings
 from sage.domain.navigation import NavigationDecision, NavigationUnavailable, SearchMatch, SearchResult
 from sage.errors import RepositoryError
-from sage.orchestration.navigation import NavigationSession
+from sage.harness.jev.session import NavigationSession
 from sage.providers.calls import ModelCalls
 from sage.repository.service import Repository
 
@@ -81,7 +81,7 @@ def root_search(nav, **kwargs):
 
 
 def test_logs_separate_candidate_decision_and_retrieval_times(setup_navigation, caplog, monkeypatch):
-    import sage.orchestration.navigation as module
+    import sage.harness.jev.session as module
 
     caplog.set_level(logging.INFO, logger=module.__name__)
     tick = [0.0]
@@ -126,7 +126,7 @@ def test_logs_separate_candidate_decision_and_retrieval_times(setup_navigation, 
 
 @pytest.mark.parametrize("failure", [NavigationUnavailable("http_529"), asyncio.CancelledError()])
 def test_failed_decision_logs_unknown_tokens(setup_navigation, caplog, failure):
-    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    caplog.set_level(logging.INFO, logger="sage.harness.jev.session")
     nav, _, _, _, _ = setup_navigation([failure])
     if isinstance(failure, asyncio.CancelledError):
         with pytest.raises(asyncio.CancelledError):
@@ -140,7 +140,7 @@ def test_failed_decision_logs_unknown_tokens(setup_navigation, caplog, failure):
 
 
 def test_failed_retrieval_logs_time_without_exception_body(setup_navigation, caplog, monkeypatch):
-    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    caplog.set_level(logging.INFO, logger="sage.harness.jev.session")
     nav, _, _, _, _ = setup_navigation(["read_file"], steps=1)
 
     def fail(*args):
@@ -154,7 +154,7 @@ def test_failed_retrieval_logs_time_without_exception_body(setup_navigation, cap
 
 
 def test_shadow_logs_decisions_but_no_retrieval(setup_navigation, caplog):
-    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    caplog.set_level(logging.INFO, logger="sage.harness.jev.session")
     nav, _, _, _, _ = setup_navigation(["read_file"], mode="shadow")
     root_search(nav)
     events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
@@ -164,7 +164,7 @@ def test_shadow_logs_decisions_but_no_retrieval(setup_navigation, caplog):
 
 
 def test_zero_usage_is_not_logged_as_unknown(setup_navigation, caplog, monkeypatch):
-    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    caplog.set_level(logging.INFO, logger="sage.harness.jev.session")
     nav, _, provider, _, _ = setup_navigation([None])
     choose = provider.choose_action
 
@@ -180,7 +180,7 @@ def test_zero_usage_is_not_logged_as_unknown(setup_navigation, caplog, monkeypat
 
 
 def test_skipped_navigation_logs_reason_without_inventing_usage(setup_navigation, caplog):
-    caplog.set_level(logging.INFO, logger="sage.orchestration.navigation")
+    caplog.set_level(logging.INFO, logger="sage.harness.jev.session")
     nav, _, provider, _, _ = setup_navigation()
     asyncio.run(nav.enrich(tool_name="read_file", source="1 | def calculate():", path="app.py"))
     events = [json.loads(r.message.removeprefix("Jev navigation ")) for r in caplog.records]
