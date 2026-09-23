@@ -4,9 +4,9 @@ from types import SimpleNamespace
 from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent
 from sage.composition import build_legion_memory_service, build_orchestrator
-from sage.config import JevSettings, LegionEmbeddingSettings, Settings
+from sage.config import JevSettings, Settings
 from sage.errors import ConfigurationError
-from sage.legion_memory.service import LegionMemoryService
+from sage.harness.memory.service import LegionMemoryService
 from sage.orchestration.solve import SolveOrchestrator
 
 
@@ -46,17 +46,6 @@ def test_composition_builds_legion_memory_without_provider_credentials(tmp_path)
 
     assert isinstance(service, LegionMemoryService)
     assert service._data_root == tmp_path
-
-
-def test_composition_keeps_github_lexical_memory_provider_free(tmp_path) -> None:
-    service = build_legion_memory_service(
-        data_root=tmp_path,
-        embeddings=LegionEmbeddingSettings.from_github_env(
-            {"SAGE_LEGION_EMBEDDINGS_ENABLED": "false"}
-        ),
-    )
-
-    assert service.vectors is None
 
 
 @pytest.mark.parametrize("mode,log_input,expected", [

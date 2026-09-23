@@ -167,10 +167,6 @@ def log_legion_memory(
                     f"{build.files_parsed} updated / {build.files_indexed} indexed",
                 ),
                 ("Graph", f"{build.total_nodes} nodes / {build.total_edges} edges"),
-                ("Embeddings", build.vectors.status),
-                ("Vectors", f"{build.vectors.embedded} embedded / {build.vectors.reused} reused"),
-                ("Vector cleanup", f"{build.vectors.cleanup_status}; {build.vectors.removed} removed"),
-                ("Vector fallback", build.vectors.reason or "none"),
                 ("Memory file", artifact.resolved_memory_file),
             )
         )
@@ -202,8 +198,6 @@ def log_legion_memory(
                     ),
                 ),
                 ("Relevant paths", ", ".join(paths) or "none"),
-                ("Vector retrieval", retrieval.vectors.status if retrieval else "not run"),
-                ("Vector fallback", retrieval.vectors.reason or "none" if retrieval else "not run"),
                 ("Fallback", artifact.fallback),
             ),
         )
