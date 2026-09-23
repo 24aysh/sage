@@ -17,7 +17,7 @@ def resolve_symbol(
 ) -> str | None:
     if target in nodes:
         return target
-    if "." in target and not receiver:
+    if "." in target and not target.startswith(".") and not receiver:
         receiver, target = target.rsplit(".", 1)
     file_path = source["file_path"]
     file_node = nodes.get(file_path, {})
@@ -38,6 +38,8 @@ def resolve_symbol(
         languages = {source.get("language")}
         if source.get("language") in {"javascript", "typescript", "tsx"}:
             languages = {"javascript", "typescript", "tsx"}
+        elif source.get("language") in {"html", "css"}:
+            languages = {"html", "css"}
         return [n for n in by_name.get(name, [])
                 if (path is None or n["file_path"] == path)
                 and n.get("language") in languages]

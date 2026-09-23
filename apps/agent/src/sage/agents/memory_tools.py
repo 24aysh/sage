@@ -88,7 +88,7 @@ def build_legion_memory_tools(
     @tool
     async def semantic_search_nodes_tool(
         query: str,
-        kind: Literal["File", "Class", "Type", "Function", "Test", "Endpoint", "Event", "ConfigKey"] | None = None,
+        kind: Literal["File", "Class", "Type", "Function", "Test", "Element", "Selector", "Endpoint", "Event", "ConfigKey"] | None = None,
         limit: int = 5,
         detail_level: Literal["minimal", "standard"] = "minimal",
     ) -> str:

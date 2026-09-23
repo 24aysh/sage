@@ -741,7 +741,7 @@ def _resolve_import(
             levels = len(target) - len(target.lstrip("."))
             relative = posixpath.normpath(posixpath.join(parent, *(".." for _ in range(levels - 1)), target.lstrip(".").replace(".", "/")))
         matches = [path for path in file_paths if path in {
-            relative, *(relative + suffix for suffix in (".py", ".js", ".jsx", ".ts", ".tsx")),
+            relative, *(relative + suffix for suffix in (".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css")),
             relative + "/__init__.py", relative + "/index.js", relative + "/index.ts",
         }]
         return file_paths[matches[0]] if len(matches) == 1 else None
@@ -750,7 +750,7 @@ def _resolve_import(
     candidates = [normalized, str(source_parent / normalized)]
     dotted = normalized.replace(".", "/")
     candidates.extend((dotted, f"{dotted}.py", f"{dotted}/__init__.py"))
-    extensions = (".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java")
+    extensions = (".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".html", ".htm", ".css")
     for candidate in tuple(candidates):
         candidates.extend(f"{candidate}{suffix}" for suffix in extensions)
         candidates.extend(f"{candidate}/index{suffix}" for suffix in extensions[1:5])

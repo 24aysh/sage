@@ -142,11 +142,11 @@ class VectorIndex:
         eligible = embedded = reused = 0
         vectors = None
         try:
-            eligible = int(store.rows("SELECT COUNT(*) AS count FROM nodes WHERE kind != 'File'")[0]["count"])
+            eligible = int(store.rows("SELECT COUNT(*) AS count FROM nodes WHERE kind NOT IN ('File','Selector')")[0]["count"])
             logger.info("Legion Memory embedding preflight: %s eligible nodes; limit=%s; deadline=%ss",
                         eligible, self._max_nodes, self._deadline)
             nodes = store.rows(
-                "SELECT * FROM nodes WHERE kind != 'File' "
+                "SELECT * FROM nodes WHERE kind NOT IN ('File','Selector') "
                 "ORDER BY qualified_name LIMIT ?", (self._max_nodes + 1,),
             )
             if eligible > self._max_nodes:

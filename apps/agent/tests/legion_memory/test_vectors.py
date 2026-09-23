@@ -31,7 +31,7 @@ from sage.legion_memory.vectors import (
 )
 from sage.legion_memory.search import rrf_merge
 from sage.providers.embeddings import GeminiEmbeddingProvider
-from .conftest import commit_all
+from .conftest import apply_files, commit_all
 
 
 class FakeEmbeddings:
@@ -89,6 +89,25 @@ def test_build_reuses_vectors_and_semantic_only_issue_finds_code(fixture_repo, t
     service.retrieve_issue_context(issue_text=query, repo_root=fixture_repo, memory_file=database)
     assert provider.usage.query_calls == 1
     assert provider.usage.input_tokens is None
+
+
+def test_css_selectors_do_not_consume_embedding_budget(tmp_path):
+    provider = FakeEmbeddings()
+
+    def factory(database, collection, create):
+        return QdrantVectorStore(path=tmp_path / "vectors", collection=collection,
+            dimensions=3, usage=provider.usage, create=create)
+
+    with GraphStore(tmp_path / "graph.sqlite3") as graph:
+        apply_files(graph, {
+            "index.html": '<main id="checkout" class="button primary"></main>',
+            "site.css": ".button.primary, #checkout { color: blue; }",
+        })
+        result = VectorIndex(provider, factory).synchronize(graph)
+
+    assert result.status == "ready"
+    assert result.eligible == 1
+    assert provider.usage.document_calls == 1
 
 
 def test_fresh_sqlite_graph_reuses_persistent_qdrant_vectors(

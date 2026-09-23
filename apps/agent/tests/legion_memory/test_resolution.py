@@ -242,3 +242,25 @@ def test_jsonc_preserves_strings_and_rejects_external_extends():
     assert parse_tsconfig(b'{"compilerOptions":{"paths":{"url":["https://host/*"]}}}')['paths']['url'] == ['https://host/*']
     with pytest.raises(ValueError, match="relative"):
         parse_tsconfig(b'{"extends":"some-package/config"}')
+
+
+def test_html_resources_and_css_selector_references_resolve(tmp_path):
+    files = {
+        "index.html": '<link rel="stylesheet" href="./styles/site.css"><script src="./app.js"></script>'
+                      '<main id="content" class="page hero"></main>',
+        "styles/site.css": '@import "./theme"; .page.hero, #content { color: red; }',
+        "styles/theme.css": ":root { color: black; }",
+        "app.js": "function start() { return true; }",
+    }
+    with GraphStore(tmp_path / "graph.sqlite3") as store:
+        apply_files(store, files)
+        imports = store.rows(
+            "SELECT target_qualified FROM edges WHERE kind='IMPORTS_FROM' ORDER BY target_qualified"
+        )
+        assert imports == [
+            {"target_qualified": "app.js"},
+            {"target_qualified": "styles/site.css"},
+            {"target_qualified": "styles/theme.css"},
+        ]
+        references = query_graph(store, "references_to", ".hero", 5)
+        assert references["data"]["results"][0]["qualified_name"] == "index.html::element:content"

@@ -197,6 +197,22 @@ def test_irrelevant_and_unsupported_language_terms_return_no_match(
     assert unsupported.status is MemoryRetrievalStatus.NO_MATCH
 
 
+def test_css_selector_is_available_to_issue_retrieval(tmp_path: Path) -> None:
+    with GraphStore(tmp_path / "graph.sqlite3") as store:
+        apply_files(store, {
+            "index.html": '<button class="checkout-button">Buy</button>',
+            "site.css": ".checkout-button { color: blue; }",
+        })
+        result = retrieve_issue_context(
+            "Fix the `.checkout-button` styles.", store,
+            memory_file=store.path, budgets=MemoryRetrievalBudgets(),
+        )
+
+    assert result.status is MemoryRetrievalStatus.USED
+    assert any(item.kind == "Selector" and item.name == ".checkout-button"
+               for item in result.items)
+
+
 def test_candidates_below_threshold_are_distinguished_from_no_candidates(
     fixture_repo: Path,
     built_memory: tuple[LegionMemoryService, Path],

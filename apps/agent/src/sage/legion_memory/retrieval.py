@@ -51,7 +51,7 @@ _STOP_WORDS = frozenset(
         "using", "was", "when", "where", "which", "will", "with", "would",
     }
 )
-_NODE_KINDS = frozenset({"File", "Class", "Type", "Function", "Test", "Endpoint", "Event", "ConfigKey"})
+_NODE_KINDS = frozenset({"File", "Class", "Type", "Function", "Test", "Element", "Selector", "Endpoint", "Event", "ConfigKey"})
 _EDGE_KINDS = ("CALLS", "REFERENCES", "IMPORTS_FROM", "TESTED_BY", "INHERITS", "IMPLEMENTS", "CONTAINS", "HANDLES", "TRIGGERS", "PUBLISHES", "CONSUMES")
 _MAX_QUERY_TERMS = 24
 
