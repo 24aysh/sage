@@ -1,4 +1,101 @@
-# Behavior-preserving simplification
+# Agent harness refactor
+
+## Current objective and design
+
+Branch: `refactor/agent-harness`. The user requested one discoverable home for
+context management, Legion Memory, and Jev, and complete removal of embeddings.
+The unit of design is still one solve: task, role policy, source observations,
+bounded context, candidate, verification, review, and terminal evidence.
+
+The resulting tower of capabilities is explicit:
+
+1. Domain contracts name facts without importing implementations.
+2. Repository capabilities supply current source; graph memory supplies
+   source-linked, accepted-base navigation with lexical ranking and reasons.
+3. Harness context controls instruction lifetime, packet assembly, and delivery
+   through read tools. Visibility and invalidation belong to a specific history.
+4. Jev optionally selects complete read-only observations within existing budgets.
+5. Thin roles reason with those capabilities. Deterministic orchestration owns
+   saved-plan, candidate, verification, review, repair and publication gates.
+6. Artifacts and tests record evidence and make subsequent improvements measurable.
+
+An agent can inspect an Issue, follow an attributed source locator, see why it
+was suggested, and recover using ordinary reads when optional context is absent.
+It need not reason about embedding models, index publication, vector health,
+remote stores, or duplicated retrieval modes. This removes resource costs and
+failure states without replacing them with another inference step.
+
+## Implementation checklist
+
+- [x] Create `harness/context`, `harness/memory`, and `harness/jev` owners.
+- [x] Move context envelopes and tool delivery out of role definitions; move
+  memory preparation out of workflow resource management.
+- [x] Load role markdown once from the accepted checkout and retain each role's
+  guidance on every invocation, including repairs and rereviews.
+- [x] Relocate Jev without changing payloads, policies, budgets, or accounting.
+- [x] Remove embedding adapters, hybrid ranking, Qdrant dependency/configuration,
+  vector artifact fields, CLI switches, and GitHub secret wiring.
+- [x] Add schema 4 migration removing only obsolete vector state; preserve
+  graph rows, source metadata, lexical ranking, and build locking.
+- [x] Move tests to harness owners and add invariants for local-only memory,
+  context lifetime, migration preservation, and dependency direction.
+- [x] Complete canonical checks and record final results below.
+
+## Tradeoffs and compatibility
+
+The namespace is a discoverability boundary, not a new global manager. Sessions
+keep separate, explicit lifetimes so a repair receives necessary facts again.
+No persistent inferred beliefs, automatic summarizer, prompt-cache service, or
+new learning subsystem is introduced. Improvements accumulate as regression
+fixtures and versioned policy changes, checked against recorded tokens, time,
+exposure, and independently verified outcomes.
+
+Lexical retrieval cannot find every synonym-only match that embeddings could.
+Exact paths, identifiers, FTS, graph relationships, and current source inspection
+remain. `semantic_search_nodes_tool` becomes `search_nodes_tool`; its schema and
+lexical behavior are retained. Jev remains optional with its existing defaults.
+
+CLI `--embeddings` and Make embedding overrides are removed. Old environment
+variables have no consumer. SQLite graphs upgrade on build. External Qdrant data
+is untouched and must be managed by its owner; no remote cleanup is attempted.
+The old migration SQL is retained to support existing graph databases.
+
+Role markdown is bounded, role-specific, and read once, but appears in every
+model request. Stable prompts may benefit from provider caching; the refactor
+does not promise token savings from provider behavior. Keep guidance concise.
+
+Existing Action pins remain at the prior release until an implementation commit
+is published and deliberately pinned. Offline checks cannot certify deployment
+or live quality/cost improvements. No commit, push, or paid call is implicit.
+
+## Verification
+
+Completed on `refactor/agent-harness`:
+
+- `make check`: 567 passed, one optional reference-checkout test skipped;
+  package compilation passed.
+- `make graph`: passed.
+- `make github-smoke`: passed using local substitutes, without model calls or
+  remote publication.
+- `make github-doctor`: passed with read-only Docker socket access.
+- AST comparisons confirm Jev's provider, session, and candidates are unchanged
+  apart from import paths; `JevSettings` is unchanged.
+- Regression tests cover graph-preserving migration, local-only memory, writer
+  locking, role-instruction snapshots across repairs/rereviews, context budgets,
+  and harness dependency boundaries.
+- `git diff --check`: passed. No paid live solves were performed.
+
+See [testing.md](testing.md) for executable procedures and
+[architecture.md](architecture.md) for current ownership. Live quality, cost,
+and latency differences remain to be benchmarked; offline results do not
+establish an end-to-end performance improvement.
+
+---
+
+# Historical record: behavior-preserving simplification
+
+The following describes the earlier `agent-ergonomics` refactor. Its vector and
+module-path preservation requirements are superseded by the current scope above.
 
 ## Objective
 

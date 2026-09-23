@@ -110,14 +110,10 @@ def test_github_solve_wires_runner_paths_and_status_id(
     monkeypatch.setenv("SAGE_GITHUB_TOKEN", "github-token")
     monkeypatch.setenv("OPENAI_API_KEY", "model-token")
     monkeypatch.setenv("GEMINI_API_KEY", "reviewer-token")
-    monkeypatch.setenv("SAGE_LEGION_QDRANT_URL", "https://qdrant.example.com")
-    monkeypatch.setenv("SAGE_LEGION_QDRANT_API_KEY", "qdrant-token")
     monkeypatch.setattr(github, "RestGitHubClient", lambda settings: fake_client)
     memory_service = object()
 
-    def build_memory_service(*, embeddings):
-        assert embeddings.enabled is True
-        assert embeddings.qdrant_url == "https://qdrant.example.com"
+    def build_memory_service():
         return memory_service
 
     monkeypatch.setattr(github, "build_legion_memory_service", build_memory_service)

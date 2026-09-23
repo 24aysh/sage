@@ -8,9 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from sage.cli.memory import _memory_service
 from sage.cli.output import _render_result
-from sage.composition import build_orchestrator
+from sage.composition import build_orchestrator, build_legion_memory_service
 from sage.config import Settings
 from sage.domain.solve import SolveOutcome, SolveRequest
 from sage.errors import ConfigurationError
@@ -53,7 +52,7 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
                 request,
                 orchestrator,
                 settings,
-                memory_service=_memory_service(arguments),
+                memory_service=build_legion_memory_service(),
                 on_interrupted=lambda partial: _render_result(partial, model=settings.solver_model),
             )
         )

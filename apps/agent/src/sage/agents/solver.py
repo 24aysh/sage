@@ -3,35 +3,26 @@
 from __future__ import annotations
 
 import logging
-import json
 from collections.abc import Callable, Sequence
-from pathlib import Path
-from typing import Any, Literal, Protocol, TypeVar
+from typing import Any, Literal, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool, tool
-from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel
 
 from sage.agents.loop import build_graph as build_tool_graph
 from sage.agents.loop import recursion_limit
-from sage.agents.memory_tools import build_legion_memory_tools
-from sage.agents.prompts import (
-    SOLVER_INSTRUCTIONS,
-    NAVIGATION_INSTRUCTIONS,
-    build_repair_message,
-    build_solver_message,
-)
-from sage.agents.repository_tools import (
-    RepositoryContext,
-    build_repository_branch_tools,
-    build_repository_read_tools,
+from sage.harness.context.run import SolverContext
+from sage.harness.context.packets import prepare_solver_message
+from sage.agents.prompts import SOLVER_INSTRUCTIONS
+from sage.harness.context.instructions import NAVIGATION_INSTRUCTIONS, with_repository_instructions
+from sage.harness.context.tools import (
+    build_context_tools,
     build_show_diff_tool,
 )
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
-from sage.domain.solve import PreparedRun
 from sage.domain.solver import (
     SavedSolverPlan,
     SolverAcceptanceCriterion,
@@ -40,7 +31,7 @@ from sage.domain.solver import (
     SolverPlanTask,
 )
 from sage.domain.usage import AttemptKind, ModelRole
-from sage.errors import AgentRuntimeError, RepositoryError
+from sage.errors import RepositoryError
 from sage.observability import agent_trace_config, log_agent_result
 from sage.providers.calls import ModelCalls
 from sage.verification.discovery import is_allowed_solver_verification_command
@@ -48,36 +39,6 @@ from sage.verification.discovery import is_allowed_solver_verification_command
 logger = logging.getLogger(__name__)
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 SOLVE_GRAPH_NAME = "sage_v2_tool_driven"
-
-
-class SolverContext(RepositoryContext, Protocol):
-    """Run-scoped capabilities needed by the Solver role."""
-
-    prepared_run: PreparedRun
-    settings: Settings
-    memory: SolverMemorySession | None
-
-
-class SolverMemorySession(Protocol):
-    """Narrow run-scoped memory surface consumed by Solver tool binding."""
-
-    service: Any
-    repo_root: Path
-    memory_file: Path
-    tools_enabled: bool
-
-    def enrich(self, **arguments: Any) -> str: ...
-    def begin_session(self, *, initial_visible: bool) -> str: ...
-    def invalidate(self, *paths: str) -> None: ...
-    def record_schemas(self, characters: int) -> None: ...
-    def filter_response(self, result: dict[str, object]) -> dict[str, object]: ...
-
-    def record_tool_call(
-        self,
-        tool_name: str,
-        result: dict[str, object],
-        duration_ms: float,
-    ) -> None: ...
 
 
 class SolverAgent:
@@ -96,19 +57,7 @@ class SolverAgent:
         plans: SolverPlanSession,
         calls: ModelCalls,
     ) -> SolverFinalResult:
-        if navigation := getattr(context, "navigation", None):
-            navigation.begin_session(stage=stage)
-        if context.memory is not None:
-            packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
-            if stage == "solver-repair" and packet:
-                message += "\n\n<legion-repair-context>\n" + packet + "\n</legion-repair-context>"
-        input_cap = (
-            self._settings.repair_input_chars
-            if stage == "solver-repair"
-            else self._settings.solver_input_chars
-        )
-        if len(message) > input_cap:
-            raise AgentRuntimeError("Solver context exceeds the configured safe input cap.")
+        message = prepare_solver_message(message, stage=stage, context=context)
         parsed = await self._run_graph(
             stage=stage,
             message=message,
@@ -175,8 +124,9 @@ class SolverAgent:
             model=model,
             tools=tools,
             max_turns=self._settings.max_turns,
-            instructions=SOLVER_INSTRUCTIONS + (NAVIGATION_INSTRUCTIONS
+            instructions=with_repository_instructions(SOLVER_INSTRUCTIONS + (NAVIGATION_INSTRUCTIONS
                 if getattr(context, "navigation", None) is not None and context.navigation.action_policy else ""),
+                context.instructions.solver),
             output_schema=output_schema,
             graph_name=f"{SOLVE_GRAPH_NAME}_{stage.replace('-', '_')}",
             role_name=ModelRole.SOLVER.value.capitalize(),
@@ -432,34 +382,12 @@ def build_solver_tools(
             command_recorder(command)
         return context.repository.format_command_result(result)
 
-    memory_tools = (
-        build_legion_memory_tools(
-            context.memory.service,
-            repo_root=context.memory.repo_root,
-            memory_file=context.memory.memory_file,
-            output_chars=context.settings.max_tool_output_chars,
-            usage_recorder=context.memory.record_tool_call,
-            source_reader=context.repository.read_file,
-            profile="solve",
-            response_filter=context.memory.filter_response,
-        )
-        if context.memory is not None and context.memory.tools_enabled
-        else []
-    )
-    if context.memory is not None and memory_tools:
-        context.memory.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in memory_tools],
-                                                    separators=(",", ":"))))
     show_diff = build_show_diff_tool(
         context,
         description="Show actual bounded Git status, statistics, and candidate diff.",
     )
     return [
-        *build_repository_read_tools(
-            context, enrich=context.memory.enrich if context.memory is not None else None,
-            output_chars=context.settings.max_tool_output_chars,
-        ),
-        *build_repository_branch_tools(context),
-        *memory_tools,
+        *build_context_tools(context),
         save_plan,
         revise_plan,
         replace_text,

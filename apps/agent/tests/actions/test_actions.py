@@ -14,12 +14,8 @@ SECRET_CONFIGURATION = {
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
     "LANGSMITH_API_KEY",
-    "SAGE_LEGION_QDRANT_URL",
-    "SAGE_LEGION_QDRANT_API_KEY",
     "TYPESAFE_API_KEY",
 }
-# GitHub requires remote Qdrant; Jev is supported through trusted opt-in plumbing.
-GITHUB_UNSUPPORTED_CONFIGURATION = {"SAGE_LEGION_QDRANT_PATH"}
 
 
 def test_composite_action_manifests_are_valid_and_pinned() -> None:
@@ -70,8 +66,6 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "openai-api-key",
         "gemini-api-key",
         "typesafe-api-key",
-        "legion-qdrant-url",
-        "legion-qdrant-api-key",
         "langsmith-api-key",
         "base-sha",
         "status-comment-id",
@@ -81,8 +75,6 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         "description": "Optional Jev credential scoped to the solve controller step.",
         "required": False,
     }
-    assert document["inputs"]["legion-qdrant-url"]["required"] is False
-    assert document["inputs"]["legion-qdrant-api-key"]["required"] is False
     assert document["inputs"]["langsmith-api-key"] == {
         "description": "Optional LangSmith API key scoped to the solve controller step.",
         "required": False,
@@ -99,10 +91,7 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "SAGE_V2_SOLVER_MODEL" not in body
     assert "SAGE_V2_REVIEWER_MODEL" not in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
-    assert "SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}" in body
-    assert (
-        "SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}"
-    ) in body
+    assert "QDRANT" not in body
     assert 'sandbox_image="${SAGE_SANDBOX_IMAGE:-sage-sandbox:v2}"' in body
     assert "docker build" in body
     assert "sage github solve" in body
@@ -168,13 +157,13 @@ def test_workflow_configures_every_non_secret_example_value_in_yaml() -> None:
     configuration = document["env"]
 
     assert set(configuration) == (
-        example_names - SECRET_CONFIGURATION - GITHUB_UNSUPPORTED_CONFIGURATION
+        example_names - SECRET_CONFIGURATION
     )
     assert all(isinstance(value, str) for value in configuration.values())
     assert not SECRET_CONFIGURATION & configuration.keys()
     assert configuration["SOLVER_MODEL"] == "gpt-5.4-mini"
     assert configuration["REVIEWER_MODEL"] == "gemini-3.5-flash"
-    assert configuration["SAGE_LEGION_EMBEDDINGS_ENABLED"] == "true"
+    assert not any("EMBEDDING" in key or "QDRANT" in key for key in configuration)
     assert configuration["SAGE_JEV_NAVIGATION_MODE"] == "off"
     assert configuration["SAGE_JEV_LOG_INPUT"] == "false"
     assert configuration["SAGE_JEV_CAPTURE"] == "false"
@@ -208,8 +197,7 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.TYPESAFE_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
-    assert "secrets.SAGE_LEGION_QDRANT_URL" in yaml.safe_dump(jobs["solve"])
-    assert "secrets.SAGE_LEGION_QDRANT_API_KEY" in yaml.safe_dump(jobs["solve"])
+    assert "QDRANT" not in yaml.safe_dump(jobs["solve"])
     assert "secrets.SAGE_LEGION_EMBEDDINGS_ENABLED" not in body
     assert "vars." not in body
     solve_action = next(
@@ -226,8 +214,6 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
         "gemini-api-key",
         "typesafe-api-key",
         "langsmith-api-key",
-        "legion-qdrant-url",
-        "legion-qdrant-api-key",
         "base-sha",
         "status-comment-id",
     }

@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from sage.agents.prompts import SOLVER_INSTRUCTIONS, build_solver_message
+from sage.agents.prompts import SOLVER_INSTRUCTIONS
+from sage.harness.context.packets import build_solver_message
 from sage.agents.solver import SolverPlanSession, build_solver_tools
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
@@ -23,9 +24,9 @@ from sage.domain.solver import (
     SolverPlanTask,
 )
 from sage.errors import RepositoryError
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.session import MemorySession
-from sage.orchestration.context import SolveContext
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.session import MemorySession
+from sage.harness.context.run import SolveContext
 from sage.sandbox.base import CommandResult
 
 
@@ -358,7 +359,7 @@ def test_memory_context_and_tools_are_added_only_for_a_valid_session(
         memory_context=session.initial_context,
     )
 
-    assert "semantic_search_nodes_tool" in tools
+    assert "search_nodes_tool" in tools
     assert "get_architecture_overview_tool" not in tools
     assert {"query_graph_tool", "get_flow_tool", "get_community_tool", "get_impact_radius_tool"} <= tools
     assert "<untrusted-legion-memory>" in message

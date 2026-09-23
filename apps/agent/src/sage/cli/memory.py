@@ -6,12 +6,11 @@ import argparse
 from pathlib import Path
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
-from sage.cli.output import _render_memory_retrieval, _render_vectors
+from sage.cli.output import _render_memory_retrieval
 from sage.composition import build_legion_memory_service
-from sage.config import LegionEmbeddingSettings
 from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.errors import LegionMemoryQueryError
-from sage.legion_memory.service import LegionMemoryService
+from sage.harness.memory.service import LegionMemoryService
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
@@ -42,16 +41,10 @@ def add_parser(subparsers: argparse._SubParsersAction) -> tuple[argparse.Argumen
     return memory_build_parser, memory_retrieve_parser
 
 
-def _memory_service(arguments: argparse.Namespace) -> LegionMemoryService:
-    choice = getattr(arguments, "embeddings", None)
-    settings = LegionEmbeddingSettings.from_env(enabled=None if choice is None else choice == "on")
-    return build_legion_memory_service(embeddings=settings) if settings.enabled else build_legion_memory_service()
-
-
 def _run_memory_build(arguments: argparse.Namespace) -> int:
     """Run the strict standalone graph build command."""
 
-    result = _memory_service(arguments).build_or_update_graph_tool(
+    result = build_legion_memory_service().build_or_update_graph_tool(
         repo_root=arguments.repo,
         memory_file=arguments.memory_file,
         full_rebuild=arguments.full_rebuild,
@@ -69,12 +62,11 @@ def _run_memory_build(arguments: argparse.Namespace) -> int:
     print(f"  Communities: {result.total_communities}")
     print(f"  Languages: {', '.join(result.languages) or 'none'}")
     print(f"  Duration: {result.duration_ms:.2f} ms")
-    _render_vectors(result.vectors)
     if result.warnings:
         print("  Warnings:")
         for warning in result.warnings:
             print(f"    - {warning}")
-    return 1 if result.vectors.status == "unavailable" else 0
+    return 0
 
 
 def _run_memory_status(arguments: argparse.Namespace) -> int:
@@ -113,7 +105,7 @@ def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
         raise LegionMemoryQueryError(
             f"Unable to read Issue file: {type(error).__name__}: {str(error)[:300]}"
         ) from error
-    result = _memory_service(arguments).retrieve_issue_context(
+    result = build_legion_memory_service().retrieve_issue_context(
         issue_text=issue_text,
         repo_root=arguments.repo,
         memory_file=arguments.memory_file,

@@ -105,7 +105,6 @@ def test_solve_baseline_forces_jev_off_and_omits_memory(tmp_path: Path) -> None:
     (
         ("clean-runs", "runs"),
         ("clean-legion-memory", "legion-memory"),
-        ("clean-embeddings", "embeddings"),
     ),
 )
 def test_clean_target_removes_only_contents_and_preserves_parent(

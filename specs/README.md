@@ -10,13 +10,13 @@ under `docs/` for present behavior and commands.
 | --- | --- |
 | [`../docs/architecture.md`](../docs/architecture.md) | Implemented behavior, ownership, and dependency boundaries |
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
-| [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Current behavior-preserving simplification scope and verification record |
+| [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Harness consolidation, embedding removal, migration and verification record |
 
 ## Proposed work
 
 | Document | Status |
 | --- | --- |
-| [`25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md`](25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md) | A–D2 implemented as off-by-default local experiments; live cost/latency/quality promotion gates pending |
+| [`25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md`](25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md) | A–E implemented, preserved under `harness/jev`; live promotion gates pending; embeddings removed |
 
 This user-requested proposal does not change the current behavior described in
 the guides above.
@@ -25,7 +25,7 @@ the guides above.
 
 | Document | Status |
 | --- | --- |
-| [`24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md`](24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md) | Implemented behavior-preserving architecture and documentation consolidation |
+| [`24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md`](24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md) | Original consolidation plus active harness ownership and embedding-removal follow-up |
 
 The plan records migration rationale. It does not override the current guides.
 

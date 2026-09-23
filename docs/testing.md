@@ -17,14 +17,14 @@ make check
 Setup may download locked dependencies. Once installed, `make check` runs the
 deterministic Python suite and package compilation without model calls, Docker
 or network access. The suite includes Action policy, architectural boundaries,
-SQLite migrations and real temporary local Qdrant with fake embeddings.
+SQLite migration preservation, lexical retrieval, context lifetime and scripted Jev behavior.
 There is no separately configured formatter, linter or type-checking gate.
 
 Direct equivalent:
 
 ```bash
 LANGSMITH_TRACING=false uv run --project apps/agent \
-  pytest -c apps/agent/pyproject.toml
+  pytest -c apps/agent/pyproject.toml apps/agent/tests
 uv run --project apps/agent python -m compileall -q apps/agent/src
 ```
 
@@ -38,10 +38,10 @@ they need no TypeSafe key and do not establish live efficiency gains.
 
 ```bash
 uv run --project apps/agent pytest \
-  apps/agent/tests/providers/test_typesafe.py \
-  apps/agent/tests/orchestration/test_navigation.py \
-  apps/agent/tests/orchestration/test_navigation_evaluation.py \
-  apps/agent/tests/legion_memory/test_navigation.py \
+  apps/agent/tests/harness/jev/test_provider.py \
+  apps/agent/tests/harness/jev/test_session.py \
+  apps/agent/tests/harness/jev/test_evaluation.py \
+  apps/agent/tests/harness/memory/test_navigation.py \
   apps/agent/tests/repository/test_search.py
 ```
 
@@ -103,17 +103,16 @@ With Legion Memory, first build the graph and then run a memory-enabled solve:
 
 ```bash
 make legion-memory REPO=/absolute/repo \
-  MEMORY_FILE=/absolute/sage-memory/graph.sqlite3 EMBEDDINGS=off
+  MEMORY_FILE=/absolute/sage-memory/graph.sqlite3
 
 make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/sage-memory/graph.sqlite3 EMBEDDINGS=off BASE_REF=HEAD
+  MEMORY=/absolute/sage-memory/graph.sqlite3 BASE_REF=HEAD
 ```
 
 `legion-memory` builds committed-source memory; it does **not** call Jev, even
 when navigation mode is on. Jev runs during `solve` or `legion-solve` exploration.
-The build target uses `MEMORY_FILE`; the solve target uses `MEMORY`. Disabling
-embeddings here isolates Jev from embedding cost/network activity; it does not
-disable the graph. Keep the same repository/commit between build and solve.
+The build target uses `MEMORY_FILE`; the solve target uses `MEMORY`. Memory is
+always lexical and local. Keep the same repository/commit between build and solve.
 
 The `actions` policy needs the Solver to supply `exploration_goal` on a read or
 search; without it, navigation logs a skip. Set `SAGE_JEV_MAX_FOLLOWUP_ACTIONS=2`
@@ -187,8 +186,8 @@ Token totals include known Solver, Reviewer **and Jev** input/output usage.
 `Model calls` counts generative requests; `Jev calls` is separate. Cancelled
 in-flight requests may never report usage: those counts remain unknown, the
 summary marks incomplete totals, and the provider may still bill them. Cached
-input tokens are a subset of input tokens and are not added twice. Memory
-embedding usage, when available, remains in the separate Legion Memory section.
+input tokens are a subset of input tokens and are not added twice. Graph memory
+has no separate model usage.
 
 Inspect `interrupted.json` for the interruption-time snapshot and `usage.json`
 for recorded calls and elapsed agent sessions. `workflow-timing.json` still
@@ -277,8 +276,8 @@ uv run --env-file .env --project apps/agent python apps/agent/evals/navigation.p
 Arms: `off`, `deterministic-excerpts`, `jev-excerpts`, `actions-0`, `actions-1`,
 `actions-2`. The zero-action control keeps objective-bearing schemas/prompts
 but executes no follow-ups. Optional `--memory-file` uses normal memory setup.
-Keep model versions, Issue/base, budgets, memory settings and vector-cache
-state fixed within pairs; repeat to measure variance.
+Keep model versions, Issue/base, budgets, instruction files and graph state
+fixed within pairs; repeat to measure variance.
 
 Copy `apps/agent/evals/navigation-manifest.example.json`, fill actual run
 directories and independent quality verdicts, then compare:
@@ -290,12 +289,14 @@ uv run --project apps/agent python apps/agent/evals/navigation.py compare \
 
 Supply per-model `prices` with `input_per_million`, `output_per_million`, and
 optionally `cached_input_per_million` in USD applicable to the experiment.
-Missing prices/usage yield unknown cost, not zero. Estimates include semantic
-and embedding usage. Reports cover paired tokens/cost/wall time, Solver and
+Missing prices/usage yield unknown cost, not zero. Estimates include Jev
+usage. Reports cover paired tokens/cost/wall time, Solver and
 Reviewer calls, sessions, operations, added characters and independently
 assessed verified completion. Counts, median/p95 and bootstrap mean intervals
 are reported; one pair has no interval. Small samples are not promotion
 evidence. Keep tuning and held-out runs in separate manifests.
+Legacy artifacts containing embedding usage are rejected by this evaluator;
+use the historical evaluator for those runs to avoid understating their cost.
 
 Use fixed cases covering explicit paths, ambiguous symbols, misleading hits,
 long files, test discovery, cross-file work, repairs and memory on/off.
@@ -312,14 +313,15 @@ Paths in this table are relative to `apps/agent/tests/`.
 | --- | --- |
 | CLI dispatch, help, output, exit policy | `test_cli.py`, `cli/` |
 | Plan gate and model tool loop | `agents/` |
+| Role instructions, packet limits and context lifetime | `harness/context/` |
+| Jev decisions, transport, budgets and evaluation | `harness/jev/` |
 | Candidate, verification/review/repair routing | `orchestration/` |
 | File paths, diffs and command execution | `repository/`, `verification/` |
-| Memory build and persistence | `legion_memory/test_indexing.py`, `test_store.py` |
-| Parser and source binding | `legion_memory/test_parsing.py`, `test_resolution.py` |
-| Graph query/analysis semantics | `legion_memory/test_queries.py`, `test_analysis.py` |
-| Issue ranking and context budgets | `legion_memory/test_retrieval.py` |
-| Memory tools, visibility, deduplication and edited locators | `legion_memory/test_tools.py`, `test_session.py` |
-| Vector identity, reuse, publication and cleanup | `legion_memory/test_vectors.py` |
+| Memory build and persistence | `harness/memory/test_indexing.py`, `test_store.py` |
+| Parser and source binding | `harness/memory/test_parsing.py`, `test_resolution.py` |
+| Graph query/analysis semantics | `harness/memory/test_queries.py`, `test_analysis.py` |
+| Issue ranking and context budgets | `harness/memory/test_retrieval.py` |
+| Memory tools, visibility, deduplication and edited locators | `harness/memory/test_tools.py`, `test_session.py` |
 | Provider behavior/accounting | `providers/`, `test_observability.py` |
 | Atomic evidence and cleanup | `artifacts/`, `workflows/` |
 | Ownership/import rules | `test_architecture.py` |
@@ -330,7 +332,7 @@ For example:
 LANGSMITH_TRACING=false uv run --project apps/agent pytest \
   apps/agent/tests/test_cli.py apps/agent/tests/cli
 LANGSMITH_TRACING=false uv run --project apps/agent pytest \
-  apps/agent/tests/legion_memory
+  apps/agent/tests/harness/memory
 make github-test
 make actions-check
 make graph
@@ -340,9 +342,10 @@ make graph
 Architecture checks traverse nested packages, resolve package-member imports,
 check domain dependencies and reject cycles. The CLI initializer may only
 re-export the existing entrypoint. Extraction permits more focused files while
-retaining the nonblank source budget and reducing maximum internal fan-out.
+retaining the nonblank source budget and bounding internal imports. The workflow
+coordinates the context and memory preparation owners explicitly.
 
-Shared graph setup lives in `legion_memory/conftest.py`; use `apply_files` for
+Shared graph setup lives in `harness/memory/conftest.py`; use `apply_files` for
 parser/store fixtures, `fixture_repo` for committed Git state, `built_memory`
 for a ready service, and `memory_session` for read enrichment. Regression tests
 must not import another test module for fixture construction.
@@ -351,12 +354,12 @@ Reference certification remains optional and offline:
 
 ```bash
 uv run --project apps/agent pytest \
-  apps/agent/tests/legion_memory/test_reference_differential.py \
+  apps/agent/tests/harness/memory/test_reference_differential.py \
   --legion-reference /absolute/path/to/trusted/reference-checkout
 ```
 
 The checkout must match the fingerprints in
-[`reference_manifest.json`](../apps/agent/tests/legion_memory/reference_manifest.json).
+[`reference_manifest.json`](../apps/agent/tests/harness/memory/reference_manifest.json).
 This checks normalized structural fixtures, not all language/framework behavior.
 
 ## Inspect a repository's memory without a model
@@ -367,13 +370,13 @@ testing; do not point probes at a database that another process owns.
 
 ```bash
 make legion-memory REPO=/absolute/repo \
-  MEMORY_FILE=/absolute/memory/graph.sqlite3 EMBEDDINGS=off
+  MEMORY_FILE=/absolute/memory/graph.sqlite3
 
 uv run --project apps/agent sage memory status \
   --repo /absolute/repo --memory-file /absolute/memory/graph.sqlite3
 
 make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3 EMBEDDINGS=off
+  MEMORY=/absolute/memory/graph.sqlite3
 ```
 
 `MEMORY_FILE` selects the build destination; `MEMORY` selects the database for
@@ -419,46 +422,25 @@ retains 21 read-only operations for explicit use. Read/search enrichment must
 preserve source, respect ranges/caps, suppress edited locators and deduplicate
 visible responses; its failure must leave source output usable.
 
-## Exercise optional embeddings
+## Graph-only memory and migration
 
-Create configuration with `make env` and edit the existing `.env`. Set
-`GEMINI_API_KEY` and review `SAGE_LEGION_*` settings in `.env.example`.
-Embedding-enabled commands send bounded source-derived text and Issue queries
-to Google; `SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=false` prohibits that use.
+Legion Memory always uses local lexical search and graph relationships. Building
+and retrieving memory require no model keys, Qdrant, or network access:
 
 ```bash
-make legion-memory REPO=/absolute/repo \
-  MEMORY_FILE=/absolute/memory/graph.sqlite3 EMBEDDINGS=on
+make legion-memory REPO=/absolute/repo MEMORY_FILE=/absolute/memory/graph.sqlite3
 make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3 EMBEDDINGS=on
+  MEMORY=/absolute/memory/graph.sqlite3
 ```
 
-The Make targets load `ENV_FILE`; direct CLI callers export settings or use
-`uv run --env-file .env`. `EMBEDDINGS=on|off` / `--embeddings on|off` overrides
-the environment setting. Local memory defaults to lexical-only.
-
-Qdrant defaults to a persistent `qdrant/` directory beside SQLite. Set a path
-or server URL, never both. Local storage permits one owner; remote credentials
-require HTTPS except for the supported localhost case.
-
-Repeat the same build and expect zero new document embeddings with eligible
-vectors reused. Rebuilding SQLite against the same repository/embedding identity
-can reuse remote content points. Queries must remain restricted to the accepted
-generation. Graph readiness and vector readiness are separate: a vector failure
-preserves lexical retrieval, while standalone embedding-enabled builds exit
-nonzero if vectors are unavailable.
-
-Schema upgrades run on build. Copying SQLite does not copy Qdrant vectors.
-Cleanup runs after successful publication and retains the current generation,
-snapshots for at least 24 hours, and content cache for at least 30 days.
-Cleanup failure reports pending without invalidating readiness. A later build
-resumes acknowledged work and retries cleanup. Test these using `test_vectors.py`
-before spending API resources.
-
-The defaults remain Gemini Embedding 2, 3072 dimensions, 2,000 symbols,
-300-second build deadline and concurrency 1 (configurable 1–8). Over-capacity
-builds make no document calls. Raise explicit limits only after examining usage.
-Missing provider token usage is `unknown`, not zero or a character estimate.
+Run a build once on older databases to migrate to schema 4. Expect graph rows
+and provenance to survive while obsolete vector metadata is removed. Repeat the
+build at the same SHA and expect `no_change`. No external vector store is opened.
+Old Qdrant files and server collections remain user-owned; remove them manually
+only when no other consumer needs them. Old `SAGE_LEGION_EMBEDDING_*`,
+`SAGE_LEGION_EMBEDDINGS_ENABLED`, and `SAGE_LEGION_QDRANT_*` values have no effect
+and can be removed from local `.env` and repository Secrets. Remove `EMBEDDINGS=`
+from Make invocations and `--embeddings` from direct CLI commands.
 
 ### Clear local Sage data
 
@@ -467,15 +449,43 @@ Clear one local data store at a time with:
 ```bash
 make clean-runs
 make clean-legion-memory
-make clean-embeddings
 ```
 
 Each command deletes all nested and hidden content from its matching directory
-under `.sage/`. The `.sage/runs`, `.sage/legion-memory`, and `.sage/embeddings`
+under `.sage/`. The `.sage/runs` and `.sage/legion-memory`
 parent directories themselves are preserved (and created if absent). The other
 stores are not changed.
 
 ## Sandbox and local solve
+
+### Persistent role instructions
+
+Commit `sage-solver.md` and `sage-reviewer.md` in the target repository. Sage
+discovers them automatically at the selected base SHA and includes each only
+in its role's system message on every call, including repairs and rereviews.
+The contents are loaded once before sandbox startup; editing them during a solve
+does not change the active policy. Missing files are allowed. Keep them concise:
+they consume input tokens each call, and each file is capped at 12,000 UTF-8 bytes.
+
+Configure alternate repository-relative paths in `.env` or `sage.yml`:
+
+```yaml
+env:
+  SAGE_SOLVER_INSTRUCTIONS_FILE: "sage-solver.md"
+  SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
+```
+
+No enable switch is needed. `make solve`, `make solve-baseline`, `make legion-solve`
+and GitHub use the same role context path. The baseline still disables graph
+memory and Jev. To verify instruction lifetime and isolation without paid calls:
+
+```bash
+uv run --project apps/agent pytest apps/agent/tests/harness/context \
+  apps/agent/tests/orchestration/test_solve_orchestrator.py \
+  apps/agent/tests/workflows/test_solve_workflow.py
+```
+
+### Run a local solve
 
 ```bash
 make env
@@ -516,7 +526,7 @@ solve and inspects its evidence. For subsequent solves:
 ```bash
 make solve REPO=/absolute/repo ISSUE=/absolute/issue.md
 make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3 EMBEDDINGS=off
+  MEMORY=/absolute/memory/graph.sqlite3
 make run-status RUN_DIR=/absolute/run-directory
 make run-test RUN_DIR=/absolute/run-directory \
   TEST_COMMAND="python3 -m unittest discover -v"
@@ -552,8 +562,8 @@ availability without reading secret values.
 
 Accepted `/sage solve` Issue comments recheck authorization and
 duplicate state before model construction, and solve at the gate's exact SHA.
-GitHub memory uses fresh runner-owned SQLite and defaults to persistent remote
-embeddings.
+GitHub memory uses fresh runner-owned SQLite with lexical retrieval and no
+external memory service.
 
 Configure credentials only as repository or environment Secrets:
 
@@ -561,8 +571,6 @@ Configure credentials only as repository or environment Secrets:
 OPENAI_API_KEY
 GEMINI_API_KEY
 TYPESAFE_API_KEY               # optional; required when GitHub Jev mode is shadow/on
-SAGE_LEGION_QDRANT_URL          # HTTPS endpoint
-SAGE_LEGION_QDRANT_API_KEY
 LANGSMITH_API_KEY               # optional; required when tracing is enabled
 ```
 
@@ -579,8 +587,8 @@ boundary unchanged. For example:
 env:
   SOLVER_MODEL: "gpt-5.4-mini"
   REVIEWER_MODEL: "gemini-3.5-flash"
-  SAGE_LEGION_EMBEDDINGS_ENABLED: "true"  # false selects lexical memory
-  SAGE_LEGION_EMBEDDING_MAX_NODES: "2000"
+  SAGE_SOLVER_INSTRUCTIONS_FILE: "sage-solver.md"
+  SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
   SAGE_JEV_NAVIGATION_MODE: "off"         # change only for an explicit canary
   SAGE_JEV_NAVIGATION_POLICY: "excerpts"  # or actions
   SAGE_JEV_LOG_INPUT: "false"
@@ -589,24 +597,23 @@ env:
 
 The action inherits this repository-owned configuration. It exposes inputs only
 for credentials and run identity, preventing hidden input defaults from
-overriding the YAML. `SAGE_LEGION_QDRANT_PATH` is local-only and is intentionally
-omitted from the GitHub workflow, which requires remote Qdrant storage. Invalid
-enabled embedding or Jev configuration fails before the first model/embedding
-call. The TypeSafe secret is optional while mode is `off`; `shadow` and `on`
-require it. Keep `SAGE_JEV_LOG_INPUT=false` and `SAGE_JEV_CAPTURE=false` on GitHub:
-raw Issue/source bodies belong only in deliberate local evaluation evidence.
+overriding the YAML. Memory requires no credentials. Invalid Jev configuration
+fails before the first model call. The TypeSafe secret is optional while mode is
+`off`; `shadow` and `on` require it. Keep `SAGE_JEV_LOG_INPUT=false` and
+`SAGE_JEV_CAPTURE=false` on GitHub: raw Issue/source bodies belong only in
+deliberate local evaluation evidence.
 
 A live release canary requires a pushed implementation and both Sage Actions
 pinned to its full immutable commit SHA. In a disposable repository, invoke a
 bounded Issue naming a known symbol and verify:
 
 1. Authorization, accepted SHA and one status-comment lifecycle.
-2. Memory build `full` at that SHA, vectors `ready`, nonzero Qdrant operations,
-   semantic/hybrid retrieval and recorded exposure/use.
+2. Memory build `full` at that SHA, exact/FTS retrieval and recorded exposure/use.
+   No embedding settings, API calls, or Qdrant secret requirements.
 3. A creation-only `sage/issue-<number>` branch and draft PR.
 4. Allowlisted diagnostics without checkout, Issue body, rendered memory context,
-   Qdrant endpoint or credentials.
-5. Idempotent finalization; a second same-SHA Issue reuses eligible vectors.
+   or credentials.
+5. Idempotent finalization; each GitHub run has its own graph snapshot.
 
 For a Jev canary, add the `TYPESAFE_API_KEY` repository/environment Secret and
 first set `SAGE_JEV_NAVIGATION_MODE: "shadow"` with one explicit policy. Verify
@@ -618,10 +625,7 @@ canary should use `on`; restore mode to `off` afterward. Compare it with a fixed
 Issue/base/model baseline and do not treat a successful canary as promotion or
 an efficiency result.
 
-A lexical-only canary sets `SAGE_LEGION_EMBEDDINGS_ENABLED: "false"` in the
-workflow YAML and must retain the graph with vectors disabled. Restore the
-intended setting afterward. Live canaries and paid calls are separate from the
-offline gate.
+Live canaries and paid calls remain separate from the offline gate.
 
 ## Read evidence before retrying
 
@@ -639,8 +643,6 @@ GitHub uploads intentionally contain less data than local run directories.
 | Memory missing/stale/foreign | Same explicit database and repository; rebuild at accepted SHA |
 | Corrupt/unsupported graph | Move the disposable database aside, then build a fresh graph |
 | Solve memory unavailable | Artifact failure category, standalone build/status/retrieve |
-| GitHub configuration failure | Remote Qdrant secrets, HTTPS URL, no local path setting |
-| Vector fallback | Redacted reason and usage; transient failure may preserve lexical solving |
 | GitHub workflow failure | Action tests, allowlisted diagnostics, bot-owned status comment |
 
 Do not claim a skipped live check passed. Do not infer readiness from old context

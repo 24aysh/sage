@@ -49,12 +49,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Solve repository issues locally or through trusted automation.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    solve_parser = solve.add_parser(subparsers)
-    memory_build_parser, memory_retrieve_parser = memory.add_parser(subparsers)
+    solve.add_parser(subparsers)
+    memory.add_parser(subparsers)
     github.add_parser(subparsers)
-    for command_parser in (solve_parser, memory_build_parser, memory_retrieve_parser):
-        command_parser.add_argument("--embeddings", choices=("on", "off"), default=None,
-            help="Explicitly enable Gemini code/Issue embeddings or retain lexical-only memory.")
     return parser
 
 

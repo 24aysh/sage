@@ -9,13 +9,15 @@ from collections.abc import Callable
 
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
-from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus, MemoryRetrievalBudgets
+from sage.domain.memory import LegionMemoryRunArtifact
 from sage.domain.solve import PreparedRun, SolveOutcome, SolveRequest, SolveResult
-from sage.errors import ArtifactError, LegionMemoryBuildError, LegionMemoryError, WorkspaceError
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.session import MemorySession, unavailable_memory_artifact
+from sage.errors import ArtifactError, WorkspaceError
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.session import MemorySession
+from sage.harness.memory.preparation import prepare_memory
 from sage.observability import log_legion_memory
-from sage.orchestration.context import SolveContext, SolveEngine
+from sage.harness.context.run import SolveContext, SolveEngine
+from sage.harness.context.instructions import RoleInstructions
 from sage.repository.service import Repository
 from sage.repository.workspace import prepare_run
 from sage.sandbox.base import Sandbox
@@ -61,6 +63,7 @@ async def solve_issue(
     memory_artifact: LegionMemoryRunArtifact | None = None
     sandbox: Sandbox | None = None
     try:
+        instructions = RoleInstructions.load(prepared.workspace_dir, effective_settings)
         build_sandbox = sandbox_factory or _build_docker_sandbox
         sandbox = build_sandbox(prepared, effective_settings)
         sandbox.start()
@@ -74,7 +77,7 @@ async def solve_issue(
             run_artifacts.write_verification_preflight(report)
             logger.info("Verification environment preflight: ready (tooling only; tests not executed)")
         if request.memory_file is not None:
-            memory_session, memory_artifact = _prepare_memory(
+            memory_session, memory_artifact = prepare_memory(
                 request=request,
                 prepared=prepared,
                 issue_text=issue_text,
@@ -92,6 +95,7 @@ async def solve_issue(
             settings=effective_settings,
             artifacts=run_artifacts,
             memory=memory_session,
+            instructions=instructions,
         )
         final_output = await orchestrator.solve(issue_text=issue_text, context=context)
         diff = repository.get_complete_diff()
@@ -151,75 +155,6 @@ async def solve_issue(
                 duration_ms = (perf_counter() - workflow_started) * 1000
                 run_artifacts.write_workflow_timing(duration_ms)
     return result.model_copy(update={"workflow_duration_ms": duration_ms})
-
-
-def _prepare_memory(
-    *,
-    request: SolveRequest,
-    prepared: PreparedRun,
-    issue_text: str,
-    service: LegionMemoryService | None,
-    context_chars: int = 4000,
-) -> tuple[MemorySession | None, LegionMemoryRunArtifact]:
-    """Build and retrieve one base-SHA graph, or return a visible fallback."""
-
-    assert request.memory_file is not None
-    started = perf_counter()
-    requested = request.memory_file.expanduser().resolve()
-    if service is None:
-        return None, unavailable_memory_artifact(
-            requested_memory_file=requested,
-            resolved_memory_file=requested,
-            failure_category="MemoryServiceUnavailable",
-        )
-    try:
-        build = service.build_or_update_graph_tool(
-            repo_root=prepared.workspace_dir,
-            memory_file=requested,
-        )
-        if build.indexed_sha != prepared.base_sha:
-            raise LegionMemoryBuildError(
-                "Legion Memory indexed SHA does not match the accepted base."
-            )
-        retrieval = service.retrieve_issue_context(
-            issue_text=issue_text,
-            repo_root=prepared.workspace_dir,
-            memory_file=build.memory_file,
-            budgets=MemoryRetrievalBudgets(max_chars=context_chars),
-        )
-        if retrieval.status is MemoryRetrievalStatus.UNAVAILABLE:
-            return None, unavailable_memory_artifact(
-                requested_memory_file=requested,
-                resolved_memory_file=build.memory_file,
-                failure_category="MemoryRetrievalUnavailable",
-                build=build,
-                retrieval=retrieval,
-            )
-        if (
-            retrieval.status
-            not in {MemoryRetrievalStatus.USED, MemoryRetrievalStatus.NO_MATCH}
-            or retrieval.indexed_sha != prepared.base_sha
-            or retrieval.repository_id != build.repository_id
-        ):
-            raise LegionMemoryBuildError(
-                "Legion Memory retrieval provenance does not match the accepted base."
-            )
-        session = MemorySession(
-            service=service,
-            repo_root=prepared.workspace_dir,
-            requested_memory_file=requested,
-            memory_file=build.memory_file,
-            build=build,
-            retrieval=retrieval,
-            preflight_duration_ms=round((perf_counter() - started) * 1000, 2),
-        )
-        return session, session.artifact()
-    except LegionMemoryError as error:
-        return None, unavailable_memory_artifact(
-            requested_memory_file=requested,
-            resolved_memory_file=requested,
-            failure_category=type(error).__name__,
-        )
 
 
 def _read_issue(request: SolveRequest) -> str:

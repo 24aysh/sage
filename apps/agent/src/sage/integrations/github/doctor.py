@@ -59,14 +59,9 @@ def main() -> int:
         action_body = solve_action.read_text(encoding="utf-8")
         workflow_body = workflow.read_text(encoding="utf-8")
         required_action_wiring = (
-            "SAGE_LEGION_QDRANT_URL",
-            "SAGE_LEGION_QDRANT_API_KEY",
             "TYPESAFE_API_KEY",
         )
         required_workflow_wiring = (
-            'SAGE_LEGION_EMBEDDINGS_ENABLED: "true"',
-            "secrets.SAGE_LEGION_QDRANT_URL",
-            "secrets.SAGE_LEGION_QDRANT_API_KEY",
             "secrets.TYPESAFE_API_KEY",
             "SAGE_JEV_NAVIGATION_MODE:",
             'SAGE_JEV_LOG_INPUT: "false"',

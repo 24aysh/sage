@@ -28,7 +28,7 @@ DEBUG_FLAG :=
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-baseline solve-debug \
 	legion-memory legion-retrieve legion-solve run-status run-test \
-	clean-runs clean-legion-memory clean-embeddings
+	clean-runs clean-legion-memory
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -61,7 +61,6 @@ help: ## Show the available commands and variables.
 		'  make clean-runs       Delete run contents while preserving .sage/runs.' \
 		'  make clean-legion-memory' \
 		'                        Delete graph contents while preserving .sage/legion-memory.' \
-		'  make clean-embeddings Delete vector contents while preserving .sage/embeddings.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
@@ -364,7 +363,7 @@ graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/agents/test_loop.py::test_compiled_graph_renders_expected_mermaid"
 
-clean-runs clean-legion-memory clean-embeddings:
+clean-runs clean-legion-memory:
 	@set -euo pipefail; \
 	directory="$(ROOT_DIR)/.sage/$(@:clean-%=%)"; \
 	mkdir -p "$$directory"; \
@@ -381,7 +380,6 @@ legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optiona
 	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
 	args=(memory build --repo "$(REPO)"); \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
-	if [[ -n "$(EMBEDDINGS)" ]]; then args+=(--embeddings "$(EMBEDDINGS)"); fi; \
 	if [[ -n "$(MEMORY_FILE)" ]]; then args+=(--memory-file "$(MEMORY_FILE)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
@@ -397,11 +395,9 @@ legion-retrieve: ## Retrieve memories for ISSUE from MEMORY, bound to REPO.
 	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
 	[[ -f "$(ISSUE)" ]] || { echo "ERROR: issue file does not exist: $(ISSUE)" >&2; exit 1; }; \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
-	embedding_args=(); \
-	if [[ -n "$(EMBEDDINGS)" ]]; then embedding_args+=(--embeddings "$(EMBEDDINGS)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage memory retrieve \
-		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)" "$${embedding_args[@]}"
+		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \
@@ -448,7 +444,6 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 			exit 1; \
 		fi; \
 		memory_args=(--memory-file "$(MEMORY)"); \
-		if [[ -n "$(EMBEDDINGS)" ]]; then memory_args+=(--embeddings "$(EMBEDDINGS)"); fi; \
 	fi; \
 	set +e; \
 	uv run --project "$(AGENT_PROJECT)" sage solve \

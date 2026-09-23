@@ -102,16 +102,20 @@ Sage has one supported solve architecture. Use the canonical owners below; do
 not add a version selector, runtime factory, dormant implementation package, or
 cross-run state engine.
 
-- `sage/agents/` — Solver and Reviewer roles, prompts, and model-callable tools;
+- `sage/agents/` — Solver and Reviewer roles, static prompts, role loop and mutation gates;
 - `sage/orchestration/` — deterministic solve/verify/review/repair control;
 - `sage/workflows/` — local and GitHub use-case resource lifecycles;
 - `sage/domain/` — provider-neutral typed contracts;
 - `sage/cli/` — command parsing, output, and exit policy; `__init__.py` only
   re-exports `main` to preserve the installed entrypoint;
 - `sage/repository/`, `sage/verification/` — deterministic capabilities;
-- `sage/legion_memory/` — rebuildable committed-source navigation: `indexing.py`
+- `sage/harness/context/` — immutable role instructions, bounded message envelopes,
+  run capabilities, and repository tool context delivery;
+- `sage/harness/memory/` — rebuildable committed-source navigation: `indexing.py`
   owns provenance/builds, `service.py` validated queries, `retrieval.py` Issue
   ranking, and `session.py` run visibility; `bindings.py` infers source bindings;
+- `sage/harness/jev/` — bounded navigation session, candidates and TypeSafe transport;
+  keep Jev modes, thresholds and accounting explicit; no embedding backend exists;
 - `sage/providers/`, `sage/integrations/`, `sage/sandbox/` — external adapters;
 - `sage/artifacts/` — atomic evidence for one run;
 - `sage/composition.py` — the only production construction map; and
@@ -122,10 +126,12 @@ orchestration may depend on agents and capabilities; agents may depend on typed
 capabilities and providers; domain modules depend only on standard-library,
 Pydantic, and other domain modules. Agents and orchestration must not import
 CLI, GitHub workflow, publication, or concrete Docker implementations.
+The harness must not import agents or orchestration. Memory is local lexical/graph
+retrieval and must not depend on model providers, Jev, or model configuration.
 
 See `docs/architecture.md` for the complete ownership and extension map.
 Keep tests grouped by those responsibilities; extend shared graph fixtures in
-`tests/legion_memory/conftest.py` instead of importing another test module or
+`tests/harness/memory/conftest.py` instead of importing another test module or
 adding chronology-named suites such as `remaining` or `efficiency_gaps`.
 
 ## 4. New features
