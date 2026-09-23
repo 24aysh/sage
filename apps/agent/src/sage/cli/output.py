@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from sage.domain.embeddings import VectorStatus, VectorUsage
 from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveResult
 
@@ -98,8 +97,6 @@ def _render_solve_memory_summary(result: SolveResult) -> None:
     print(f"  Read/search enrichments: {sum(e.status == 'used' for e in memory.enrichments)} used / {len(memory.enrichments)} attempted")
     print(f"  Fallback: {memory.fallback}")
     print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
-    if memory.embedding_usage is not None:
-        _render_embedding_usage(memory.embedding_usage)
 
 
 def _render_solve_usage_summary(result: SolveResult) -> None:
@@ -160,8 +157,6 @@ def _render_memory_retrieval(
         + (", ".join(_safe_log_value(term, 80) for term in result.query_terms) or "none")
     )
     print(f"  Lexical candidates: {result.lexical_candidates}")
-    print(f"  Semantic candidates: {result.semantic_candidates}")
-    _render_vectors(result.vectors)
     print(f"  Graph-expanded candidates: {result.expanded_candidates}")
     print(f"  Retrieved: {result.returned}/{result.total_candidates}")
     print(f"  Omitted: {result.omitted}")
@@ -170,7 +165,6 @@ def _render_memory_retrieval(
     print("  Usage meaning: retrieved context, not measured improvement")
     print(f"  Unresolved relationships skipped: {result.unresolved_edges}")
     print(f"  Ranking duration: {result.ranking_duration_ms:.2f} ms")
-    print(f"  Query embedding duration: {result.vectors.query_embedding_duration_ms:.2f} ms")
     if context_file is not None:
         print(f"  Context file: {context_file}")
     print(f"  Duration: {result.duration_ms:.2f} ms")
@@ -199,22 +193,3 @@ def _safe_log_value(value: object, limit: int) -> str:
         character if character.isprintable() else " " for character in str(value)
     )
     return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
-
-
-def _render_vectors(status: VectorStatus) -> None:
-    print(f"  Embeddings: {status.status}")
-    if status.model:
-        print(f"  Embedding model: {status.model} ({status.dimensions} dimensions)")
-        print(f"  Vectors: {status.embedded} embedded / {status.reused} reused / {status.eligible} eligible")
-        print(f"  Vector cleanup: {status.cleanup_status} / {status.removed} obsolete points removed")
-    if status.reason:
-        print(f"  Vector fallback: {_safe_log_value(status.reason, 300)}")
-    if status.usage is not None:
-        _render_embedding_usage(status.usage)
-
-
-def _render_embedding_usage(usage: VectorUsage) -> None:
-    print(f"  Embedding API calls: {usage.document_calls} document / {usage.query_calls} query (including retries)")
-    print(f"  Embedding retries: {usage.retries}")
-    print(f"  Embedding input tokens: {usage.input_tokens if usage.input_tokens is not None else 'unknown'}")
-    print(f"  Qdrant operations: {usage.qdrant_operations}")

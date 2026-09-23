@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from sage.composition import build_legion_memory_service, build_orchestrator
-from sage.config import Settings, LegionEmbeddingSettings
+from sage.config import Settings
 from sage.errors import GitHubConfigurationError
 from sage.integrations.github.client import RestGitHubClient
 from sage.integrations.github.config import GitHubSettings
@@ -122,9 +122,7 @@ def _run_github_solve(arguments: argparse.Namespace) -> int:
             status_comment_id=arguments.status_comment_id,
             orchestrator_factory=build_orchestrator,
             settings_factory=lambda: Settings.from_env(environment),
-            memory_service_factory=lambda: build_legion_memory_service(
-                embeddings=LegionEmbeddingSettings.from_github_env(environment)
-            ),
+            memory_service_factory=build_legion_memory_service,
         )
     )
     print(f"GitHub solve outcome: {result.outcome.value}")

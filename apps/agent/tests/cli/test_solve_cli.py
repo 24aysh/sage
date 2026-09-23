@@ -165,7 +165,7 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
     monkeypatch.setattr(solve.Settings, "from_env", lambda: settings)
     monkeypatch.setattr(solve, "_validate_prerequisites", lambda *args, **kwargs: None)
     monkeypatch.setattr(solve, "build_orchestrator", lambda value: object())
-    monkeypatch.setattr(cli_memory, "build_legion_memory_service", lambda: service)
+    monkeypatch.setattr(solve, "build_legion_memory_service", lambda: service)
 
     async def fake_solve(
         request,
