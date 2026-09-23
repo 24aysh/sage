@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from sage.domain.navigation import ActionCandidate, ReadAction, NavigationUnavailable
-from sage.providers.typesafe import TypeSafeProvider, SCORE_LEVELS, parse_response
+from sage.harness.jev.provider import TypeSafeProvider, SCORE_LEVELS, parse_response
 
 CANDIDATES = (ActionCandidate(id="c0", action=ReadAction(path="app.py", start_line=1, end_line=40),
                               evidence="app.py:7: def solve"),)
