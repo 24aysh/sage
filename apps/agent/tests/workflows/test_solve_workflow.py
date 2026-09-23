@@ -100,6 +100,29 @@ class NoChangeEngine:
         )
 
 
+def test_role_instructions_are_snapshotted_before_sandbox_start(tmp_path, monkeypatch):
+    request, prepared, settings = _run_values(tmp_path)
+    solver_file = prepared.workspace_dir / "sage-solver.md"
+    solver_file.write_text("Original solver policy")
+    (prepared.workspace_dir / "sage-reviewer.md").write_text("Original reviewer policy")
+    monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
+
+    class EditingSandbox(FakeSandbox):
+        def start(self):
+            super().start()
+            solver_file.write_text("Changed policy")
+
+    class InspectingEngine(SuccessfulEngine):
+        async def solve(self, *, issue_text, context):
+            assert context.instructions.solver == "Original solver policy"
+            assert context.instructions.reviewer == "Original reviewer policy"
+            return await super().solve(issue_text=issue_text, context=context)
+
+    asyncio.run(solve_issue(request, InspectingEngine(), settings,
+        sandbox_factory=lambda *_: EditingSandbox(), repository_factory=lambda *_: FakeRepository(),
+        artifacts=FakeStore()))
+
+
 def test_solve_issue_uses_git_results_and_cleans_up(tmp_path: Path, monkeypatch) -> None:
     request, prepared, settings = _run_values(tmp_path)
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
@@ -330,7 +353,6 @@ def test_memory_is_prepared_after_sandbox_start_before_solver(
         return prepared
 
     class MemoryService:
-        vectors = None
 
         def build_or_update_graph_tool(self, **arguments):
             events.append("build")
@@ -392,7 +414,6 @@ def test_no_match_keeps_memory_tools_available_without_prompt_context(
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
 
     class MemoryService:
-        vectors = None
 
         def build_or_update_graph_tool(self, **_):
             return _memory_build(memory_file, prepared.base_sha)
@@ -507,7 +528,6 @@ def test_memory_session_closes_when_solver_fails(
     captured = []
 
     class MemoryService:
-        vectors = None
 
         def build_or_update_graph_tool(self, **_):
             return _memory_build(memory_file, prepared.base_sha)

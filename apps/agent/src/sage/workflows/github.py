@@ -49,7 +49,7 @@ from sage.integrations.github.status import (
     has_terminal_status,
     transition_invocation_status,
 )
-from sage.orchestration.context import SolveEngine
+from sage.harness.context.run import SolveEngine
 from sage.repository.host_git import run_git
 from sage.workflows.solve import solve_issue
 
