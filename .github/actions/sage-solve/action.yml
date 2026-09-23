@@ -14,12 +14,6 @@ inputs:
   typesafe-api-key:
     description: Optional Jev credential scoped to the solve controller step.
     required: false
-  legion-qdrant-url:
-    description: HTTPS URL for the remote Legion Qdrant deployment.
-    required: false
-  legion-qdrant-api-key:
-    description: API key for the remote Legion Qdrant deployment.
-    required: false
   langsmith-api-key:
     description: Optional LangSmith API key scoped to the solve controller step.
     required: false
@@ -94,8 +88,6 @@ runs:
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
-        SAGE_LEGION_QDRANT_URL: ${{ inputs.legion-qdrant-url }}
-        SAGE_LEGION_QDRANT_API_KEY: ${{ inputs.legion-qdrant-api-key }}
         SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}
         SAGE_STATUS_COMMENT_ID: ${{ inputs.status-comment-id }}
         SAGE_CONTROLLER_ROOT: ${{ github.action_path }}/../../..

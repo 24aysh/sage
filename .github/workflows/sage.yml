@@ -9,16 +9,7 @@ permissions: {}
 # Repository-owned, non-secret Sage configuration. Keep credential values in
 # GitHub Secrets and edit these strings to tune the installed workflow.
 env:
-  SAGE_LEGION_EMBEDDINGS_ENABLED: "true"
   SAGE_LEGION_INITIAL_CONTEXT_CHARS: "4000"
-  SAGE_LEGION_EMBEDDING_MODEL: "gemini-embedding-2"
-  SAGE_LEGION_EMBEDDING_DIMENSIONS: "3072"
-  SAGE_LEGION_EMBEDDING_MAX_NODES: "2000"
-  SAGE_LEGION_EMBEDDING_DEADLINE_SECONDS: "300"
-  SAGE_LEGION_EMBEDDING_TIMEOUT_SECONDS: "30"
-  SAGE_LEGION_EMBEDDING_CONCURRENCY: "1"
-  SAGE_LEGION_EMBEDDING_RETRIES: "1"
-  SAGE_LEGION_EMBEDDING_MIN_SIMILARITY: "0.45"
   OPENAI_MAX_RETRIES: "2"
   SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "true"
   SOLVER_MODEL: "gpt-5.4-mini"
@@ -36,6 +27,8 @@ env:
   SAGE_SANDBOX_IMAGE: "sage-sandbox:v2"
   SAGE_COMMAND_TIMEOUT_SECONDS: "60"
   SAGE_MAX_TOOL_OUTPUT_CHARS: "12000"
+  SAGE_SOLVER_INSTRUCTIONS_FILE: "sage-solver.md"
+  SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
   # Jev remains opt-in until a disposable canary and held-out evaluation pass.
   SAGE_JEV_NAVIGATION_MODE: "off"
   SAGE_JEV_NAVIGATION_POLICY: "excerpts"
@@ -110,8 +103,6 @@ jobs:
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
           langsmith-api-key: ${{ secrets.LANGSMITH_API_KEY }}
-          legion-qdrant-url: ${{ secrets.SAGE_LEGION_QDRANT_URL }}
-          legion-qdrant-api-key: ${{ secrets.SAGE_LEGION_QDRANT_API_KEY }}
           base-sha: ${{ needs.gate.outputs.base-sha }}
           status-comment-id: ${{ needs.gate.outputs.status-comment-id }}
 
