@@ -24,22 +24,20 @@ from sage.domain.memory import (
     MemoryStatus,
     MemoryToolResult,
 )
-from sage.domain.embeddings import MemoryVectorError
 from sage.errors import LegionMemoryBuildError, LegionMemoryQueryError
-from sage.legion_memory.indexing import RepositoryIndex
-from sage.legion_memory.parsing import normalize_path
-from sage.legion_memory.retrieval import retrieve_issue_context as retrieve_context
-from sage.legion_memory.store import GraphStore
-from sage.legion_memory.vectors import VectorIndex, memory_lock
+from sage.harness.memory.indexing import RepositoryIndex
+from sage.harness.memory.parsing import normalize_path
+from sage.harness.memory.retrieval import retrieve_issue_context as retrieve_context
+from sage.harness.memory.store import GraphStore
+from sage.harness.memory.locking import memory_lock
 
 
 class LegionMemoryService:
-    """Local graph capability with explicitly injected optional vector search."""
+    """Deterministic committed-source graph and lexical navigation capability."""
 
-    def __init__(self, *, data_root: Path | None = None, vectors: VectorIndex | None = None) -> None:
+    def __init__(self, *, data_root: Path | None = None) -> None:
         self._data_root = data_root
         self._index = RepositoryIndex(data_root)
-        self.vectors = vectors
 
     def resolve_memory_file(self, repo_root: Path, memory_file: Path | None = None) -> Path:
         return self._index.resolve_memory_file(repo_root, memory_file)
@@ -54,14 +52,7 @@ class LegionMemoryService:
         database = self.resolve_memory_file(repo_root, memory_file)
         try:
             with memory_lock(database):
-                result = self._index.build(repo_root=repo_root, memory_file=database, full_rebuild=full_rebuild)
-                if self.vectors is not None:
-                    with GraphStore(database) as store:
-                        status = self.vectors.synchronize(store)
-                    result = result.model_copy(update={"vectors": status})
-                return result
-        except MemoryVectorError as error:
-            raise LegionMemoryBuildError(str(error)) from error
+                return self._index.build(repo_root=repo_root, memory_file=database, full_rebuild=full_rebuild)
         except OSError as error:
             raise LegionMemoryBuildError("Unable to access Legion Memory storage.") from error
 
@@ -132,7 +123,6 @@ class LegionMemoryService:
                     store,
                     memory_file=database,
                     budgets=limits,
-                    vectors=self.vectors,
                 )
         except (
             LegionMemoryBuildError,
@@ -169,7 +159,7 @@ class LegionMemoryService:
             data=stats.model_dump(mode="json"),
         ).model_dump(mode="json")
 
-    def semantic_search_nodes_tool(
+    def search_nodes_tool(
         self,
         *,
         query: str,
@@ -182,20 +172,14 @@ class LegionMemoryService:
         if not query.strip():
             raise LegionMemoryQueryError("Search query cannot be empty.")
         with self._ready_store(repo_root, memory_file) as store:
-            if self.vectors is None:
-                rows, mode = store.search(query, kind=kind, limit=limit)
-                vector_status = None
-            else:
-                from sage.legion_memory.search import hybrid_search
-
-                rows, mode, vector_status = hybrid_search(store, query, vectors=self.vectors, kind=kind, limit=limit)
+            rows, mode = store.search(query, kind=kind, limit=limit)
             return self._result(
                 store,
                 summary=f"Found {len(rows)} graph node(s) for {query!r} via {mode}.",
                 total=len(rows),
                 returned=len(rows),
                 search_mode=mode,
-                data={"nodes": rows, **({"vectors": vector_status.model_dump()} if vector_status else {})},
+                data={"nodes": rows},
             )
 
     def get_minimal_context_tool(
@@ -206,12 +190,7 @@ class LegionMemoryService:
         memory_file: Path | None = None,
     ) -> dict[str, object]:
         with self._ready_store(repo_root, memory_file) as store:
-            if self.vectors is None:
-                nodes, mode = store.search(task, kind=None, limit=5)
-            else:
-                from sage.legion_memory.search import hybrid_search
-
-                nodes, mode, _ = hybrid_search(store, task, vectors=self.vectors, limit=5)
+            nodes, mode = store.search(task, kind=None, limit=5)
             communities = store.rows(
                 "SELECT id, name, size, cohesion, dominant_language "
                 "FROM communities ORDER BY size DESC, id LIMIT 3"
@@ -235,7 +214,7 @@ class LegionMemoryService:
                     "communities": communities,
                     "flows": flows,
                     "next_tools": [
-                        "semantic_search_nodes_tool",
+                        "search_nodes_tool",
                         "query_graph_tool",
                         "get_impact_radius_tool",
                     ],
@@ -246,7 +225,7 @@ class LegionMemoryService:
         self, *, repo_root: Path, memory_file: Path, path: str | None = None,
         query: str | None = None, start_line: int = 1, end_line: int | None = None,
     ) -> list[dict[str, object]]:
-        from sage.legion_memory.context import structural_context
+        from sage.harness.memory.context import structural_context
 
         with self._ready_store(repo_root, memory_file) as store:
             return structural_context(
@@ -265,7 +244,7 @@ class LegionMemoryService:
     ) -> dict[str, object]:
         max_results = _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
-            from sage.legion_memory.queries import query_graph
+            from sage.harness.memory.queries import query_graph
 
             return self._result(store, **query_graph(store, pattern, target, max_results))
 
@@ -606,7 +585,7 @@ class LegionMemoryService:
     ) -> dict[str, object]:
         max_results = _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
-            from sage.legion_memory.analysis import knowledge_gaps
+            from sage.harness.memory.analysis import knowledge_gaps
 
             gaps = knowledge_gaps(store, max_results)
             rows = store.rows(
@@ -681,7 +660,7 @@ class LegionMemoryService:
         self, *, repo_root: Path, memory_file: Path | None = None,
         min_lines: int = 50, kind: str | None = None, file_path_pattern: str = "", limit: int = 20,
     ) -> dict[str, object]:
-        from sage.legion_memory.analysis import large_nodes
+        from sage.harness.memory.analysis import large_nodes
 
         _bounded_int(min_lines, "min_lines", maximum=100_000)
         _bounded_int(limit, "limit", maximum=100)
@@ -691,7 +670,7 @@ class LegionMemoryService:
     def get_surprising_connections_tool(
         self, *, repo_root: Path, memory_file: Path | None = None, top_n: int = 10,
     ) -> dict[str, object]:
-        from sage.legion_memory.analysis import surprising_connections
+        from sage.harness.memory.analysis import surprising_connections
 
         _bounded_int(top_n, "top_n", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
@@ -702,7 +681,7 @@ class LegionMemoryService:
     def get_suggested_questions_tool(
         self, *, repo_root: Path, memory_file: Path | None = None, max_results: int = 10,
     ) -> dict[str, object]:
-        from sage.legion_memory.analysis import suggested_questions
+        from sage.harness.memory.analysis import suggested_questions
 
         _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
@@ -714,7 +693,7 @@ class LegionMemoryService:
         self, *, repo_root: Path, memory_file: Path | None = None, mode: str = "dead_code",
         old_name: str | None = None, new_name: str | None = None, max_results: int = 20,
     ) -> dict[str, object]:
-        from sage.legion_memory.analysis import refactor_preview
+        from sage.harness.memory.analysis import refactor_preview
 
         _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:
@@ -724,7 +703,7 @@ class LegionMemoryService:
         self, *, repo_root: Path, memory_file: Path | None = None,
         changed_files: list[str] | None = None, max_results: int = 20,
     ) -> dict[str, object]:
-        from sage.legion_memory.review import change_context
+        from sage.harness.memory.review import change_context
 
         _bounded_int(max_results, "max_results", maximum=100)
         with self._ready_store(repo_root, memory_file) as store:

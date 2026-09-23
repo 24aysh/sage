@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from sage.artifacts.store import RunArtifacts
 from sage.config import JevSettings
 from sage.domain.navigation import NavigationDecision
-from sage.orchestration.navigation import NavigationSession
+from sage.harness.jev.session import NavigationSession
 from sage.providers.calls import ModelCalls
 from sage.repository.service import Repository
 
