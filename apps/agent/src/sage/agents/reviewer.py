@@ -7,13 +7,15 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from sage.agents.prompts import REVIEWER_INSTRUCTIONS, build_review_message
+from sage.agents.prompts import REVIEWER_INSTRUCTIONS
+from sage.harness.context.packets import build_review_message
+from sage.harness.context.instructions import with_repository_instructions
 from sage.config import Settings
 from sage.domain.review import ReviewResult, ReviewVerdict
 from sage.domain.solver import CandidateSnapshot, SavedSolverPlan
 from sage.domain.usage import ModelRole
 from sage.domain.verification import VerificationResult
-from sage.errors import AgentRuntimeError, InvalidModelContractError
+from sage.errors import InvalidModelContractError
 from sage.observability import log_agent_result
 from sage.providers.calls import ModelCalls
 
@@ -35,6 +37,7 @@ class ReviewerAgent:
         plan: SavedSolverPlan,
         calls: ModelCalls,
         rereview: bool,
+        repository_instructions: str = "",
     ) -> ReviewResult:
         packet = build_review_message(
             issue_text=issue_text,
@@ -43,15 +46,12 @@ class ReviewerAgent:
             candidate_diff=snapshot.diff,
             verification_json=verification.model_dump_json(indent=2),
             solver_summary=snapshot.solver_summary,
+            max_chars=self._settings.reviewer_input_chars,
         )
-        if len(packet) > self._settings.reviewer_input_chars:
-            raise AgentRuntimeError(
-                "Reviewer context exceeds the configured safe input cap."
-            )
         result = await calls.invoke_reviewer(
             stage="rereview" if rereview else "review",
             messages=[
-                SystemMessage(content=REVIEWER_INSTRUCTIONS),
+                SystemMessage(content=with_repository_instructions(REVIEWER_INSTRUCTIONS, repository_instructions)),
                 HumanMessage(content=packet),
             ],
             schema=ReviewResult,

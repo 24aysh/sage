@@ -29,12 +29,13 @@ from sage.domain.memory import (
 )
 from sage.domain.solve import PreparedRun, SolveOutcome
 from sage.domain.solver import SolverFinalResult, SolverOutcome
-from sage.orchestration.context import SolveContext
+from sage.harness.context.run import SolveContext
+from sage.harness.context.instructions import RoleInstructions
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.base import ProviderResult
 from sage.providers.calls import ModelCalls
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.session import MemorySession
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.session import MemorySession
 from sage.repository.service import Repository
 from sage.sandbox.base import CommandResult
 
@@ -64,8 +65,10 @@ class ScriptedModel(Runnable[Any, AIMessage]):
     def __init__(
         self,
         responses: list[AIMessage | Callable[[Any], AIMessage]],
+        inputs: list[Any] | None = None,
     ) -> None:
         self.responses = responses
+        self.inputs = inputs
 
     def invoke(self, input: Any, config=None, **kwargs: Any) -> AIMessage:
         del input, config, kwargs
@@ -73,6 +76,8 @@ class ScriptedModel(Runnable[Any, AIMessage]):
 
     async def ainvoke(self, input: Any, config=None, **kwargs: Any) -> AIMessage:
         del config, kwargs
+        if self.inputs is not None:
+            self.inputs.append(input)
         response = self.responses.pop(0)
         return response(input) if callable(response) else response
 
@@ -81,6 +86,7 @@ class BindingModel:
     def __init__(self, sessions: list[list[AIMessage]]) -> None:
         self.sessions = sessions
         self.bound_tool_names: list[list[str]] = []
+        self.inputs: list[Any] = []
 
     def bind_tools(self, tools, **kwargs):
         assert kwargs["response_format"] is SolverFinalResult
@@ -88,7 +94,7 @@ class BindingModel:
         names = [tool.name for tool in tools]
         self.bound_tool_names.append(names)
         assert "apply_patch" not in names
-        return ScriptedModel(self.sessions.pop(0))
+        return ScriptedModel(self.sessions.pop(0), self.inputs)
 
 
 class ReviewerProvider:
@@ -98,8 +104,10 @@ class ReviewerProvider:
     def __init__(self, reviews: list[ReviewResult]) -> None:
         self.reviews = reviews
         self.messages: list[str] = []
+        self.system_messages: list[str] = []
 
     async def invoke_structured(self, **kwargs):
+        self.system_messages.append(str(kwargs["messages"][0].content))
         self.messages.append(str(kwargs["messages"][-1].content))
         review = self.reviews.pop(0)
         return ProviderResult(
@@ -227,6 +235,7 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
                 repository=repository,
                 settings=settings,
                 artifacts=RunArtifacts(prepared.run_dir),
+                instructions=RoleInstructions(solver="Solver policy", reviewer="Reviewer policy"),
             ),
         )
     )
@@ -245,6 +254,11 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
     assert all(t.duration_ms >= 0 for t in result.provenance.agent_timings)
     assert len(result.provenance.calls) > 6
     assert len(reviewer.messages) == 3
+    assert all("Reviewer policy" in message and "Solver policy" not in message
+               for message in reviewer.system_messages)
+    assert solver.inputs
+    assert all("Solver policy" in messages[0].content and "Reviewer policy" not in messages[0].content
+               for messages in solver.inputs)
     assert "Change app.py" in reviewer.messages[0]
     assert "saved-solver-plan" in reviewer.messages[0]
     assert "actual-git-diff" in reviewer.messages[0]
@@ -296,7 +310,7 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
         [
             [
                 _tool(
-                    "semantic_search_nodes_tool",
+                    "search_nodes_tool",
                     {"query": "app.py", "limit": 5},
                     "memory",
                 ),
@@ -346,13 +360,13 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
     )
 
     assert result.outcome.value == "implemented"
-    assert "semantic_search_nodes_tool" in model.bound_tool_names[0]
+    assert "search_nodes_tool" in model.bound_tool_names[0]
     assert [record.tool_name for record in calls.provenance().tool_calls] == [
-        "semantic_search_nodes_tool",
+        "search_nodes_tool",
         "read_file",
         "save_plan",
     ]
-    assert memory.tool_calls[0].tool_name == "semantic_search_nodes_tool"
+    assert memory.tool_calls[0].tool_name == "search_nodes_tool"
 
 
 @pytest.mark.parametrize("error", [RuntimeError("defect"), asyncio.CancelledError()])

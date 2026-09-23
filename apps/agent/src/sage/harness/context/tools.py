@@ -1,21 +1,37 @@
-"""Shared LangChain adapters for bounded repository reads."""
+"""Repository tool binding and shared graph/Jev evidence delivery."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol, Annotated
+from typing import Annotated
+import json
 
 from langchain_core.tools import BaseTool, tool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import Field
 
-if TYPE_CHECKING:
-    from sage.repository.service import Repository
+from sage.harness.context.run import RepositoryContext, SolverContext
+from sage.harness.memory.tools import build_legion_memory_tools
 
 
-class RepositoryContext(Protocol):
-    """Narrow repository capability required by agent tools."""
-
-    repository: Repository
+def build_context_tools(context: SolverContext) -> list[BaseTool]:
+    """Expose source tools plus only the useful graph profile, preserving order."""
+    memory = context.memory
+    memory_tools = build_legion_memory_tools(
+        memory.service, repo_root=memory.repo_root, memory_file=memory.memory_file,
+        output_chars=context.settings.max_tool_output_chars,
+        usage_recorder=memory.record_tool_call, source_reader=context.repository.read_file,
+        profile="solve", response_filter=memory.filter_response,
+    ) if memory is not None and memory.tools_enabled else []
+    if memory is not None and memory_tools:
+        memory.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in memory_tools],
+                                            separators=(",", ":"))))
+    return [
+        *build_repository_read_tools(context, enrich=memory.enrich if memory else None,
+                                     output_chars=context.settings.max_tool_output_chars),
+        *build_repository_branch_tools(context),
+        *memory_tools,
+    ]
 
 
 def build_repository_read_tools(

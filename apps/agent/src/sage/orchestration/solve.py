@@ -15,9 +15,8 @@ from sage.agents.solver import (
     SOLVE_GRAPH_NAME,
     SolverAgent,
     SolverPlanSession,
-    build_repair_message,
-    build_solver_message,
 )
+from sage.harness.context.packets import build_repair_message, build_solver_message
 from sage.domain.review import ReviewFailureType, ReviewVerdict
 from sage.domain.solve import AgentFinalOutput, SolveOutcome
 from sage.domain.verification import VerificationStatus
@@ -28,7 +27,7 @@ from sage.orchestration.candidate import (
     ensure_candidate_unchanged,
     review_fingerprint,
 )
-from sage.orchestration.context import SolveContext
+from sage.harness.context.run import SolveContext
 from sage.orchestration.validation import (
     failure_terminal,
     review_failure_terminal,
@@ -216,6 +215,7 @@ class SolveOrchestrator:
                         plan=plans.saved,
                         calls=calls,
                         rereview=review_version > 1,
+                        repository_instructions=context.instructions.reviewer,
                     ),
                 )
                 artifacts.write_review(review, version=review_version)

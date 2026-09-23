@@ -78,4 +78,3 @@ class SolverMemorySession(Protocol):
         result: dict[str, object],
         duration_ms: float,
     ) -> None: ...
-
