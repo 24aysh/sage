@@ -15,12 +15,12 @@ from pathlib import Path, PurePosixPath
 
 import networkx as nx
 
-from sage.legion_memory.migrations import SCHEMA_VERSION, apply_migrations
-from sage.legion_memory.parsing import EdgeRecord, NodeRecord, ParsedFile
-from sage.legion_memory.communities import community_groups
-from sage.legion_memory.resolution import resolve_symbol
-from sage.legion_memory.bindings import infer_composition
-from sage.legion_memory.tsconfig import config_aliases
+from sage.harness.memory.migrations import SCHEMA_VERSION, apply_migrations
+from sage.harness.memory.parsing import EdgeRecord, NodeRecord, ParsedFile
+from sage.harness.memory.communities import community_groups
+from sage.harness.memory.resolution import resolve_symbol
+from sage.harness.memory.bindings import infer_composition
+from sage.harness.memory.tsconfig import config_aliases
 
 _MAX_JSON_CHARS = 8_000
 

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from sage.legion_memory.parsing import CodeParser
-from sage.legion_memory.store import GraphStore, SCHEMA_VERSION
+from sage.harness.memory.parsing import CodeParser
+from sage.harness.memory.store import GraphStore, SCHEMA_VERSION
 
 
 def _parsed():
@@ -50,7 +50,7 @@ def test_store_creates_schema_wal_indexes_and_search(tmp_path: Path) -> None:
 
 
 def test_v1_migration_preserves_existing_graph_rows(tmp_path: Path) -> None:
-    from sage.legion_memory.migrations import MIGRATIONS
+    from sage.harness.memory.migrations import MIGRATIONS
 
     database = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(database) as connection:
@@ -63,8 +63,8 @@ def test_v1_migration_preserves_existing_graph_rows(tmp_path: Path) -> None:
         assert store.get_metadata("repository_id") == "legacy"
         assert store.file_hashes() == {"api.py": "hash"}
         assert store.get_metadata("schema_version") == str(SCHEMA_VERSION)
-        assert store.get_metadata("memory_namespace")
-        assert store.rows("SELECT * FROM vector_nodes") == []
+        assert store.get_metadata("memory_namespace") is None
+        assert not store.rows("SELECT name FROM sqlite_master WHERE name='vector_nodes'")
 
 
 def test_transaction_rolls_back_and_read_only_store_rejects_writes(
@@ -85,7 +85,7 @@ def test_transaction_rolls_back_and_read_only_store_rejects_writes(
 
 
 def test_v2_migration_preserves_edges_and_original_metadata(tmp_path: Path) -> None:
-    from sage.legion_memory.migrations import MIGRATIONS
+    from sage.harness.memory.migrations import MIGRATIONS
 
     database = tmp_path / "legacy-v2.sqlite3"
     with sqlite3.connect(database) as connection:
@@ -111,6 +111,33 @@ def test_store_allows_a_concurrent_read_of_a_ready_graph(tmp_path: Path) -> None
         _populate(writer)
         with GraphStore(database, read_only=True) as reader:
             assert reader.stats()["nodes"] == 2
+
+
+def test_v3_migration_drops_only_obsolete_vector_state(tmp_path: Path) -> None:
+    from sage.harness.memory.migrations import MIGRATIONS
+
+    database = tmp_path / "legacy-v3.sqlite3"
+    with sqlite3.connect(database) as connection:
+        for migration in MIGRATIONS[:3]:
+            connection.executescript(migration.sql)
+        connection.execute("PRAGMA user_version=3")
+        connection.execute("INSERT INTO files VALUES ('api.py', 'hash', 'python', 'date')")
+        connection.execute("INSERT INTO metadata VALUES ('repository_id', 'preserved')")
+        connection.execute("INSERT INTO metadata VALUES ('vectors:model', '{}')")
+        connection.execute("INSERT INTO vector_nodes VALUES ('generation','api.py::run','hash','point','model')")
+        connection.execute("INSERT INTO nodes(kind,name,qualified_name,file_path,line_start,line_end,language,file_hash,updated_at) "
+                           "VALUES ('Function','run','api.py::run','api.py',1,2,'python','hash','date')")
+        connection.execute("INSERT INTO edges(kind,source_qualified,target_qualified,file_path,updated_at) "
+                           "VALUES ('CALLS','api.py::run','api.py::helper','api.py','date')")
+    with GraphStore(database) as store:
+        assert store.get_metadata("repository_id") == "preserved"
+        assert store.file_hashes() == {"api.py": "hash"}
+        assert store.get_metadata("vectors:model") is None
+        assert store.exact_node("api.py::run")["file_path"] == "api.py"
+        assert store.rows("SELECT target_qualified FROM edges") == [{"target_qualified": "api.py::helper"}]
+        assert store.get_metadata("memory_namespace") is None
+        assert not store.rows("SELECT name FROM sqlite_master WHERE name='vector_nodes'")
+        assert store.get_metadata("schema_version") == str(SCHEMA_VERSION)
 
 
 def test_store_rejects_unsupported_or_corrupt_databases(tmp_path: Path) -> None:

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from sage.legion_memory.parsing import CodeParser, PARSER_VERSION
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.session import MemorySession
-from sage.legion_memory.store import GraphStore
+from sage.harness.memory.parsing import CodeParser, PARSER_VERSION
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.session import MemorySession
+from sage.harness.memory.store import GraphStore
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -127,6 +127,11 @@ CREATE INDEX idx_edges_target ON edges(target_qualified);
 CREATE INDEX idx_edges_kind ON edges(kind);
 CREATE INDEX idx_edges_file ON edges(file_path);
 INSERT OR REPLACE INTO metadata(key,value) VALUES ('schema_version','3');
+"""),
+    Migration(version=4, sql="""
+DROP TABLE IF EXISTS vector_nodes;
+DELETE FROM metadata WHERE key GLOB 'vectors:*' OR key = 'memory_namespace';
+INSERT OR REPLACE INTO metadata(key,value) VALUES ('schema_version','4');
 """),
 )
 
