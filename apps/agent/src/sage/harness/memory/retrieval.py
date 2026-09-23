@@ -21,11 +21,8 @@ from sage.domain.memory import (
     MemoryRetrievalStatus,
     MemoryCandidateDiagnostic,
 )
-from sage.legion_memory.parsing import detect_language
-from sage.legion_memory.store import GraphStore
-from sage.legion_memory.vectors import VectorIndex
-from sage.legion_memory.search import hybrid_search
-from sage.domain.embeddings import VectorStatus
+from sage.harness.memory.parsing import detect_language
+from sage.harness.memory.store import GraphStore
 
 _PATH_RE = re.compile(
     r"(?<![\w/.-])(?:[A-Za-z0-9_.@+-]+/)*"
@@ -113,38 +110,11 @@ def extract_issue_signals(issue_text: str, *, max_chars: int) -> IssueSignals:
 
 
 def retrieve_issue_context(
-    issue_text: str, store: GraphStore, *, memory_file: Path,
-    budgets: MemoryRetrievalBudgets, vectors: VectorIndex | None = None,
-) -> MemoryRetrievalResult:
-    started = perf_counter()
-    ranked = None
-    mode = "none"
-    status = VectorStatus()
-    if vectors is not None:
-        signals = extract_issue_signals(issue_text, max_chars=budgets.max_issue_chars)
-        # One bounded semantic intent query; exact Issue evidence is fused below.
-        intent = " ".join((*signals.identifiers[:8], *signals.terms[:16]))[:1200]
-        rows, mode, status = hybrid_search(store, intent, vectors=vectors,
-            limit=budgets.max_results * 3, context_files=signals.paths)
-        if mode in {"hybrid", "semantic"}:
-            ranked = rows
-    result = _retrieve_issue_context(issue_text, store, memory_file=memory_file,
-        budgets=budgets, ranked=ranked, mode=mode)
-    warnings = result.warnings + ((status.reason,) if status.reason else ())
-    return result.model_copy(update={"vectors": status, "warnings": warnings,
-        "ranking_duration_ms": result.duration_ms,
-        "duration_ms": round((perf_counter() - started) * 1000, 2),
-        "semantic_candidates": sum("semantic" in row.get("search_modes", []) for row in (ranked or []))})
-
-
-def _retrieve_issue_context(
     issue_text: str,
     store: GraphStore,
     *,
     memory_file: Path,
     budgets: MemoryRetrievalBudgets,
-    ranked: list[dict[str, object]] | None = None,
-    mode: str = "none",
 ) -> MemoryRetrievalResult:
     """Rank lexical hits, expand the best seeds, and render bounded context."""
 
@@ -154,29 +124,6 @@ def _retrieve_issue_context(
     lexical_count = len(candidates)
     for rank, candidate in enumerate(sorted(candidates.values(), key=_candidate_sort_key), 1):
         candidate.channel_ranks["lexical"] = rank
-    if ranked is not None:
-        # Rank fusion preserves the independent lexical stream. Raw lexical
-        # scores and RRF scores are intentionally never added together.
-        candidates = {key: value for key, value in candidates.items()
-                      if value.score >= budgets.usefulness_threshold}
-        for candidate in candidates.values():
-            candidate.score = 1 / (60 + candidate.channel_ranks["lexical"])
-        for rank, row in enumerate(ranked, 1):
-            node = _safe_node(row)
-            if node is not None:
-                key = str(node["qualified_name"])
-                candidate = candidates.setdefault(key, _Candidate(node=node, score=0, lexical=True))
-                candidate.reasons.update(row.get("search_modes", []))
-                for channel in row.get("search_modes", []):
-                    candidate.channel_ranks[str(channel)] = int(row.get("channel_ranks", {}).get(channel, rank))
-                candidate.score = sum(1 / (60 + rank) for rank in candidate.channel_ranks.values())
-        for candidate in candidates.values():
-            if "path_match" in candidate.reasons or _explicit_match(candidate, signals):
-                candidate.score += 2 / 61
-                candidate.reasons.add("explicit_anchor")
-        # RRF lives on a different scale than the lexical-only scorer.
-        budgets = budgets.model_copy(update={"usefulness_threshold": 0.005})
-        search_modes = tuple(dict.fromkeys((*search_modes, "semantic")))
     seeds = sorted(
         (
             candidate
@@ -244,6 +191,7 @@ def _retrieve_issue_context(
         if truncated
         else MemoryRetrievalOutcome.USEFUL_CONTEXT
     )
+    duration_ms = round((perf_counter() - started) * 1_000, 2)
     return MemoryRetrievalResult(
         status=MemoryRetrievalStatus.USED,
         outcome=outcome,
@@ -268,7 +216,8 @@ def _retrieve_issue_context(
         context_chars=len(context),
         items=visible,
         warnings=tuple(warnings[:20]),
-        duration_ms=round((perf_counter() - started) * 1_000, 2),
+        duration_ms=duration_ms,
+        ranking_duration_ms=duration_ms,
         unresolved_edges=unresolved,
         diagnostics=tuple(MemoryCandidateDiagnostic(
             qualified_name=str(candidate.node["qualified_name"]),
@@ -278,13 +227,6 @@ def _retrieve_issue_context(
             else "display_budget" if candidate in limited else "rank_or_diversity_budget",
         ) for candidate in useful[:200]),
     )
-
-
-def _explicit_match(candidate: _Candidate, signals: IssueSignals) -> bool:
-    qualified = str(candidate.node["qualified_name"]).casefold()
-    symbol = qualified.partition("::")[2]
-    return any(identifier in {qualified, symbol, str(candidate.node["name"]).casefold()}
-               for identifier in signals.identifiers)
 
 
 def _select_diverse(candidates: list[_Candidate], limit: int) -> list[_Candidate]:
@@ -657,6 +599,7 @@ def _empty_result(
     started: float,
     lexical_candidates: int = 0,
 ) -> MemoryRetrievalResult:
+    duration_ms = round((perf_counter() - started) * 1_000, 2)
     return MemoryRetrievalResult(
         status=MemoryRetrievalStatus.NO_MATCH,
         outcome=outcome,
@@ -670,7 +613,8 @@ def _empty_result(
         lexical_candidates=lexical_candidates,
         total_candidates=lexical_candidates,
         omitted=lexical_candidates,
-        duration_ms=round((perf_counter() - started) * 1_000, 2),
+        duration_ms=duration_ms,
+        ranking_duration_ms=duration_ms,
     )
 
 
