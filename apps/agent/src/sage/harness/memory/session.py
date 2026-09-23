@@ -19,8 +19,8 @@ from sage.domain.memory import (
     MemoryToolCallRecord,
     MemoryExposure,
 )
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.context import render_structural_context
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.context import render_structural_context
 from sage.errors import LegionMemoryQueryError
 
 logger = logging.getLogger(__name__)
@@ -170,7 +170,6 @@ class MemorySession:
                 preflight_duration_ms=self.preflight_duration_ms,
             ),
             enrichments=tuple(self._enrichment_records),
-            embedding_usage=(self.service.vectors.provider.usage.model_copy() if self.service.vectors else None),
             requested_memory_file=self.requested_memory_file,
             resolved_memory_file=self.memory_file,
             status=self.retrieval.status,
@@ -257,8 +256,6 @@ class MemorySession:
 
         self._closed = True
         self._enriched.clear()
-        if self.service.vectors is not None:
-            self.service.vectors.clear_query_cache()
 
 
 def unavailable_memory_artifact(
@@ -272,10 +269,6 @@ def unavailable_memory_artifact(
     """Build secret-safe fallback evidence without raw exception content."""
 
     return LegionMemoryRunArtifact(
-        embedding_usage=(
-            retrieval.vectors.usage if retrieval and retrieval.vectors.usage
-            else build.vectors.usage if build else None
-        ),
         requested_memory_file=requested_memory_file,
         resolved_memory_file=resolved_memory_file,
         status=MemoryRetrievalStatus.UNAVAILABLE,

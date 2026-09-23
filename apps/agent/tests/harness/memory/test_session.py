@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from sage.agents.repository_tools import build_repository_read_tools
+from sage.harness.context.tools import build_repository_read_tools
 from sage.domain.memory import (
     MemoryBuildResult,
     MemoryBuildType,
@@ -10,8 +10,8 @@ from sage.domain.memory import (
     MemoryRetrievalResult,
     MemoryRetrievalStatus,
 )
-from sage.legion_memory.service import LegionMemoryService
-from sage.legion_memory.session import MemorySession
+from sage.harness.memory.service import LegionMemoryService
+from sage.harness.memory.session import MemorySession
 from .conftest import commit_all
 
 
@@ -27,7 +27,7 @@ def test_session_records_bounded_tool_evidence_without_payloads(tmp_path: Path) 
     )
 
     session.record_tool_call(
-        "semantic_search_nodes_tool",
+        "search_nodes_tool",
         {
             "status": "ok",
             "returned": 3,
@@ -45,7 +45,7 @@ def test_session_records_bounded_tool_evidence_without_payloads(tmp_path: Path) 
 
     artifact = session.artifact()
     record = artifact.tool_calls[0]
-    assert record.tool_name == "semantic_search_nodes_tool"
+    assert record.tool_name == "search_nodes_tool"
     assert record.hit_count == 3
     assert record.returned_paths == ("src/app.py", "tests/test_app.py")
     assert record.truncated is True
