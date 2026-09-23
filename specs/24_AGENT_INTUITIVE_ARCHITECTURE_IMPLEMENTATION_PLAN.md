@@ -1,5 +1,57 @@
 # Agent-Intuitive Architecture Consolidation Implementation Plan
 
+## Active follow-up: coherent agent harness
+
+Branch: `refactor/agent-harness`. This follow-up supersedes the ownership map
+below; the older implementation record remains historical.
+
+The agent needs a stable answer to four questions: what is authoritative, what
+evidence is available, what has already been seen, and what can safely happen
+next. The harness owns evidence preparation and delivery; orchestration owns
+permission to mutate, verify, review, repair, and publish. Repository tools remain
+the source of current facts. Neither graph memory nor Jev gains authority.
+
+Implementation scope and sequence:
+
+1. Establish `sage/harness/context/` for role instruction snapshots, bounded
+   Issue/repair/review envelopes, and the run-scoped capability contracts.
+   Keep static role objectives in `agents/prompts.py`. Carry instructions into
+   every role call, including repairs; do not add inference or summarization.
+2. Move Legion implementation and graph tool binding to `harness/memory/`.
+   Preserve committed-source indexing, SQLite/FTS retrieval, graph expansion,
+   source locators, freshness invalidation, per-session deduplication, and caps.
+   Move memory preparation out of the workflow into this owner.
+3. Move Jev session, candidate selection, and TypeSafe transport to
+   `harness/jev/`. Preserve provider payloads, modes, policies, thresholds,
+   budgets, deadline/cancellation, failure fallback, and accounting. Typed
+   contracts shared with repository/providers stay in `domain/` so dependencies
+   continue to point inward. Environment loading stays in `config.py` and
+   concrete construction stays in `composition.py`.
+4. Remove embeddings completely: adapters, hybrid ranking, schemas/usage,
+   configuration, CLI switches, Make overrides, Qdrant secrets, and dependencies.
+   Retain the exact lexical ranking path. Migrate existing SQLite graphs forward
+   without discarding graph data. Never contact or delete old external stores.
+5. Align tests and imports with ownership. Add guards against outer-layer
+   dependencies and embedding reintroduction; preserve Jev and lexical behavior
+   with deterministic fixtures. Update active documentation and mark historical
+   vector claims superseded rather than pretending they were never implemented.
+6. Verify focused suites, `make check`, `make graph`, `make github-smoke`, and
+   `make github-doctor`. Live model efficacy and GitHub rollout remain separate
+   gates, requiring a published immutable Action revision.
+
+Tradeoffs: one namespace makes related mechanisms discoverable, but a monolithic
+Harness manager would hide ownership. Keep focused modules and explicit context
+contracts instead. Removing embeddings loses synonym-only semantic matches but
+removes embedding latency, cost, credentials, failure states, and a second index.
+Literal search and graph relationships remain available; Jev remains optional.
+Do not claim savings from moving files: measure source/tool exposure, model
+usage, Jev time, and total solve time through the existing artifacts.
+
+Compatibility: CLI embedding flags are removed, obsolete embedding environment
+variables have no consumer, graph storage migrates forward, and internal import
+paths change without dormant compatibility packages. Existing user data and
+untracked role markdown files are preserved. No new production dependency.
+
 ## Document status
 
 > **Status:** Implemented and verified offline on the `refactor` branch; live
