@@ -16,6 +16,16 @@ REMOVED_PATHS = {
     "domain/runtime.py",
     "providers/factory.py",
     "research",
+    "legion_memory",
+    "providers/embeddings.py",
+    "providers/typesafe.py",
+    "integrations/qdrant.py",
+    "domain/embeddings.py",
+    "orchestration/navigation.py",
+    "orchestration/navigation_candidates.py",
+    "orchestration/context.py",
+    "agents/memory_tools.py",
+    "agents/repository_tools.py",
 }
 LAYER_FORBIDDEN_IMPORTS = {
     "agents": ("cli", "composition", "integrations", "orchestration", "sandbox", "workflows"),
@@ -35,7 +45,8 @@ LAYER_FORBIDDEN_IMPORTS = {
     "repository": ("agents", "orchestration", "workflows"),
     "sandbox": ("agents", "orchestration", "workflows"),
     "verification": ("agents", "orchestration", "workflows"),
-    "legion_memory": (
+    "harness": ("agents", "cli", "composition", "integrations", "orchestration", "sandbox", "workflows"),
+    "harness/memory": (
         "agents",
         "cli",
         "composition",
@@ -75,8 +86,9 @@ def _sage_imports(path: Path) -> set[str]:
 
 def test_removed_architectures_and_state_engines_are_absent() -> None:
     present = {
-        str(path.relative_to(SOURCE_ROOT))
-        for path in SOURCE_ROOT.rglob("*")
+        str(relative)
+        for path in _source_files()
+        for relative in (path.relative_to(SOURCE_ROOT), *path.relative_to(SOURCE_ROOT).parents)
     }
 
     assert REMOVED_PATHS.isdisjoint(present)
@@ -97,6 +109,15 @@ def test_domain_depends_only_on_domain_contracts() -> None:
                 module.split(".")[0] in sys.stdlib_module_names | {"pydantic", "sage"}
                 for module in modules
             ), path
+
+
+def test_memory_has_no_provider_or_jev_dependency_or_embedding_package() -> None:
+    forbidden = ("sage.providers", "sage.config", "sage.harness.jev")
+    for path in (SOURCE_ROOT / "harness" / "memory").glob("*.py"):
+        assert not any(module.startswith(forbidden) for module in _sage_imports(path)), path
+    import tomllib
+    project = tomllib.loads((SOURCE_ROOT.parents[1] / "pyproject.toml").read_text())
+    assert not any(dependency.startswith("qdrant") for dependency in project["project"]["dependencies"])
 
 
 def test_layers_do_not_reach_back_into_entrypoints_or_outer_workflows() -> None:
@@ -167,10 +188,12 @@ def test_navigation_metrics_stay_within_refactor_budget() -> None:
         .splitlines()
     )
 
-    # CLI command owners and repository indexing replace two oversized modules.
-    assert len(files) <= 106
+    # Explicit harness subpackages replace scattered implementations; no new runtime.
+    assert len(files) <= 110
     # Allow per-role timing and interruption reporting without new modules or dependencies.
     assert nonblank_lines <= 16_400
     assert orchestrator_lines <= 400
     for path in files:
-        assert len(_sage_imports(path)) <= 14, path
+        # Workflow now coordinates the two explicit harness preparation owners.
+        limit = 16 if path == SOURCE_ROOT / "workflows" / "solve.py" else 14
+        assert len(_sage_imports(path)) <= limit, path
