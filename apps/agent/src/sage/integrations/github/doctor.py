@@ -69,7 +69,7 @@ def main() -> int:
             'SOLVER_MODEL: "gpt-5.4-mini"',
             'REVIEWER_MODEL: "gemini-3.5-flash"',
             "/legion-memory.json",
-            "/navigation.json",
+            "/relevance-filter.json",
         )
         if all(value in action_body for value in required_action_wiring) and all(
             value in workflow_body for value in required_workflow_wiring

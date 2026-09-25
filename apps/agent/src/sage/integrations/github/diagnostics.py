@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
 from sage.errors import ArtifactError
+from sage.domain.relevance import RelevanceReport
 from sage.integrations.github.models import GIT_OBJECT_ID_PATTERN, GitHubInvocation, SageCommand
 
 _DIAGNOSTIC_FILES = (
@@ -20,20 +21,11 @@ _DIAGNOSTIC_FILES = (
     "diff.patch",
     "usage.json",
     "legion-memory.json",
-    "navigation.json",
+    "relevance-filter.json",
     "terminal.json",
     "verification-summary.json",
     "review.json",
 )
-_NAVIGATION_FIELDS = ("policy_version", "mode", "policy", "max_followup_actions",
-    "action_probability_thresholds", "action_confidence_threshold", "model", "requests", "operations",
-    "added_chars", "jev_wait_seconds", "records_truncated")
-_NAVIGATION_RECORD_FIELDS = ("sequence", "session", "stage", "parent_tool_call", "root_tool_call_id", "step",
-    "status", "candidate_count", "candidate_retrieval_ms", "latency_ms", "input_tokens", "output_tokens",
-    "selected", "disabled", "objective_digest", "candidate_set_digest", "selected_probability",
-    "required_probability", "decision_confidence", "required_confidence", "retrieval_ms", "operation",
-    "result_digest", "exposed_chars", "elapsed_ms", "chars", "source_digest", "navigation_ms",
-    "structural_retrieval_ms")
 
 
 class GitHubProvenance(BaseModel):
@@ -100,8 +92,8 @@ def persist_github_diagnostics(
             if source.is_file():
                 if name == "legion-memory.json":
                     _copy_memory_diagnostic(source, destination / name)
-                elif name == "navigation.json":
-                    _copy_navigation_diagnostic(source, destination / name)
+                elif name == "relevance-filter.json":
+                    _copy_relevance_diagnostic(source, destination / name)
                 else:
                     write_text_atomic(destination / name, source.read_text(encoding="utf-8"))
     return provenance_path
@@ -119,20 +111,30 @@ def _copy_memory_diagnostic(source: Path, destination: Path) -> None:
     retrieval = payload.get("retrieval")
     if isinstance(retrieval, dict):
         retrieval.pop("context", None)
+        if isinstance(retrieval.get("relevance_filter"), dict):
+            retrieval["relevance_filter"] = _relevance_summary(retrieval["relevance_filter"])
     write_json_atomic(destination, payload)
 
 
-def _copy_navigation_diagnostic(source: Path, destination: Path) -> None:
-    """Export operational Jev evidence without source-bearing replay data."""
+def _relevance_summary(payload: dict) -> dict:
+    """Retain operational numbers, never file paths, scores keyed by path, or captures."""
+    try:
+        report = RelevanceReport.model_validate({k: v for k, v in payload.items() if k != "capture"})
+    except ValueError as error:
+        raise ArtifactError("Invalid Jev relevance diagnostic artifact.") from error
+    summary = report.model_dump(include={"policy", "mode", "status", "model", "candidate_items",
+        "discarded_items", "withheld_items", "context_omitted_items", "latency_ms", "input_tokens", "output_tokens",
+        "score_threshold", "confidence_threshold", "reason"})
+    for key in ("candidate_files", "retained_files", "rejected_files", "withheld_files", "would_discard_files"):
+        summary[key + "_count"] = len(getattr(report, key))
+    return summary
 
+
+def _copy_relevance_diagnostic(source: Path, destination: Path) -> None:
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        raise ArtifactError("Invalid Jev navigation diagnostic artifact.") from error
-    records = payload.get("records") if isinstance(payload, dict) else None
-    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
-        raise ArtifactError("Invalid Jev navigation diagnostic artifact.")
-    summary = {key: payload[key] for key in _NAVIGATION_FIELDS if key in payload}
-    summary["records"] = [{key: record[key] for key in _NAVIGATION_RECORD_FIELDS if key in record}
-                          for record in records]
-    write_json_atomic(destination, summary)
+        raise ArtifactError("Invalid Jev relevance diagnostic artifact.") from error
+    if not isinstance(payload, dict):
+        raise ArtifactError("Invalid Jev relevance diagnostic artifact.")
+    write_json_atomic(destination, _relevance_summary(payload))

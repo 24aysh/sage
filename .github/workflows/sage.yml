@@ -31,15 +31,10 @@ env:
   SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
   # Jev remains opt-in until a disposable canary and held-out evaluation pass.
   SAGE_JEV_NAVIGATION_MODE: "off"
-  SAGE_JEV_NAVIGATION_POLICY: "excerpts"
+  SAGE_JEV_RELEVANCE_SCORE_THRESHOLD: "2.0"
+  SAGE_JEV_RELEVANCE_CONFIDENCE_THRESHOLD: "0.5"
   SAGE_JEV_MODEL: "jev-1.13.0"
-  SAGE_JEV_MAX_FOLLOWUP_ACTIONS: "1"
-  SAGE_JEV_READ_PROBABILITY_THRESHOLD: "0.65"
-  SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD: "0.75"
-  SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD: "0.80"
-  SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD: "0.50"
   SAGE_JEV_TIMEOUT_SECONDS: "2"
-  SAGE_JEV_RUN_WAIT_SECONDS: "8"
   SAGE_JEV_LOG_INPUT: "false"
   SAGE_JEV_CAPTURE: "false"
   SAGE_GITHUB_API_TIMEOUT_SECONDS: "30"
@@ -121,7 +116,7 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/diff.patch
             ${{ steps.solve.outputs.diagnostics-path }}/usage.json
             ${{ steps.solve.outputs.diagnostics-path }}/legion-memory.json
-            ${{ steps.solve.outputs.diagnostics-path }}/navigation.json
+            ${{ steps.solve.outputs.diagnostics-path }}/relevance-filter.json
             ${{ steps.solve.outputs.diagnostics-path }}/terminal.json
             ${{ steps.solve.outputs.diagnostics-path }}/verification-summary.json
             ${{ steps.solve.outputs.diagnostics-path }}/review.json
