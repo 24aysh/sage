@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Protocol, Any
 from pathlib import Path
 
 from sage.domain.solve import AgentFinalOutput, PreparedRun
-from sage.domain.navigation import NavigationHook
 from sage.harness.context.instructions import RoleInstructions
 
 if TYPE_CHECKING:
@@ -26,7 +25,6 @@ class SolveContext:
     settings: Settings
     artifacts: RunArtifacts
     memory: MemorySession | None = None
-    navigation: NavigationHook | None = None
     instructions: RoleInstructions = field(default_factory=RoleInstructions)
 
 

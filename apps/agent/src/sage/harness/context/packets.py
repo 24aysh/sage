@@ -8,8 +8,6 @@ from sage.harness.context.run import SolverContext
 
 def prepare_solver_message(message: str, *, stage: str, context: SolverContext) -> str:
     """Reset visibility for this history, add repair locators, and enforce its cap."""
-    if navigation := getattr(context, "navigation", None):
-        navigation.begin_session(stage=stage)
     if context.memory is not None:
         packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
         if stage == "solver-repair" and packet:

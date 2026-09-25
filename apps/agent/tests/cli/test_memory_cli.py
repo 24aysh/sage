@@ -128,6 +128,7 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
 
     class FakeService:
         def retrieve_issue_context(self, **arguments):
+            assert arguments.pop("budgets").max_chars == 12_000
             assert arguments == {
                 "issue_text": "Fix `helper`.\n",
                 "repo_root": tmp_path,

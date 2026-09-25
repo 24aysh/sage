@@ -82,10 +82,12 @@ async def solve_issue(
                 prepared=prepared,
                 issue_text=issue_text,
                 service=memory_service,
-                context_chars=effective_settings.legion_initial_context_chars,
+                context_chars=(50_000 if effective_settings.jev.mode != "off"
+                               else effective_settings.legion_initial_context_chars),
             )
             run_artifacts.write_legion_memory(memory_artifact)
-            log_legion_memory(logger, memory_artifact)
+            if effective_settings.jev.mode == "off" or memory_session is None:
+                log_legion_memory(logger, memory_artifact)
 
         build_repository = repository_factory or _build_repository
         repository = build_repository(prepared, sandbox, effective_settings)

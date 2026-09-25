@@ -26,6 +26,8 @@ REMOVED_PATHS = {
     "orchestration/context.py",
     "agents/memory_tools.py",
     "agents/repository_tools.py",
+    "harness/jev/session.py",
+    "harness/jev/candidates.py",
 }
 LAYER_FORBIDDEN_IMPORTS = {
     "agents": ("cli", "composition", "integrations", "orchestration", "sandbox", "workflows"),

@@ -165,6 +165,24 @@ def _render_memory_retrieval(
     print("  Usage meaning: retrieved context, not measured improvement")
     print(f"  Unresolved relationships skipped: {result.unresolved_edges}")
     print(f"  Ranking duration: {result.ranking_duration_ms:.2f} ms")
+    if report := result.relevance_filter:
+        print(f"  Jev relevance filter: {report.status} (mode={report.mode})")
+        print(f"  Candidate files: {len(report.candidate_files)}")
+        print(f"  Relevant files after Jev filter: {len(report.retained_files)}")
+        for path in report.retained_files:
+            print(f"    - {_safe_log_value(path, 500)}")
+        print(f"  Discarded by Jev: {report.discarded_items} retrieval items / {len(report.rejected_files)} files")
+        print(f"  Unjudged/withheld: {report.withheld_items} retrieval items / {len(report.withheld_files)} files")
+        print(f"  Omitted by context budget: {report.context_omitted_items} retrieval items")
+        if report.mode == "off":
+            print("  Jev is off: retained files are lexical results, not Jev-approved.")
+        if report.mode == "shadow":
+            print(f"  Shadow would discard: {len(report.would_discard_files)} files (not applied)")
+        if report.reason:
+            print(f"  Filter reason: {_safe_log_value(report.reason, 100)}")
+        print(f"  Jev time: {report.latency_ms:.2f} ms")
+        print(f"  Jev input tokens: {report.input_tokens if report.input_tokens is not None else 'unknown'}")
+        print(f"  Jev output tokens: {report.output_tokens if report.output_tokens is not None else 'unknown'}")
     if context_file is not None:
         print(f"  Context file: {context_file}")
     print(f"  Duration: {result.duration_ms:.2f} ms")

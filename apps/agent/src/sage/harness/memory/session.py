@@ -37,6 +37,7 @@ class MemorySession:
     build: MemoryBuildResult
     retrieval: MemoryRetrievalResult
     _tool_calls: list[MemoryToolCallRecord] = field(default_factory=list)
+    enrichment_enabled: bool = True
     _closed: bool = False
     _enriched: set[str] = field(default_factory=set)
     _enrichment_records: list[MemoryToolCallRecord] = field(default_factory=list)
@@ -197,7 +198,7 @@ class MemorySession:
         self._source_chars += source_chars
         if path and (safe := _safe_relative_path(path)):
             self._read_paths.add(safe)
-        if not self.tools_enabled:
+        if not self.tools_enabled or not self.enrichment_enabled:
             return ""
         limit = min(available_chars, 3000, 16_000 - self._session_chars,
                     48_000 - self._enrichment_chars)

@@ -28,7 +28,7 @@ def test_cost_keeps_unknowns_and_includes_cached_and_semantic_usage(evaluator):
 
 def test_pairing_requires_matching_case_base_settings_and_cache(evaluator, tmp_path):
     rows = []
-    for arm, duration, cache in [("off", 100, "warm"), ("actions-1", 80, "warm"), ("actions-2", 50, "cold")]:
+    for arm, duration, cache in [("off", 100, "warm"), ("on", 80, "warm"), ("shadow", 50, "cold")]:
         root = tmp_path / arm
         root.mkdir()
         (root / "usage.json").write_text(json.dumps({"calls": [], "semantic_calls": []}))
@@ -37,9 +37,9 @@ def test_pairing_requires_matching_case_base_settings_and_cache(evaluator, tmp_p
         rows.append(dict(case_id="issue", base_sha="sha", split="held-out", repeat=1,
             settings_id="models-v1", cache_state=cache, arm=arm, run_dir=str(root), independent_quality_pass=True))
     result = evaluator.compare({"runs": rows})
-    assert result["paired_deltas"]["actions-1"]["wall_ms"]["mean"] == -20
-    assert result["paired_deltas"]["actions-2"]["wall_ms"]["n"] == 0
-    assert result["paired_deltas"]["actions-1"]["wall_ms"]["mean_ci95"] is None
+    assert result["paired_deltas"]["on"]["wall_ms"]["mean"] == -20
+    assert result["paired_deltas"]["shadow"]["wall_ms"]["n"] == 0
+    assert result["paired_deltas"]["on"]["wall_ms"]["mean_ci95"] is None
 
 
 def test_live_arm_requires_explicit_paid_acknowledgment(evaluator):
@@ -59,22 +59,18 @@ def test_legacy_embedding_costs_are_not_silently_omitted(evaluator, tmp_path):
 
 
 def test_exact_capture_replays_without_provider(evaluator, tmp_path):
-    from sage.harness.jev.provider import build_request
-    from sage.domain.navigation import ActionCandidate, ReadAction
-    candidates = (ActionCandidate(id="c0", action=ReadAction(path="app.py", start_line=1, end_line=40),
-                                  evidence="source hit"),)
-    capture = {"request": build_request("jev-1.13.0", {"goal": "read implementation"}, candidates, actions=True),
-        "candidates": [c.model_dump() for c in candidates],
+    from sage.harness.jev.provider import build_request, SCORE_LEVELS
+    from sage.domain.relevance import FileCandidate
+    candidates = (FileCandidate(id="f0", path="app.py", evidence="source hit"),)
+    capture = {"request": build_request("jev-1.13.0", {"issue": "Fix source"}, candidates),
         "response": {"model": "jev-1.13.0", "usage": {"input_tokens": 10, "output_tokens": 5},
-                     "answers": {"next": {"type": "choice", "choice": "c0", "confidence": .9,
-                                           "probabilities": {"c0": .95, "RETURN_TO_SOLVER": .05}}}}}
-    path = tmp_path / "navigation.json"
-    path.write_text(json.dumps({"policy": "actions", "records": [{"sequence": 1, "step": 1, "capture": capture}]}))
-    result = evaluator.replay(path, {"1:1": ["c0"]})
-    assert result["cases"][0]["candidate_coverage"]
-    assert result["cases"][0]["jev_selected"] == ("c0",)
-    assert result["kind"] == "offline_selection_proxy"
-
-    path.write_text(json.dumps({"policy": "actions", "action_probability_thresholds": {"read_file": .96},
-        "action_confidence_threshold": .5, "records": [{"sequence": 1, "step": 1, "capture": capture}]}))
-    assert evaluator.replay(path)["cases"][0]["jev_selected"] == ()
+            "answers": {"f0": {"type": "score", "score": 3, "confidence": .9,
+                "legend": dict(enumerate(SCORE_LEVELS)),
+                "probabilities": {"0": 0., "1": 0., "2": 0., "3": 1.}}}}}
+    path = tmp_path / "relevance.json"
+    artifact = {"policy": "file-relevance-v1", "score_threshold": 2, "confidence_threshold": .5, "capture": capture}
+    path.write_text(json.dumps(artifact))
+    assert evaluator.replay(path)["retained_files"] == ["app.py"]
+    artifact["confidence_threshold"] = 1
+    path.write_text(json.dumps(artifact))
+    assert evaluator.replay(path)["retained_files"] == []

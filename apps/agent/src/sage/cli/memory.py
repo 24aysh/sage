@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from pathlib import Path
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
 from sage.cli.output import _render_memory_retrieval
-from sage.composition import build_legion_memory_service
-from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
+from sage.composition import build_legion_memory_service, build_relevance_filter
+from sage.config import JevSettings
+from sage.domain.memory import MemoryRetrievalBudgets, MemoryRetrievalResult, MemoryRetrievalStatus
 from sage.errors import LegionMemoryQueryError
 from sage.harness.memory.service import LegionMemoryService
 
@@ -94,7 +96,7 @@ def _run_memory_status(arguments: argparse.Namespace) -> int:
 
 
 def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
-    """Print an explainable, model-free retrieval result for one Issue."""
+    """Print lexical retrieval after the same optional relevance gate as solve."""
 
     issue_file = arguments.issue_file.expanduser().resolve()
     if not issue_file.is_file():
@@ -105,18 +107,31 @@ def _run_memory_retrieve(arguments: argparse.Namespace) -> int:
         raise LegionMemoryQueryError(
             f"Unable to read Issue file: {type(error).__name__}: {str(error)[:300]}"
         ) from error
+    settings = JevSettings.from_env()
     result = build_legion_memory_service().retrieve_issue_context(
         issue_text=issue_text,
         repo_root=arguments.repo,
         memory_file=arguments.memory_file,
+        budgets=MemoryRetrievalBudgets(max_chars=50_000 if settings.mode != "off" else 12_000),
     )
+    async def filter_context() -> MemoryRetrievalResult:
+        relevance = build_relevance_filter(settings)
+        try:
+            return await relevance.apply(issue=issue_text, retrieval=result, max_chars=12_000,
+                report_writer=lambda report: write_json_atomic(
+                    result.memory_file.with_suffix(".relevance.json"), report))
+        finally:
+            await relevance.aclose()
+
+    result = asyncio.run(filter_context())
     context_file = (
         _write_memory_retrieval_context(result, issue_file=issue_file)
         if result.status is not MemoryRetrievalStatus.UNAVAILABLE
         else None
     )
     _render_memory_retrieval(result, context_file=context_file)
-    return 1 if result.status is MemoryRetrievalStatus.UNAVAILABLE else 0
+    return 1 if (result.status is MemoryRetrievalStatus.UNAVAILABLE or
+                 result.relevance_filter and result.relevance_filter.status == "unavailable") else 0
 
 
 def _write_memory_retrieval_context(

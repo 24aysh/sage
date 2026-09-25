@@ -16,7 +16,7 @@ from sage.agents.loop import recursion_limit
 from sage.harness.context.run import SolverContext
 from sage.harness.context.packets import prepare_solver_message
 from sage.agents.prompts import SOLVER_INSTRUCTIONS
-from sage.harness.context.instructions import NAVIGATION_INSTRUCTIONS, with_repository_instructions
+from sage.harness.context.instructions import with_repository_instructions
 from sage.harness.context.tools import (
     build_context_tools,
     build_show_diff_tool,
@@ -124,9 +124,7 @@ class SolverAgent:
             model=model,
             tools=tools,
             max_turns=self._settings.max_turns,
-            instructions=with_repository_instructions(SOLVER_INSTRUCTIONS + (NAVIGATION_INSTRUCTIONS
-                if getattr(context, "navigation", None) is not None and context.navigation.action_policy else ""),
-                context.instructions.solver),
+            instructions=with_repository_instructions(SOLVER_INSTRUCTIONS, context.instructions.solver),
             output_schema=output_schema,
             graph_name=f"{SOLVE_GRAPH_NAME}_{stage.replace('-', '_')}",
             role_name=ModelRole.SOLVER.value.capitalize(),
@@ -303,8 +301,6 @@ def build_solver_tools(
         )
         if context.memory is not None:
             context.memory.invalidate(path)
-        if navigation := getattr(context, "navigation", None):
-            navigation.invalidate(path)
         return result
 
     @tool
@@ -323,8 +319,6 @@ def build_solver_tools(
         )
         if context.memory is not None:
             context.memory.invalidate(path)
-        if navigation := getattr(context, "navigation", None):
-            navigation.invalidate(path)
         return result
 
     @tool
@@ -335,8 +329,6 @@ def build_solver_tools(
         result = context.repository.delete_file(path=path)
         if context.memory is not None:
             context.memory.invalidate(path)
-        if navigation := getattr(context, "navigation", None):
-            navigation.invalidate(path)
         return result
 
     @tool
@@ -350,8 +342,6 @@ def build_solver_tools(
         )
         if context.memory is not None:
             context.memory.invalidate(source_path, destination_path)
-        if navigation := getattr(context, "navigation", None):
-            navigation.invalidate(source_path, destination_path)
         return result
 
     @tool
@@ -372,8 +362,6 @@ def build_solver_tools(
                 "run_command accepts verification commands only; use structured "
                 "file tools for mutations."
             )
-        if navigation := getattr(context, "navigation", None):
-            navigation.invalidate()
         result = context.repository.run_command(
             command=command,
             timeout_seconds=timeout_seconds,

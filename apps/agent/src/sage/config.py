@@ -40,47 +40,44 @@ class ConfiguredVerificationCommand(BaseModel):
 
 
 class JevSettings(BaseModel):
-    """Opt-in local navigation; all limits are shared by its two policies."""
+    """Optional batched relevance filtering before Solver context assembly."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
     mode: Literal["off", "shadow", "on"] = "off"
-    policy: Literal["excerpts", "actions"] = "excerpts"
     api_key: str | None = Field(default=None, repr=False, exclude=True)
     model: str = Field(default="jev-1.13.0", min_length=1, max_length=120)
-    max_followup_actions: Literal[1, 2] = 1
     timeout_seconds: float = Field(default=2, gt=0, le=2)
-    run_wait_seconds: float = Field(default=8, gt=0, le=8)
-    read_probability_threshold: float = Field(default=.65, ge=0, le=1, allow_inf_nan=False)
-    search_probability_threshold: float = Field(default=.75, ge=0, le=1, allow_inf_nan=False)
-    graph_probability_threshold: float = Field(default=.8, ge=0, le=1, allow_inf_nan=False)
-    action_confidence_threshold: float = Field(default=.5, ge=0, le=1, allow_inf_nan=False)
+    score_threshold: float = Field(default=2.0, ge=0, le=3, allow_inf_nan=False)
+    confidence_threshold: float = Field(default=.5, ge=0, le=1, allow_inf_nan=False)
     capture: bool = False
     log_input: bool = True
 
     @model_validator(mode="after")
     def credential(self) -> JevSettings:
         if self.mode != "off" and (not self.api_key or not self.api_key.strip()):
-            raise ValueError("TYPESAFE_API_KEY is required for enabled Jev navigation.")
+            raise ValueError("TYPESAFE_API_KEY is required for enabled Jev relevance filtering.")
         return self
 
     @classmethod
-    def from_env(cls, values: Mapping[str, str]) -> JevSettings:
+    def from_env(cls, values: Mapping[str, str] | None = None) -> JevSettings:
+        values = os.environ if values is None else values
+        retired = ("SAGE_JEV_NAVIGATION_POLICY", "SAGE_JEV_MAX_FOLLOWUP_ACTIONS",
+                   "SAGE_JEV_RUN_WAIT_SECONDS", "SAGE_JEV_READ_PROBABILITY_THRESHOLD",
+                   "SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD", "SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD",
+                   "SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD")
+        if values.get("SAGE_JEV_NAVIGATION_MODE", "off") != "off" and any(values.get(key, "").strip() for key in retired):
+            raise ConfigurationError("Old Jev navigation settings are retired; remove policy/action thresholds and use SAGE_JEV_RELEVANCE_SCORE_THRESHOLD and SAGE_JEV_RELEVANCE_CONFIDENCE_THRESHOLD.")
         try:
             return cls(mode=values.get("SAGE_JEV_NAVIGATION_MODE", "off"),
-                policy=values.get("SAGE_JEV_NAVIGATION_POLICY", "excerpts"),
                 api_key=values.get("TYPESAFE_API_KEY"),
                 model=values.get("SAGE_JEV_MODEL", "jev-1.13.0"),
-                max_followup_actions=int(values.get("SAGE_JEV_MAX_FOLLOWUP_ACTIONS", "1")),
                 timeout_seconds=values.get("SAGE_JEV_TIMEOUT_SECONDS", "2"),
-                run_wait_seconds=values.get("SAGE_JEV_RUN_WAIT_SECONDS", "8"),
-                read_probability_threshold=values.get("SAGE_JEV_READ_PROBABILITY_THRESHOLD", ".65"),
-                search_probability_threshold=values.get("SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD", ".75"),
-                graph_probability_threshold=values.get("SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD", ".8"),
-                action_confidence_threshold=values.get("SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD", ".5"),
+                score_threshold=values.get("SAGE_JEV_RELEVANCE_SCORE_THRESHOLD", "2.0"),
+                confidence_threshold=values.get("SAGE_JEV_RELEVANCE_CONFIDENCE_THRESHOLD", ".5"),
                 log_input=_parse_bool(values.get("SAGE_JEV_LOG_INPUT", "true"), name="SAGE_JEV_LOG_INPUT"),
                 capture=_parse_bool(values.get("SAGE_JEV_CAPTURE", "false"), name="SAGE_JEV_CAPTURE"))
         except (ValueError, ValidationError):
-            raise ConfigurationError("Invalid Jev settings; check mode, policy, key, thresholds and budgets.") from None
+            raise ConfigurationError("Invalid Jev settings; check mode, key, relevance thresholds and timeout.") from None
 
 
 class Settings(BaseModel):

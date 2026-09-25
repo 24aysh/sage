@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
+from sage.domain.relevance import RelevanceReport
 
 
 class MemoryBuildType(StrEnum):
@@ -41,6 +42,9 @@ class MemoryRetrievalOutcome(StrEnum):
     NO_LEXICAL_CANDIDATES = "no_lexical_candidates"
     BELOW_THRESHOLD = "below_threshold"
     GRAPH_UNAVAILABLE = "graph_unavailable"
+    RELEVANCE_REJECTED = "relevance_rejected"
+    RELEVANCE_UNAVAILABLE = "relevance_unavailable"
+    CONTEXT_BUDGET_EXHAUSTED = "context_budget_exhausted"
 
 
 class MemoryGraphStats(BaseModel):
@@ -185,6 +189,7 @@ class MemoryRetrievalResult(BaseModel):
     ranking_duration_ms: float = Field(default=0.0, ge=0.0)
     diagnostics: tuple[MemoryCandidateDiagnostic, ...] = Field(default=(), max_length=200)
     unresolved_edges: int = Field(default=0, ge=0)
+    relevance_filter: RelevanceReport | None = None
 
 
 class MemoryToolCallRecord(BaseModel):

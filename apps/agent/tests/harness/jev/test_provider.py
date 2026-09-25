@@ -8,43 +8,39 @@ import logging
 import httpx
 import pytest
 
-from sage.domain.navigation import ActionCandidate, ReadAction, NavigationUnavailable
+from sage.domain.relevance import FileCandidate, RelevanceUnavailable
 from sage.harness.jev.provider import TypeSafeProvider, SCORE_LEVELS, parse_response
 
-CANDIDATES = (ActionCandidate(id="c0", action=ReadAction(path="app.py", start_line=1, end_line=40),
-                              evidence="app.py:7: def solve"),)
+CANDIDATES = (FileCandidate(id="c0", path="app.py", evidence="app.py:7: def solve"),)
 
 
-def response(actions=True):
-    answer = {"type": "choice", "choice": "c0", "confidence": .9,
-              "probabilities": {"c0": .95, "RETURN_TO_SOLVER": .05}} if actions else {
-        "type": "score", "score": 2.9, "confidence": .9,
+def response():
+    answer = {"type": "score", "score": 2.9, "confidence": .9,
         "legend": {str(i): value for i, value in enumerate(SCORE_LEVELS)},
         "probabilities": {"0": 0., "1": 0., "2": .1, "3": .9}}
-    return {"model": "jev-1.13.0", "answers": {"next" if actions else "c0": answer},
+    return {"model": "jev-1.13.0", "answers": {"c0": answer},
             "usage": {"input_tokens": 120, "output_tokens": 10}}
 
 
-@pytest.mark.parametrize("actions", [False, True])
-def test_http_contract_and_capture(actions):
+def test_http_contract_and_capture():
     requests = []
 
     def send(request):
         assert request.url == "https://api.typesafe.ai/v1/systemone"
         assert request.headers["Authorization"] == "Bearer secret"
         requests.append(json.loads(request.content))
-        return httpx.Response(200, json=response(actions))
+        return httpx.Response(200, json=response())
 
     async def run():
         provider = TypeSafeProvider(api_key="secret", capture=True, transport=httpx.MockTransport(send))
         try:
-            method = provider.choose_action if actions else provider.rank_excerpts
+            method = provider.score_files
             result = await method(state={"goal": "find implementation"}, candidates=CANDIDATES, timeout=1)
             assert result.input_tokens == 120
             assert provider.capture["request"] == requests[0]
             assert "secret" not in json.dumps(provider.capture)
             question = next(iter(requests[0]["questions"].values()))
-            assert question["type"] == ("choice" if actions else "score")
+            assert question["type"] == "score"
             assert "app.py" in json.dumps(question)
         finally:
             await provider.aclose()
@@ -62,8 +58,8 @@ def test_errors_are_secret_safe_and_never_retried(status, permanent):
             return httpx.Response(status, text="secret source should not leak")
         provider = TypeSafeProvider(api_key="secret", transport=httpx.MockTransport(send))
         try:
-            with pytest.raises(NavigationUnavailable) as caught:
-                await provider.choose_action(state={}, candidates=CANDIDATES, timeout=1)
+            with pytest.raises(RelevanceUnavailable) as caught:
+                await provider.score_files(state={}, candidates=CANDIDATES, timeout=1)
             assert caught.value.permanent is permanent
             assert "secret" not in str(caught.value)
             assert len(calls) == 1
@@ -74,12 +70,16 @@ def test_errors_are_secret_safe_and_never_retried(status, permanent):
 
 @pytest.mark.parametrize("mutation", [
     lambda d: d.update(model="other"),
-    lambda d: d["answers"]["next"].update(choice="write_file"),
-    lambda d: d["answers"]["next"].update(type="score"),
-    lambda d: d["answers"]["next"].update(confidence=float("nan")),
-    lambda d: d["answers"]["next"].update(probabilities={"c0": float("inf"), "RETURN_TO_SOLVER": 0}),
-    lambda d: d["answers"]["next"]["probabilities"].update(c0=.1),
+    lambda d: d["answers"]["c0"].update(score=4),
+    lambda d: d["answers"]["c0"].update(type="choice"),
+    lambda d: d["answers"]["c0"].update(confidence=float("nan")),
+    lambda d: d["answers"]["c0"].update(probabilities={"0": float("inf"), "1": 0, "2": 0, "3": 0}),
+    lambda d: d["answers"]["c0"]["probabilities"].update({"3": .1}),
     lambda d: d["answers"].update(unexpected={}),
+    lambda d: d["answers"].pop("c0"),
+    lambda d: d["answers"]["c0"].update(score=1.5),
+    lambda d: d["answers"]["c0"].update(legend={"0": "incorrect rubric"}),
+    lambda d: d["answers"]["c0"].update(confidence=1.1),
     lambda d: d["usage"].update(input_tokens=-1),
     lambda d: d["usage"].update(input_tokens=True),
 ])
@@ -87,7 +87,7 @@ def test_malformed_responses_are_rejected(mutation):
     data = copy.deepcopy(response())
     mutation(data)
     with pytest.raises((ValueError, KeyError)):
-        parse_response(data, model="jev-1.13.0", candidates=CANDIDATES, actions=True)
+        parse_response(data, model="jev-1.13.0", candidates=CANDIDATES)
 
 
 def test_size_gate_prevents_network_and_timeout_cancels_transport():
@@ -101,20 +101,19 @@ def test_size_gate_prevents_network_and_timeout_cancels_transport():
     async def run():
         provider = TypeSafeProvider(api_key="secret", transport=httpx.MockTransport(send))
         try:
-            with pytest.raises(NavigationUnavailable, match="request_size"):
-                await provider.choose_action(state={"source": "x" * 16000}, candidates=CANDIDATES, timeout=1)
+            with pytest.raises(RelevanceUnavailable, match="request_size"):
+                await provider.score_files(state={"source": "x" * 16000}, candidates=CANDIDATES, timeout=1)
             assert not calls
-            with pytest.raises(NavigationUnavailable, match="timeout"):
-                await provider.choose_action(state={}, candidates=CANDIDATES, timeout=.001)
+            with pytest.raises(RelevanceUnavailable, match="timeout"):
+                await provider.score_files(state={}, candidates=CANDIDATES, timeout=.001)
             assert len(calls) == 1
         finally:
             await provider.aclose()
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("actions", [False, True])
 @pytest.mark.parametrize("status", [200, 529])
-def test_input_log_preserves_complete_wire_body_without_headers(caplog, actions, status):
+def test_input_log_preserves_complete_wire_body_without_headers(caplog, status):
     caplog.set_level(logging.INFO)
     requests = []
     state = {"source": "source Ω\n\x1b[31m" + "x" * 1200, "goal": "Find callers"}
@@ -123,17 +122,17 @@ def test_input_log_preserves_complete_wire_body_without_headers(caplog, actions,
         requests.append(json.loads(request.content))
         # Input is visible even when the request subsequently fails.
         assert any(r.message.startswith("Jev request ") for r in caplog.records)
-        return httpx.Response(status, json=response(actions))
+        return httpx.Response(status, json=response())
 
     async def run():
         provider = TypeSafeProvider(api_key="private-typesafe-key", log_input=True, run_id="run-1",
                                     transport=httpx.MockTransport(send))
         try:
-            method = provider.choose_action if actions else provider.rank_excerpts
+            method = provider.score_files
             if status == 200:
                 await method(state=state, candidates=CANDIDATES, timeout=1)
             else:
-                with pytest.raises(NavigationUnavailable):
+                with pytest.raises(RelevanceUnavailable):
                     await method(state=state, candidates=CANDIDATES, timeout=1)
         finally:
             await provider.aclose()
@@ -157,7 +156,7 @@ def test_input_log_redacts_key_without_changing_request(caplog):
     async def run():
         provider = TypeSafeProvider(api_key=secret, log_input=True, transport=httpx.MockTransport(send))
         try:
-            await provider.choose_action(state={"source": secret}, candidates=CANDIDATES, timeout=1)
+            await provider.score_files(state={"source": secret}, candidates=CANDIDATES, timeout=1)
         finally:
             await provider.aclose()
     asyncio.run(run())
@@ -176,10 +175,10 @@ def test_capture_does_not_enable_input_logging_and_size_gate_never_logs_body(cap
             transport=httpx.MockTransport(lambda request: httpx.Response(200, json=response())))
         try:
             if oversize:
-                with pytest.raises(NavigationUnavailable, match="request_size"):
-                    await provider.choose_action(state={"source": "x" * 16000}, candidates=CANDIDATES, timeout=1)
+                with pytest.raises(RelevanceUnavailable, match="request_size"):
+                    await provider.score_files(state={"source": "x" * 16000}, candidates=CANDIDATES, timeout=1)
             else:
-                await provider.choose_action(state={"source": "private-source"}, candidates=CANDIDATES, timeout=1)
+                await provider.score_files(state={"source": "private-source"}, candidates=CANDIDATES, timeout=1)
                 assert provider.capture
         finally:
             await provider.aclose()
