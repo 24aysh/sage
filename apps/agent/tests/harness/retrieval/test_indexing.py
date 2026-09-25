@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from sage.domain.memory import MemoryBuildType, MemoryStatus
-from sage.errors import LegionMemoryBuildError, LegionMemoryQueryError
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.store import GraphStore
+from sage.domain.retrieval import IndexBuildType, IndexStatus
+from sage.errors import RetrievalBuildError, RetrievalQueryError
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.store import GraphStore
 
 
 
@@ -20,7 +20,7 @@ def test_build_handles_full_no_change_and_ignores_dirty_worktree(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
 
     first = service.build_or_update_graph_tool(repo_root=fixture_repo)
     second = service.build_or_update_graph_tool(repo_root=fixture_repo)
@@ -30,12 +30,12 @@ def test_build_handles_full_no_change_and_ignores_dirty_worktree(
     )
     third = service.build_or_update_graph_tool(repo_root=fixture_repo)
 
-    assert first.build_type is MemoryBuildType.FULL
+    assert first.build_type is IndexBuildType.FULL
     assert first.files_parsed == 4
     assert first.total_nodes > first.files_indexed
     assert first.total_edges > 0
-    assert second.build_type is MemoryBuildType.NO_CHANGE
-    assert third.build_type is MemoryBuildType.NO_CHANGE
+    assert second.build_type is IndexBuildType.NO_CHANGE
+    assert third.build_type is IndexBuildType.NO_CHANGE
     assert first.indexed_sha == third.indexed_sha
 
 
@@ -43,7 +43,7 @@ def test_incremental_build_reconciles_change_add_rename_and_delete(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     first = service.build_or_update_graph_tool(repo_root=fixture_repo)
     (fixture_repo / "service.py").write_text(
         "def replacement():\n    return 'new'\n",
@@ -59,14 +59,14 @@ def test_incremental_build_reconciles_change_add_rename_and_delete(
 
     result = service.build_or_update_graph_tool(
         repo_root=fixture_repo,
-        memory_file=first.memory_file,
+        index_file=first.index_file,
     )
 
-    assert result.build_type is MemoryBuildType.INCREMENTAL
+    assert result.build_type is IndexBuildType.INCREMENTAL
     assert result.files_parsed == 3
     assert result.files_removed == 2
     assert result.indexed_sha == expected_sha
-    with GraphStore(result.memory_file, read_only=True) as store:
+    with GraphStore(result.index_file, read_only=True) as store:
         files = set(store.file_hashes())
         assert {"added.py", "entry.py", "service.py"} <= files
         assert "app.py" not in files
@@ -79,7 +79,7 @@ def test_incremental_replacement_preserves_incoming_edges_to_stable_symbols(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     built = service.build_or_update_graph_tool(repo_root=fixture_repo)
     (fixture_repo / "service.py").write_text(
         "class Base:\n"
@@ -95,13 +95,13 @@ def test_incremental_replacement_preserves_incoming_edges_to_stable_symbols(
 
     service.build_or_update_graph_tool(
         repo_root=fixture_repo,
-        memory_file=built.memory_file,
+        index_file=built.index_file,
     )
     callers = service.query_graph_tool(
         pattern="callers_of",
         target="helper",
         repo_root=fixture_repo,
-        memory_file=built.memory_file,
+        index_file=built.index_file,
     )
 
     names = {item["name"] for item in callers["data"]["results"]}
@@ -112,13 +112,13 @@ def test_stale_and_foreign_graphs_are_rejected(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     built = service.build_or_update_graph_tool(repo_root=fixture_repo)
     (fixture_repo / "README.md").write_text("new commit\n", encoding="utf-8")
     commit_all(fixture_repo, "advance accepted sha")
 
-    with pytest.raises(LegionMemoryQueryError, match="current Git SHA"):
-        service.graph_stats(repo_root=fixture_repo, memory_file=built.memory_file)
+    with pytest.raises(RetrievalQueryError, match="current Git SHA"):
+        service.graph_stats(repo_root=fixture_repo, index_file=built.index_file)
 
     foreign = tmp_path / "foreign"
     foreign.mkdir()
@@ -127,10 +127,10 @@ def test_stale_and_foreign_graphs_are_rejected(
     git(foreign, "config", "user.email", "sage-tests@example.invalid")
     (foreign / "main.py").write_text("def foreign():\n    pass\n", encoding="utf-8")
     commit_all(foreign, "foreign fixture")
-    with pytest.raises(LegionMemoryBuildError, match="different repository"):
+    with pytest.raises(RetrievalBuildError, match="different repository"):
         service.build_or_update_graph_tool(
             repo_root=foreign,
-            memory_file=built.memory_file,
+            index_file=built.index_file,
         )
 
 
@@ -138,11 +138,11 @@ def test_missing_graph_has_an_explicit_status(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
 
     status = service.graph_stats(repo_root=fixture_repo)
 
-    assert status.status is MemoryStatus.MISSING
+    assert status.status is IndexStatus.MISSING
     assert status.nodes == 0
 
 
@@ -150,18 +150,18 @@ def test_unavailable_incremental_base_forces_a_full_rebuild(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     built = service.build_or_update_graph_tool(repo_root=fixture_repo)
-    with GraphStore(built.memory_file) as store:
+    with GraphStore(built.index_file) as store:
         store.set_metadata("indexed_sha", "f" * 40)
         store.connection.commit()
 
     rebuilt = service.build_or_update_graph_tool(
         repo_root=fixture_repo,
-        memory_file=built.memory_file,
+        index_file=built.index_file,
     )
 
-    assert rebuilt.build_type is MemoryBuildType.FULL
+    assert rebuilt.build_type is IndexBuildType.FULL
     assert rebuilt.files_parsed == rebuilt.files_indexed
 
 
@@ -169,7 +169,7 @@ def test_build_does_not_mutate_the_target_repository(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     before = git(fixture_repo, "status", "--short", "--untracked-files=all")
 
     service.build_or_update_graph_tool(repo_root=fixture_repo)
@@ -181,7 +181,7 @@ def test_local_workspace_clone_reuses_source_repository_identity(
     fixture_repo: Path,
     tmp_path: Path,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     built = service.build_or_update_graph_tool(repo_root=fixture_repo)
     workspace = tmp_path / "workspace"
     subprocess.run(
@@ -191,12 +191,12 @@ def test_local_workspace_clone_reuses_source_repository_identity(
 
     updated = service.build_or_update_graph_tool(
         repo_root=workspace,
-        memory_file=built.memory_file,
+        index_file=built.index_file,
     )
 
     assert updated.repository_id == built.repository_id
     assert updated.indexed_sha == built.indexed_sha
-    assert updated.build_type is MemoryBuildType.NO_CHANGE
+    assert updated.build_type is IndexBuildType.NO_CHANGE
 
 
 def test_failed_postprocessing_preserves_the_previous_ready_graph(
@@ -204,9 +204,9 @@ def test_failed_postprocessing_preserves_the_previous_ready_graph(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     built = service.build_or_update_graph_tool(repo_root=fixture_repo)
-    with GraphStore(built.memory_file, read_only=True) as store:
+    with GraphStore(built.index_file, read_only=True) as store:
         prior_nodes = store.stats()["nodes"]
     (fixture_repo / "service.py").write_text(
         "def changed():\n    return 7\n",
@@ -218,13 +218,13 @@ def test_failed_postprocessing_preserves_the_previous_ready_graph(
         raise sqlite3.OperationalError("forced postprocessing failure")
 
     monkeypatch.setattr(GraphStore, "_rebuild_flows", fail_postprocessing)
-    with pytest.raises(LegionMemoryBuildError, match="forced postprocessing"):
+    with pytest.raises(RetrievalBuildError, match="forced postprocessing"):
         service.build_or_update_graph_tool(
             repo_root=fixture_repo,
-            memory_file=built.memory_file,
+            index_file=built.index_file,
         )
 
-    with GraphStore(built.memory_file, read_only=True) as store:
+    with GraphStore(built.index_file, read_only=True) as store:
         assert store.get_metadata("build_state") == "ready"
         assert store.get_metadata("indexed_sha") == built.indexed_sha
         assert store.stats()["nodes"] == prior_nodes
@@ -232,10 +232,10 @@ def test_failed_postprocessing_preserves_the_previous_ready_graph(
 
 def test_nested_fixture_does_not_index_ancestor(fixture_repo):
     import pytest
-    from sage.errors import LegionMemoryBuildError
-    from sage.harness.memory.service import LegionMemoryService
+    from sage.errors import RetrievalBuildError
+    from sage.harness.retrieval.service import RepositoryRetrievalService
     nested = fixture_repo / "standalone"
     nested.mkdir()
-    with pytest.raises(LegionMemoryBuildError, match="ancestor Git root"):
-        LegionMemoryService().build_or_update_graph_tool(repo_root=nested)
+    with pytest.raises(RetrievalBuildError, match="ancestor Git root"):
+        RepositoryRetrievalService().build_or_update_graph_tool(repo_root=nested)
     assert not (nested / ".git").exists()

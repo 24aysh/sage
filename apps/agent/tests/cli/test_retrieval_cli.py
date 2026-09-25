@@ -1,23 +1,23 @@
 from pathlib import Path
 import json
 
-from sage.cli import app as cli, memory as cli_memory
-from sage.cli.output import _render_memory_retrieval
-from sage.domain.memory import (
-    MemoryBuildResult, MemoryBuildType, MemoryGraphStats, MemoryRetrievalItem,
-    MemoryRetrievalOutcome, MemoryRetrievalResult, MemoryRetrievalStatus, MemoryStatus,
+from sage.cli import app as cli, retrieval as cli_retrieval
+from sage.cli.output import _render_retrieval
+from sage.domain.retrieval import (
+    IndexBuildResult, IndexBuildType, RepositoryGraphStats, RetrievalItem,
+    RetrievalOutcome, RetrievalResult, RetrievalStatus, IndexStatus,
 )
 
 
-def test_memory_build_arguments_and_output(
+def test_retrieval_build_arguments_and_output(
     monkeypatch,
     tmp_path: Path,
     capsys,
 ) -> None:
-    memory_file = tmp_path / "graph.sqlite3"
-    result = MemoryBuildResult(
-        build_type=MemoryBuildType.FULL,
-        memory_file=memory_file,
+    index_file = tmp_path / "graph.sqlite3"
+    result = IndexBuildResult(
+        build_type=IndexBuildType.FULL,
+        index_file=index_file,
         repository_id="repository-id",
         indexed_sha="a" * 40,
         schema_version=1,
@@ -36,40 +36,40 @@ def test_memory_build_arguments_and_output(
         def build_or_update_graph_tool(self, **arguments):
             assert arguments == {
                 "repo_root": tmp_path,
-                "memory_file": memory_file,
+                "index_file": index_file,
                 "full_rebuild": True,
             }
             return result
 
-    monkeypatch.setattr(cli_memory, "build_legion_memory_service", lambda: FakeService())
+    monkeypatch.setattr(cli_retrieval, "build_retrieval_service", lambda: FakeService())
 
     exit_code = cli.main(
         [
-            "memory",
+            "retrieval",
             "build",
             "--repo",
             str(tmp_path),
-            "--memory-file",
-            str(memory_file),
+            "--index-file",
+            str(index_file),
             "--full-rebuild",
         ]
     )
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Legion Memory build: ready" in output
+    assert "Repository retrieval index: ready" in output
     assert "Build type: full" in output
-    assert f"Memory file: {memory_file}" in output
+    assert f"Index file: {index_file}" in output
 
 
-def test_memory_status_reports_missing_without_model_configuration(
+def test_retrieval_status_reports_missing_without_model_configuration(
     monkeypatch,
     tmp_path: Path,
     capsys,
 ) -> None:
-    stats = MemoryGraphStats(
-        status=MemoryStatus.MISSING,
-        memory_file=tmp_path / "missing.sqlite3",
+    stats = RepositoryGraphStats(
+        status=IndexStatus.MISSING,
+        index_file=tmp_path / "missing.sqlite3",
     )
 
     class FakeService:
@@ -78,28 +78,28 @@ def test_memory_status_reports_missing_without_model_configuration(
             return stats
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(cli_memory, "build_legion_memory_service", lambda: FakeService())
+    monkeypatch.setattr(cli_retrieval, "build_retrieval_service", lambda: FakeService())
 
-    exit_code = cli.main(["memory", "status", "--repo", str(tmp_path)])
+    exit_code = cli.main(["retrieval", "status", "--repo", str(tmp_path)])
 
     assert exit_code == 1
-    assert "Legion Memory status: missing" in capsys.readouterr().out
+    assert "Repository retrieval index: missing" in capsys.readouterr().out
 
 
-def test_memory_retrieve_prints_usage_and_ranked_memories(
+def test_retrieval_retrieve_prints_usage_and_ranked_items(
     monkeypatch,
     tmp_path: Path,
     capsys,
 ) -> None:
     issue_file = tmp_path / "issue.md"
     issue_file.write_text("Fix `helper`.\n", encoding="utf-8")
-    memory_file = tmp_path / "graph.sqlite3"
-    memory_file.touch()
-    result = MemoryRetrievalResult(
-        status=MemoryRetrievalStatus.USED,
-        outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+    index_file = tmp_path / "graph.sqlite3"
+    index_file.touch()
+    result = RetrievalResult(
+        status=RetrievalStatus.USED,
+        outcome=RetrievalOutcome.USEFUL_CONTEXT,
         summary="Retrieved one relevant symbol.",
-        memory_file=memory_file,
+        index_file=index_file,
         repository_id="repository-id",
         indexed_sha="a" * 40,
         search_modes=("exact", "fts"),
@@ -110,7 +110,7 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
         context="bounded context",
         context_chars=15,
         items=(
-            MemoryRetrievalItem(
+            RetrievalItem(
                 rank=1,
                 kind="Function",
                 name="helper",
@@ -132,35 +132,35 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
             assert arguments == {
                 "issue_text": "Fix `helper`.\n",
                 "repo_root": tmp_path,
-                "memory_file": memory_file,
+                "index_file": index_file,
             }
             return result
 
-    monkeypatch.setattr(cli_memory, "build_legion_memory_service", lambda: FakeService())
+    monkeypatch.setattr(cli_retrieval, "build_retrieval_service", lambda: FakeService())
 
     exit_code = cli.main(
         [
-            "memory",
+            "retrieval",
             "retrieve",
             "--repo",
             str(tmp_path),
             "--issue-file",
             str(issue_file),
-            "--memory-file",
-            str(memory_file),
+            "--index-file",
+            str(index_file),
         ]
     )
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Legion Memory retrieval: used" in output
-    assert "Memory used: yes" in output
+    assert "Repository retrieval: used" in output
+    assert "Context used: yes" in output
     assert "service.py::helper" in output
     assert "Why: exact_identifier, fts" in output
     context_file = tmp_path / "graph.context.md"
     assert f"Context file: {context_file}" in output
     saved_context = context_file.read_text(encoding="utf-8")
-    assert "# Legion Memory retrieved context" in saved_context
+    assert "# Repository retrieval context" in saved_context
     assert "Graph-derived navigation context" in saved_context
     assert f"- Issue file: `{issue_file}`" in saved_context
     assert "- Status: `used`" in saved_context
@@ -170,45 +170,78 @@ def test_memory_retrieve_prints_usage_and_ranked_memories(
     assert diagnostic["context"] == "bounded context"
 
 
-def test_memory_retrieve_context_replaces_a_stale_result(tmp_path: Path) -> None:
-    memory_file = tmp_path / "graph.sqlite3"
+def test_retrieval_retrieve_context_replaces_a_stale_result(tmp_path: Path) -> None:
+    index_file = tmp_path / "graph.sqlite3"
     context_file = tmp_path / "graph.context.md"
-    context_file.write_text("stale memory\n", encoding="utf-8")
-    result = MemoryRetrievalResult(
-        status=MemoryRetrievalStatus.NO_MATCH,
-        outcome=MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES,
+    context_file.write_text("stale retrieval\n", encoding="utf-8")
+    result = RetrievalResult(
+        status=RetrievalStatus.NO_MATCH,
+        outcome=RetrievalOutcome.NO_LEXICAL_CANDIDATES,
         summary="The graph is ready, but the Issue produced no lexical matches.",
-        memory_file=memory_file,
+        index_file=index_file,
         indexed_sha="a" * 40,
     )
 
-    written = cli_memory._write_memory_retrieval_context(
+    written = cli_retrieval._write_retrieval_context(
         result,
         issue_file=tmp_path / "issue.md",
     )
 
     assert written == context_file
     saved_context = written.read_text(encoding="utf-8")
-    assert "stale memory" not in saved_context
+    assert "stale retrieval" not in saved_context
     assert "- Status: `no_match`" in saved_context
     assert "_No Issue-relevant context was retrieved._" in saved_context
 
 
-def test_memory_retrieve_prints_explicit_no_match(capsys, tmp_path: Path) -> None:
-    result = MemoryRetrievalResult(
-        status=MemoryRetrievalStatus.NO_MATCH,
-        outcome=MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES,
+def test_retrieval_retrieve_prints_explicit_no_match(capsys, tmp_path: Path) -> None:
+    result = RetrievalResult(
+        status=RetrievalStatus.NO_MATCH,
+        outcome=RetrievalOutcome.NO_LEXICAL_CANDIDATES,
         summary="The graph is ready, but the Issue produced no lexical matches.",
-        memory_file=tmp_path / "graph.sqlite3",
+        index_file=tmp_path / "graph.sqlite3",
         indexed_sha="a" * 40,
         search_modes=("none",),
         query_terms=("quasarnebulazxq",),
         duration_ms=0.5,
     )
 
-    _render_memory_retrieval(result)
+    _render_retrieval(result)
 
     output = capsys.readouterr().out
-    assert "Legion Memory retrieval: no_match" in output
-    assert "Memory used: no" in output
-    assert "Retrieved memories:" not in output
+    assert "Repository retrieval: no_match" in output
+    assert "Context used: no" in output
+    assert "Retrieved items:" not in output
+
+
+def test_memory_command_and_flag_remain_deprecated_aliases(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    index_file = tmp_path / "graph.sqlite3"
+    result = IndexBuildResult(
+        build_type=IndexBuildType.NO_CHANGE,
+        index_file=index_file,
+        repository_id="repository-id",
+        indexed_sha="a" * 40,
+        schema_version=4,
+        files_indexed=0,
+        files_parsed=0,
+        files_removed=0,
+        total_nodes=0,
+        total_edges=0,
+        total_flows=0,
+        total_communities=0,
+        duration_ms=0,
+    )
+
+    class FakeService:
+        def build_or_update_graph_tool(self, **arguments):
+            assert arguments["index_file"] == index_file
+            return result
+
+    monkeypatch.setattr(cli_retrieval, "build_retrieval_service", lambda: FakeService())
+
+    assert cli.main([
+        "memory", "build", "--repo", str(tmp_path), "--memory-file", str(index_file)
+    ]) == 0

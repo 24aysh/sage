@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from sage.domain.memory import (
-    MemoryRetrievalBudgets,
-    MemoryRetrievalOutcome,
-    MemoryRetrievalStatus,
+from sage.domain.retrieval import (
+    RetrievalBudgets,
+    RetrievalOutcome,
+    RetrievalStatus,
 )
-from sage.harness.memory.retrieval import extract_issue_signals, retrieve_issue_context
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.store import GraphStore
+from sage.harness.retrieval.ranking import extract_issue_signals, retrieve_issue_context
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.store import GraphStore
 
 from .conftest import apply_files, commit_all
 
@@ -32,39 +32,39 @@ def test_multilingual_symbols_and_paths_are_lexically_retrievable(
 ):
     (fixture_repo / path).write_text(source)
     commit_all(fixture_repo, "add language fixture")
-    service = LegionMemoryService(data_root=tmp_path / "languages")
+    service = RepositoryRetrievalService(data_root=tmp_path / "languages")
     build = service.build_or_update_graph_tool(repo_root=fixture_repo)
     for issue in (f"Fix `{symbol}`.", f"Fix the behavior in {path}."):
         result = service.retrieve_issue_context(
-            issue_text=issue, repo_root=fixture_repo, memory_file=build.memory_file,
+            issue_text=issue, repo_root=fixture_repo, index_file=build.index_file,
         )
-        assert result.status is MemoryRetrievalStatus.USED
+        assert result.status is RetrievalStatus.USED
         assert any(item.file_path == path and item.language == language for item in result.items)
     assert symbol in {item.name for item in service.retrieve_issue_context(
-        issue_text=f"Fix `{symbol}`.", repo_root=fixture_repo, memory_file=build.memory_file,
+        issue_text=f"Fix `{symbol}`.", repo_root=fixture_repo, index_file=build.index_file,
     ).items}
 
 
 def _retrieve(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
     issue: str,
     *,
-    budgets: MemoryRetrievalBudgets | None = None,
+    budgets: RetrievalBudgets | None = None,
 ):
-    service, memory_file = built_memory
+    service, index_file = built_index
     return service.retrieve_issue_context(
         issue_text=issue,
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
         budgets=budgets,
     )
 
 
 @pytest.mark.parametrize("max_chars", [500, 1500, 4000, 12000])
-def test_compact_budget_retains_explicit_behavior_owner(fixture_repo, built_memory, max_chars):
-    result = _retrieve(fixture_repo, built_memory, "Fix `Worker.run` using `helper`.",
-                       budgets=MemoryRetrievalBudgets(max_chars=max_chars))
+def test_compact_budget_retains_explicit_behavior_owner(fixture_repo, built_index, max_chars):
+    result = _retrieve(fixture_repo, built_index, "Fix `Worker.run` using `helper`.",
+                       budgets=RetrievalBudgets(max_chars=max_chars))
     assert result.context_chars == len(result.context) <= max_chars
     assert result.items[0].qualified_name in {"service.py::Worker.run", "service.py::helper"}
     if max_chars >= 4000:
@@ -92,14 +92,14 @@ def test_issue_signals_extract_paths_identifiers_and_error_tokens() -> None:
 )
 def test_retrieval_ranks_expected_lexical_memory(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
     issue: str,
     expected_path: str,
     expected_reason: str,
 ) -> None:
-    result = _retrieve(fixture_repo, built_memory, issue)
+    result = _retrieve(fixture_repo, built_index, issue)
 
-    assert result.status is MemoryRetrievalStatus.USED
+    assert result.status is RetrievalStatus.USED
     assert result.returned > 0
     assert any(item.file_path == expected_path for item in result.items[:3])
     assert any(expected_reason in item.reasons for item in result.items[:3])
@@ -113,11 +113,11 @@ def test_retrieval_ranks_expected_lexical_memory(
 
 def test_graph_expansion_adds_callers_tests_flows_or_communities(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
     result = _retrieve(
         fixture_repo,
-        built_memory,
+        built_index,
         "The `helper` function returns the wrong value.",
     )
     expanded = [item for item in result.items if item.relationships]
@@ -131,13 +131,13 @@ def test_graph_expansion_adds_callers_tests_flows_or_communities(
 
 def test_graph_expansion_preserves_lexical_top_rank(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    _, memory_file = built_memory
-    with GraphStore(memory_file, read_only=True) as store:
+    _, index_file = built_index
+    with GraphStore(index_file, read_only=True) as store:
         lexical_rows, _ = store.search("helper", kind=None, limit=12)
     lexical_names = {str(item["qualified_name"]) for item in lexical_rows}
-    result = _retrieve(fixture_repo, built_memory, "Fix `helper`.")
+    result = _retrieve(fixture_repo, built_index, "Fix `helper`.")
     expanded_names = {item.qualified_name for item in result.items}
     expected = {"service.py::helper", "service.py::Worker.run"}
     lexical_recall = len(expected & lexical_names) / len(expected)
@@ -155,9 +155,9 @@ def test_graph_expansion_preserves_lexical_top_rank(
 
 def test_explicit_path_disambiguates_duplicate_symbol_names(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
+    service, index_file = built_index
     (fixture_repo / "other.py").write_text(
         "def helper():\n    return 'other'\n",
         encoding="utf-8",
@@ -165,13 +165,13 @@ def test_explicit_path_disambiguates_duplicate_symbol_names(
     commit_all(fixture_repo, "add duplicate helper")
     service.build_or_update_graph_tool(
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
     result = service.retrieve_issue_context(
         issue_text="Fix `helper` in service.py.",
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
     matching = [item for item in result.items if item.name == "helper"]
@@ -181,45 +181,45 @@ def test_explicit_path_disambiguates_duplicate_symbol_names(
 
 def test_locked_database_returns_unavailable_within_query_budget(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
     tmp_path: Path,
 ) -> None:
-    service, source = built_memory
-    memory_file = tmp_path / "locked.sqlite3"
-    shutil.copy2(source, memory_file)
-    with sqlite3.connect(memory_file) as connection:
+    service, source = built_index
+    index_file = tmp_path / "locked.sqlite3"
+    shutil.copy2(source, index_file)
+    with sqlite3.connect(index_file) as connection:
         connection.execute("PRAGMA journal_mode=DELETE")
         connection.execute("BEGIN EXCLUSIVE")
 
         result = service.retrieve_issue_context(
             issue_text="Fix `helper`.",
             repo_root=fixture_repo,
-            memory_file=memory_file,
+            index_file=index_file,
         )
 
-    assert result.status is MemoryRetrievalStatus.UNAVAILABLE
+    assert result.status is RetrievalStatus.UNAVAILABLE
     assert result.duration_ms < 1_000
 
 
 def test_irrelevant_and_unsupported_language_terms_return_no_match(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
     irrelevant = _retrieve(
         fixture_repo,
-        built_memory,
+        built_index,
         "QuasarNebulaZXQ has unrelated frobnication behavior.",
     )
     unsupported = _retrieve(
         fixture_repo,
-        built_memory,
+        built_index,
         "Update the prose in README.md for lunar deployment.",
     )
 
-    assert irrelevant.status is MemoryRetrievalStatus.NO_MATCH
-    assert irrelevant.outcome is MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES
+    assert irrelevant.status is RetrievalStatus.NO_MATCH
+    assert irrelevant.outcome is RetrievalOutcome.NO_LEXICAL_CANDIDATES
     assert irrelevant.items == ()
-    assert unsupported.status is MemoryRetrievalStatus.NO_MATCH
+    assert unsupported.status is RetrievalStatus.NO_MATCH
 
 
 def test_css_selector_is_available_to_issue_retrieval(tmp_path: Path) -> None:
@@ -230,41 +230,41 @@ def test_css_selector_is_available_to_issue_retrieval(tmp_path: Path) -> None:
         })
         result = retrieve_issue_context(
             "Fix the `.checkout-button` styles.", store,
-            memory_file=store.path, budgets=MemoryRetrievalBudgets(),
+            index_file=store.path, budgets=RetrievalBudgets(),
         )
 
-    assert result.status is MemoryRetrievalStatus.USED
+    assert result.status is RetrievalStatus.USED
     assert any(item.kind == "Selector" and item.name == ".checkout-button"
                for item in result.items)
 
 
 def test_candidates_below_threshold_are_distinguished_from_no_candidates(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
     result = _retrieve(
         fixture_repo,
-        built_memory,
+        built_index,
         "Fix `helper`.",
-        budgets=MemoryRetrievalBudgets(usefulness_threshold=100.0),
+        budgets=RetrievalBudgets(usefulness_threshold=100.0),
     )
 
-    assert result.status is MemoryRetrievalStatus.NO_MATCH
-    assert result.outcome is MemoryRetrievalOutcome.BELOW_THRESHOLD
+    assert result.status is RetrievalStatus.NO_MATCH
+    assert result.outcome is RetrievalOutcome.BELOW_THRESHOLD
     assert result.lexical_candidates > 0
     assert result.returned == 0
 
 
 def test_result_and_character_budgets_truncate_deterministically(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    budgets = MemoryRetrievalBudgets(max_results=1, max_chars=500)
-    first = _retrieve(fixture_repo, built_memory, "Fix `helper`.", budgets=budgets)
-    second = _retrieve(fixture_repo, built_memory, "Fix `helper`.", budgets=budgets)
+    budgets = RetrievalBudgets(max_results=1, max_chars=500)
+    first = _retrieve(fixture_repo, built_index, "Fix `helper`.", budgets=budgets)
+    second = _retrieve(fixture_repo, built_index, "Fix `helper`.", budgets=budgets)
 
-    assert first.status is MemoryRetrievalStatus.USED
-    assert first.outcome is MemoryRetrievalOutcome.USEFUL_CONTEXT_TRUNCATED
+    assert first.status is RetrievalStatus.USED
+    assert first.outcome is RetrievalOutcome.USEFUL_CONTEXT_TRUNCATED
     assert first.returned == 1
     assert first.omitted == first.total_candidates - 1
     assert first.context_chars <= 500
@@ -275,15 +275,15 @@ def test_result_and_character_budgets_truncate_deterministically(
 
 def test_stale_graph_is_unavailable_instead_of_exposing_memory(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
     (fixture_repo / "README.md").write_text("new base\n", encoding="utf-8")
     commit_all(fixture_repo, "advance repository")
 
-    result = _retrieve(fixture_repo, built_memory, "Fix `helper`.")
+    result = _retrieve(fixture_repo, built_index, "Fix `helper`.")
 
-    assert result.status is MemoryRetrievalStatus.UNAVAILABLE
-    assert result.outcome is MemoryRetrievalOutcome.GRAPH_UNAVAILABLE
+    assert result.status is RetrievalStatus.UNAVAILABLE
+    assert result.outcome is RetrievalOutcome.GRAPH_UNAVAILABLE
     assert result.items == ()
     assert result.context == ""
 
@@ -291,17 +291,17 @@ def test_stale_graph_is_unavailable_instead_of_exposing_memory(
 @pytest.mark.parametrize("database_state", ["missing", "corrupt", "unsupported"])
 def test_invalid_databases_return_bounded_unavailable_results(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
     tmp_path: Path,
     database_state: str,
 ) -> None:
-    service, source = built_memory
-    memory_file = tmp_path / f"{database_state}.sqlite3"
+    service, source = built_index
+    index_file = tmp_path / f"{database_state}.sqlite3"
     if database_state == "corrupt":
-        memory_file.write_bytes(b"not sqlite")
+        index_file.write_bytes(b"not sqlite")
     elif database_state == "unsupported":
-        shutil.copy2(source, memory_file)
-        with sqlite3.connect(memory_file) as connection:
+        shutil.copy2(source, index_file)
+        with sqlite3.connect(index_file) as connection:
             connection.execute(
                 "UPDATE metadata SET value='999' WHERE key='schema_version'"
             )
@@ -310,21 +310,21 @@ def test_invalid_databases_return_bounded_unavailable_results(
     result = service.retrieve_issue_context(
         issue_text="Fix `helper`.",
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
-    assert result.status is MemoryRetrievalStatus.UNAVAILABLE
-    assert result.outcome is MemoryRetrievalOutcome.GRAPH_UNAVAILABLE
+    assert result.status is RetrievalStatus.UNAVAILABLE
+    assert result.outcome is RetrievalOutcome.GRAPH_UNAVAILABLE
     assert len(result.summary) <= 500
     assert result.returned == 0
 
 
 def test_foreign_repository_graph_is_not_exposed(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
     tmp_path: Path,
 ) -> None:
-    service, memory_file = built_memory
+    service, index_file = built_index
     foreign = tmp_path / "foreign"
     shutil.copytree(fixture_repo, foreign)
     subprocess_result = subprocess.run(
@@ -338,36 +338,36 @@ def test_foreign_repository_graph_is_not_exposed(
     result = service.retrieve_issue_context(
         issue_text="Fix `helper`.",
         repo_root=foreign,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
-    assert result.status is MemoryRetrievalStatus.UNAVAILABLE
+    assert result.status is RetrievalStatus.UNAVAILABLE
     assert "different repository" in result.summary
 
 
 def test_adversarial_issue_text_remains_parameterized_and_bounded(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
     result = _retrieve(
         fixture_repo,
-        built_memory,
+        built_index,
         "`helper' OR 1=1; DROP TABLE nodes; --` ../../service.py \x1b[31m",
     )
-    service, memory_file = built_memory
-    stats = service.graph_stats(repo_root=fixture_repo, memory_file=memory_file)
+    service, index_file = built_index
+    stats = service.graph_stats(repo_root=fixture_repo, index_file=index_file)
 
-    assert result.status in {MemoryRetrievalStatus.USED, MemoryRetrievalStatus.NO_MATCH}
+    assert result.status in {RetrievalStatus.USED, RetrievalStatus.NO_MATCH}
     assert stats.nodes > 0
     assert len(result.context) <= 12_000
 
 
 def test_invalid_node_paths_are_never_returned(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
-    with sqlite3.connect(memory_file) as connection:
+    service, index_file = built_index
+    with sqlite3.connect(index_file) as connection:
         connection.execute(
             "UPDATE nodes SET file_path='../escape.py' WHERE name='helper'"
         )
@@ -376,7 +376,7 @@ def test_invalid_node_paths_are_never_returned(
     result = service.retrieve_issue_context(
         issue_text="Fix `helper`.",
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
     assert all(".." not in Path(item.file_path).parts for item in result.items)
@@ -384,18 +384,18 @@ def test_invalid_node_paths_are_never_returned(
 
 def test_one_failed_expansion_preserves_primary_hits(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import sage.harness.memory.retrieval as retrieval
+    import sage.harness.retrieval.ranking as retrieval
 
     def fail_expansion(*_args, **_kwargs):
         raise sqlite3.OperationalError("synthetic expansion failure")
 
     monkeypatch.setattr(retrieval, "_expand_edges", fail_expansion)
-    result = _retrieve(fixture_repo, built_memory, "Fix `helper`.")
+    result = _retrieve(fixture_repo, built_index, "Fix `helper`.")
 
-    assert result.status is MemoryRetrievalStatus.USED
+    assert result.status is RetrievalStatus.USED
     assert any(item.name == "helper" for item in result.items)
     assert result.warnings
 
@@ -405,7 +405,7 @@ def test_explicit_symbol_outranks_unrelated_configuration(tmp_path: Path):
         apply_files(store, {"service.py": "class WebhookService:\n    def process(self):\n        pass\n",
                       "config.py": "def settings():\n    return 1\n"})
         result = retrieve_issue_context("Fix `WebhookService.process` retry handling.", store,
-            memory_file=store.path, budgets=MemoryRetrievalBudgets())
+            index_file=store.path, budgets=RetrievalBudgets())
         assert result.items[0].qualified_name == "service.py::WebhookService.process"
         assert "semantic" not in result.search_modes
         assert any(d.channel_ranks.get("lexical") for d in result.diagnostics)
@@ -419,7 +419,7 @@ def test_unresolved_edge_is_not_rebound_to_a_test_double(tmp_path: Path):
         assert store.node("insert_one") is not None
         assert store.exact_node("insert_one") is None
         result = retrieve_issue_context("Fix `Repo.claim`.", store,
-            memory_file=store.path, budgets=MemoryRetrievalBudgets())
+            index_file=store.path, budgets=RetrievalBudgets())
         assert not any(i.name == "insert_one" and any(r.relationship == "CALLS" for r in i.relationships)
                        for i in result.items)
         assert result.unresolved_edges > 0

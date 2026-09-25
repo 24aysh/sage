@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from sage.harness.memory.parsing import CodeParser, PARSER_VERSION
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.session import MemorySession
-from sage.harness.memory.store import GraphStore
+from sage.harness.retrieval.parsing import CodeParser, PARSER_VERSION
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.session import RetrievalSession
+from sage.harness.retrieval.store import GraphStore
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--legion-reference", default=None,
+    parser.addoption("--retrieval-reference", "--legion-reference", default=None,
                      help="Optional trusted pinned reference checkout for offline differential tests.")
 
 
@@ -73,13 +73,13 @@ def fixture_repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def built_memory(
+def built_index(
     fixture_repo: Path,
     tmp_path: Path,
-) -> tuple[LegionMemoryService, Path]:
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+) -> tuple[RepositoryRetrievalService, Path]:
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     result = service.build_or_update_graph_tool(repo_root=fixture_repo)
-    return service, result.memory_file
+    return service, result.index_file
 
 
 def apply_files(
@@ -98,14 +98,14 @@ def apply_files(
 
 
 @pytest.fixture
-def memory_session(
-    fixture_repo: Path, built_memory: tuple[LegionMemoryService, Path],
-) -> Iterator[MemorySession]:
-    service, database = built_memory
-    build = service.build_or_update_graph_tool(repo_root=fixture_repo, memory_file=database)
+def retrieval_session(
+    fixture_repo: Path, built_index: tuple[RepositoryRetrievalService, Path],
+) -> Iterator[RetrievalSession]:
+    service, database = built_index
+    build = service.build_or_update_graph_tool(repo_root=fixture_repo, index_file=database)
     retrieval = service.retrieve_issue_context(
-        issue_text="helper", repo_root=fixture_repo, memory_file=database)
-    session = MemorySession(service, fixture_repo, database, database, build, retrieval)
+        issue_text="helper", repo_root=fixture_repo, index_file=database)
+    session = RetrievalSession(service, fixture_repo, database, database, build, retrieval)
     try:
         yield session
     finally:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from sage.harness.memory.store import GraphStore
+from sage.harness.retrieval.store import GraphStore
 from .conftest import apply_files
 
 HERE = Path(__file__).parent
@@ -39,7 +39,7 @@ def test_offline_navigation_golden(tmp_path):
 
 
 def test_optional_pinned_reference(request, tmp_path, monkeypatch):
-    reference = request.config.getoption("--legion-reference")
+    reference = request.config.getoption("--retrieval-reference")
     if reference is None:
         pytest.skip("Optional pinned-reference checkout not requested")
     root = Path(reference).resolve()

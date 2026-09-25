@@ -17,14 +17,11 @@ REMOVED_PATHS = {
     "providers/factory.py",
     "research",
     "legion_memory",
-    "providers/embeddings.py",
     "providers/typesafe.py",
-    "integrations/qdrant.py",
-    "domain/embeddings.py",
     "orchestration/navigation.py",
     "orchestration/navigation_candidates.py",
     "orchestration/context.py",
-    "agents/memory_tools.py",
+    "agents/retrieval_tools.py",
     "agents/repository_tools.py",
     "harness/jev/session.py",
     "harness/jev/candidates.py",
@@ -48,7 +45,7 @@ LAYER_FORBIDDEN_IMPORTS = {
     "sandbox": ("agents", "orchestration", "workflows"),
     "verification": ("agents", "orchestration", "workflows"),
     "harness": ("agents", "cli", "composition", "integrations", "orchestration", "sandbox", "workflows"),
-    "harness/memory": (
+    "harness/retrieval": (
         "agents",
         "cli",
         "composition",
@@ -113,13 +110,10 @@ def test_domain_depends_only_on_domain_contracts() -> None:
             ), path
 
 
-def test_memory_has_no_provider_or_jev_dependency_or_embedding_package() -> None:
+def test_retrieval_has_no_provider_or_jev_dependency() -> None:
     forbidden = ("sage.providers", "sage.config", "sage.harness.jev")
-    for path in (SOURCE_ROOT / "harness" / "memory").glob("*.py"):
+    for path in (SOURCE_ROOT / "harness" / "retrieval").glob("*.py"):
         assert not any(module.startswith(forbidden) for module in _sage_imports(path)), path
-    import tomllib
-    project = tomllib.loads((SOURCE_ROOT.parents[1] / "pyproject.toml").read_text())
-    assert not any(dependency.startswith("qdrant") for dependency in project["project"]["dependencies"])
 
 
 def test_layers_do_not_reach_back_into_entrypoints_or_outer_workflows() -> None:

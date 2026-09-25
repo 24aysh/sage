@@ -2,8 +2,8 @@
 
 import json
 
-from sage.harness.memory.queries import query_graph
-from sage.harness.memory.store import GraphStore
+from sage.harness.retrieval.queries import query_graph
+from sage.harness.retrieval.store import GraphStore
 from .conftest import apply_files
 
 
@@ -234,7 +234,7 @@ def test_jsonc_inherited_paths_resolve_relative_to_declaring_config(tmp_path):
 
 def test_jsonc_preserves_strings_and_rejects_external_extends():
     import pytest
-    from sage.harness.memory.tsconfig import parse_tsconfig
+    from sage.harness.retrieval.tsconfig import parse_tsconfig
     assert parse_tsconfig(b'{"compilerOptions":{"paths":{"url":["https://host/*"]}}}')['paths']['url'] == ['https://host/*']
     with pytest.raises(ValueError, match="relative"):
         parse_tsconfig(b'{"extends":"some-package/config"}')

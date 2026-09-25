@@ -4,40 +4,40 @@ from pathlib import Path
 
 import pytest
 
-from sage.errors import LegionMemoryQueryError
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.store import GraphStore
+from sage.errors import RetrievalQueryError
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.store import GraphStore
 
 from .conftest import apply_files
 
 
 def test_search_query_traversal_and_impact_return_provenance(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
+    service, index_file = built_index
     search = service.search_nodes_tool(
         query="helper",
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
     helper = search["data"]["nodes"][0]["qualified_name"]
     callers = service.query_graph_tool(
         pattern="callers_of",
         target=helper,
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
     traversal = service.traverse_graph_tool(
         target=helper,
         direction="incoming",
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
     impact = service.get_impact_radius_tool(
         changed_files=["service.py"],
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
     assert search["search_mode"] == "fts"
@@ -52,10 +52,10 @@ def test_search_query_traversal_and_impact_return_provenance(
 
 def test_flow_community_architecture_and_ranking_tools_work(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
-    arguments = {"repo_root": fixture_repo, "memory_file": memory_file}
+    service, index_file = built_index
+    arguments = {"repo_root": fixture_repo, "index_file": index_file}
     flows = service.list_flows_tool(**arguments)
     flow = service.get_flow_tool(
         flow_id=flows["data"]["flows"][0]["id"],
@@ -90,10 +90,10 @@ def test_flow_community_architecture_and_ranking_tools_work(
 
 def test_empty_and_ambiguous_results_do_not_overclaim_certainty(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
-    arguments = {"repo_root": fixture_repo, "memory_file": memory_file}
+    service, index_file = built_index
+    arguments = {"repo_root": fixture_repo, "index_file": index_file}
     missing = service.query_graph_tool(
         pattern="references_to",
         target="not-present",
@@ -104,9 +104,9 @@ def test_empty_and_ambiguous_results_do_not_overclaim_certainty(
     assert missing["returned"] == 0
     assert "verify in source" in missing["data"]["confidence"]
     assert unknown["status"] == "not_found"
-    with pytest.raises(LegionMemoryQueryError, match="Unknown graph query"):
+    with pytest.raises(RetrievalQueryError, match="Unknown graph query"):
         service.query_graph_tool(pattern="arbitrary_sql", target="x", **arguments)
-    with pytest.raises(LegionMemoryQueryError, match="repository-relative"):
+    with pytest.raises(RetrievalQueryError, match="repository-relative"):
         service.query_graph_tool(
             pattern="file_summary",
             target="../../etc/passwd",
@@ -138,7 +138,7 @@ def unused():
 
 def test_weighted_leiden_is_deterministic_and_test_follows_production():
     import networkx as nx
-    from sage.harness.memory.communities import community_groups
+    from sage.harness.retrieval.communities import community_groups
 
     graph = nx.DiGraph()
     for name in ("checkout", "persist", "stock", "other", "test_checkout"):

@@ -3,27 +3,27 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from sage.harness.context.tools import build_repository_read_tools
-from sage.domain.memory import (
-    MemoryBuildResult,
-    MemoryBuildType,
-    MemoryRetrievalOutcome,
-    MemoryRetrievalResult,
-    MemoryRetrievalStatus,
+from sage.domain.retrieval import (
+    IndexBuildResult,
+    IndexBuildType,
+    RetrievalOutcome,
+    RetrievalResult,
+    RetrievalStatus,
 )
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.session import MemorySession
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.session import RetrievalSession
 from .conftest import commit_all
 
 
 def test_session_records_bounded_tool_evidence_without_payloads(tmp_path: Path) -> None:
-    memory_file = tmp_path / "graph.sqlite3"
-    session = MemorySession(
-        service=LegionMemoryService(),
+    index_file = tmp_path / "graph.sqlite3"
+    session = RetrievalSession(
+        service=RepositoryRetrievalService(),
         repo_root=tmp_path,
-        requested_memory_file=memory_file,
-        memory_file=memory_file,
-        build=_build(memory_file),
-        retrieval=_retrieval(memory_file),
+        requested_index_file=index_file,
+        index_file=index_file,
+        build=_build(index_file),
+        retrieval=_retrieval(index_file),
     )
 
     session.record_tool_call(
@@ -56,10 +56,10 @@ def test_session_records_bounded_tool_evidence_without_payloads(tmp_path: Path) 
     assert len(session.tool_calls) == 1
 
 
-def _build(memory_file: Path) -> MemoryBuildResult:
-    return MemoryBuildResult(
-        build_type=MemoryBuildType.FULL,
-        memory_file=memory_file,
+def _build(index_file: Path) -> IndexBuildResult:
+    return IndexBuildResult(
+        build_type=IndexBuildType.FULL,
+        index_file=index_file,
         repository_id="repository-id",
         indexed_sha="a" * 40,
         schema_version=1,
@@ -76,14 +76,14 @@ def _build(memory_file: Path) -> MemoryBuildResult:
 
 def test_history_reset_native_dedup_and_edited_locators(tmp_path):
     path = tmp_path / "graph.sqlite3"
-    from sage.domain.memory import MemoryRetrievalItem
+    from sage.domain.retrieval import RetrievalItem
     retrieval = _retrieval(path).model_copy(update={
-        "status": MemoryRetrievalStatus.USED,
+        "status": RetrievalStatus.USED,
         "context": "app.py::work (app.py:2)",
-        "items": (MemoryRetrievalItem(qualified_name="app.py::work", name="work", kind="Function",
+        "items": (RetrievalItem(qualified_name="app.py::work", name="work", kind="Function",
                     file_path="app.py", language="python", line_start=2, line_end=4, score=1, rank=1),),
     })
-    session = MemorySession(LegionMemoryService(), tmp_path, path, path, _build(path), retrieval)
+    session = RetrievalSession(RepositoryRetrievalService(), tmp_path, path, path, _build(path), retrieval)
     assert session.begin_session(initial_visible=True) == retrieval.context
     response = {"status": "ok", "returned": 1, "total": 1, "data": {"nodes": [
         {"qualified_name": "app.py::work", "file_path": "app.py", "line_start": 2, "line_end": 4}]}}
@@ -99,7 +99,7 @@ def test_history_reset_native_dedup_and_edited_locators(tmp_path):
 
 def test_no_match_has_no_tools_or_enrichment_queries(tmp_path):
     path = tmp_path / "graph.sqlite3"
-    session = MemorySession(LegionMemoryService(), tmp_path, path, path, _build(path), _retrieval(path))
+    session = RetrievalSession(RepositoryRetrievalService(), tmp_path, path, path, _build(path), _retrieval(path))
     assert not session.tools_enabled
     assert session.begin_session(initial_visible=True) == ""
     assert session.enrich(tool_name="read_file", path="app.py", available_chars=3000, source_chars=50) == ""
@@ -107,20 +107,20 @@ def test_no_match_has_no_tools_or_enrichment_queries(tmp_path):
     assert session.artifact().exposure.source_read_chars == 50
 
 
-def _retrieval(memory_file: Path) -> MemoryRetrievalResult:
-    return MemoryRetrievalResult(
-        status=MemoryRetrievalStatus.NO_MATCH,
-        outcome=MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES,
+def _retrieval(index_file: Path) -> RetrievalResult:
+    return RetrievalResult(
+        status=RetrievalStatus.NO_MATCH,
+        outcome=RetrievalOutcome.NO_LEXICAL_CANDIDATES,
         summary="No match.",
-        memory_file=memory_file,
+        index_file=index_file,
         repository_id="repository-id",
         indexed_sha="a" * 40,
         duration_ms=1,
     )
 
 
-def test_enrichment_preserves_source_deduplicates_and_records_usage(fixture_repo, memory_session):
-    session = memory_session
+def test_enrichment_preserves_source_deduplicates_and_records_usage(fixture_repo, retrieval_session):
+    session = retrieval_session
     repository = SimpleNamespace(read_file=lambda **_: "8: def helper():\n9:     return 42", search_text=lambda **_: "service.py:8:def helper():")
     tools = {t.name: t for t in build_repository_read_tools(SimpleNamespace(repository=repository), enrich=session.enrich)}
     first = asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 8, "end_line": 9}))
@@ -128,7 +128,7 @@ def test_enrichment_preserves_source_deduplicates_and_records_usage(fixture_repo
     assert "Called by:" in first and "Tests:" in first and "Community:" in first
     assert "Accepted-base" in first
     second = asyncio.run(tools["read_file"].ainvoke({"path": "service.py", "start_line": 8, "end_line": 9}))
-    assert "legion-read-context" not in second
+    assert "retrieval-read-context" not in second
     assert session.artifact().enrichments[0].hit_count == 1
     assert session.artifact().enrichments[1].status == "skipped"
     assert not session.artifact().tool_calls
@@ -142,16 +142,16 @@ def test_enrichment_preserves_source_deduplicates_and_records_usage(fixture_repo
     assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""
 
 
-def test_enrichment_failure_leaves_source_unchanged(fixture_repo, memory_session):
-    session = memory_session
+def test_enrichment_failure_leaves_source_unchanged(fixture_repo, retrieval_session):
+    session = retrieval_session
     (fixture_repo / "new.py").write_text("def new():\n    pass\n")
     commit_all(fixture_repo, "make graph stale")
     assert session.enrich(tool_name="read_file", path="service.py", available_chars=3000) == ""
     assert session.artifact().enrichments[0].status == "unavailable"
 
 
-def test_search_enrichment_and_default_read_range(fixture_repo, memory_session):
-    session = memory_session
+def test_search_enrichment_and_default_read_range(fixture_repo, retrieval_session):
+    session = retrieval_session
     repository = SimpleNamespace(search_text=lambda **_: "service.py:8:def helper():", read_file=lambda **_: "source")
     tools = {t.name: t for t in build_repository_read_tools(SimpleNamespace(repository=repository), enrich=session.enrich)}
     result = asyncio.run(tools["search_text"].ainvoke({"query": "helper"}))

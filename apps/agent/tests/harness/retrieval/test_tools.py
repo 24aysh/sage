@@ -4,8 +4,8 @@ import asyncio
 import json
 from pathlib import Path
 
-from sage.harness.memory.tools import _bounded_json, build_legion_memory_tools
-from sage.harness.memory.service import LegionMemoryService
+from sage.harness.retrieval.tools import _bounded_json, build_retrieval_tools
+from sage.harness.retrieval.service import RepositoryRetrievalService
 
 
 EXPECTED_TOOLS = {
@@ -32,35 +32,35 @@ EXPECTED_TOOLS = {
 
 def test_native_manifest_has_typed_bound_read_only_schemas(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
-    tools = build_legion_memory_tools(
+    service, index_file = built_index
+    tools = build_retrieval_tools(
         service,
         repo_root=fixture_repo,
-        memory_file=memory_file,
+        index_file=index_file,
     )
 
     assert {item.name for item in tools} == EXPECTED_TOOLS
     for item in tools:
         schema = item.args_schema.model_json_schema()
         assert "repo_root" not in schema.get("properties", {})
-        assert "memory_file" not in schema.get("properties", {})
+        assert "index_file" not in schema.get("properties", {})
         assert "description" in schema
 
 
 def test_every_native_adapter_invokes_and_returns_json(
     fixture_repo: Path,
-    built_memory: tuple[LegionMemoryService, Path],
+    built_index: tuple[RepositoryRetrievalService, Path],
 ) -> None:
-    service, memory_file = built_memory
+    service, index_file = built_index
     usage: list[tuple[str, dict[str, object], float]] = []
     tools = {
         item.name: item
-        for item in build_legion_memory_tools(
+        for item in build_retrieval_tools(
             service,
             repo_root=fixture_repo,
-            memory_file=memory_file,
+            index_file=index_file,
             usage_recorder=lambda name, result, duration: usage.append(
                 (name, result, duration)
             ),
@@ -109,10 +109,10 @@ def test_adapters_report_unavailable_graph_and_bound_output(
     missing = tmp_path / "missing.sqlite3"
     tool = next(
         item
-        for item in build_legion_memory_tools(
-            LegionMemoryService(),
+        for item in build_retrieval_tools(
+            RepositoryRetrievalService(),
             repo_root=fixture_repo,
-            memory_file=missing,
+            index_file=missing,
             output_chars=1_000,
         )
         if item.name == "search_nodes_tool"
@@ -150,15 +150,15 @@ def test_large_tool_payload_remains_valid_json_within_budget() -> None:
     assert payload["omitted"] + payload["returned"] == 500
 
 
-def test_review_context_uses_bound_source_reader_and_refactor_is_read_only(fixture_repo, built_memory):
-    from sage.harness.memory.tools import build_legion_memory_tools
+def test_review_context_uses_bound_source_reader_and_refactor_is_read_only(fixture_repo, built_index):
+    from sage.harness.retrieval.tools import build_retrieval_tools
 
-    service, database = built_memory
+    service, database = built_index
     reads = []
     def reader(**kwargs):
         reads.append(kwargs)
         return "current bounded source"
-    tools = {t.name: t for t in build_legion_memory_tools(service, repo_root=fixture_repo, memory_file=database, source_reader=reader)}
+    tools = {t.name: t for t in build_retrieval_tools(service, repo_root=fixture_repo, index_file=database, source_reader=reader)}
     response = json.loads(asyncio.run(tools["get_review_context_tool"].ainvoke({"changed_files": ["service.py"], "include_source": True})))
     assert response["data"]["changed_functions_total"] > 0
     assert response["data"]["source_snippets"][0]["source"] == "current bounded source"

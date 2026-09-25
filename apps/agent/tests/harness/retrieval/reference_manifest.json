@@ -6,7 +6,6 @@
   "revision": null,
   "note": "Local reference snapshot has no independent .git metadata. Tests are self-contained and do not import this snapshot.",
   "sha256": {
-    "embeddings.py": "1f5a79e692822d608abda77b330f23eb7d206695f451da93eaa8ae1fdb183636",
     "search.py": "7a9d22505740c50b0b2389149222c2b334107e81924519a527760c84fd2048b9",
     "parser.py": "e35c74456d26ecdd76d94fedb9f4ec1289b0dd086523813162ea38c20f8077f4",
     "graph.py": "bba4a080c7e9aa67ca1c91fcf7c335f6ebc1bceb9d59fc31c69562d03a3e8d4b",
@@ -26,16 +25,15 @@
   },
   "covered": {
     "test_reference_differential.py": [
-      "optional all-17-hash pinned reference check",
+      "optional pinned structural-reference hash check",
       "normalized Python nodes, resolved calls, flows, communities and query against authored golden"
     ],
-    "test_local_only.py": [
+    "test_local_retrieval.py": [
       "graph build and retrieval without credentials or network",
-      "obsolete provider configuration cannot enable embeddings",
       "fail-fast build serialization and lock release"
     ],
     "test_store.py": [
-      "schema 4 removes obsolete vector state while preserving graph rows"
+      "current schema creation and explicit rebuild requirement for obsolete partial schemas"
     ],
     "test_tools.py": [
       "all 21 native tools, closed schemas and repository-bound invocation",
@@ -78,7 +76,7 @@
   "intentional_adaptations": [
     "native tools instead of MCP/editor hooks",
     "accepted committed snapshot",
-    "lexical and graph retrieval only; embeddings and Qdrant removed",
+    "local lexical ranking and graph expansion",
     "bounded flow depth/nodes",
     "Issue-specific path preservation",
     "compact source verification",
