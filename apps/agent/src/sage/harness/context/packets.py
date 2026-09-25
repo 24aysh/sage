@@ -8,10 +8,10 @@ from sage.harness.context.run import SolverContext
 
 def prepare_solver_message(message: str, *, stage: str, context: SolverContext) -> str:
     """Reset visibility for this history, add repair locators, and enforce its cap."""
-    if context.memory is not None:
-        packet = context.memory.begin_session(initial_visible=stage != "solver-repair")
+    if context.retrieval is not None:
+        packet = context.retrieval.begin_session(initial_visible=stage != "solver-repair")
         if stage == "solver-repair" and packet:
-            message += "\n\n<legion-repair-context>\n" + packet + "\n</legion-repair-context>"
+            message += "\n\n<retrieval-repair-context>\n" + packet + "\n</retrieval-repair-context>"
     input_cap = (
         context.settings.repair_input_chars
         if stage == "solver-repair"
@@ -26,7 +26,7 @@ def build_solver_message(
     *,
     base_sha: str,
     issue_text: str,
-    memory_context: str | None = None,
+    retrieval_context: str | None = None,
 ) -> str:
     """Build the initial untrusted Issue envelope for a Solver session."""
 
@@ -36,13 +36,13 @@ def build_solver_message(
         f"{issue_text}\n"
         "</untrusted-issue>"
     )
-    if memory_context is None:
+    if retrieval_context is None:
         return issue
     return (
         f"{issue}\n\n"
-        "<untrusted-legion-memory>\n"
-        f"{memory_context}\n"
-        "</untrusted-legion-memory>"
+        "<untrusted-retrieval-context>\n"
+        f"{retrieval_context}\n"
+        "</untrusted-retrieval-context>"
     )
 
 

@@ -120,7 +120,7 @@ class Settings(BaseModel):
     run_deadline_seconds: int = Field(default=4_800, ge=600, le=5_100)
     finalization_reserve_seconds: int = Field(default=300, ge=60, le=900)
     solver_input_chars: int = Field(default=96_000, ge=8_000, le=200_000)
-    legion_initial_context_chars: int = Field(default=4000, ge=500, le=12_000)
+    retrieval_initial_context_chars: int = Field(default=4000, ge=500, le=12_000)
     reviewer_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     repair_input_chars: int = Field(default=48_000, ge=8_000, le=120_000)
     max_candidate_diff_chars: int = Field(default=96_000, ge=4_000, le=200_000)
@@ -221,7 +221,10 @@ class Settings(BaseModel):
                     "SAGE_FINALIZATION_RESERVE_SECONDS", "300"
                 ),
                 solver_input_chars=values.get("SAGE_SOLVER_INPUT_CHARS", "96000"),
-                legion_initial_context_chars=values.get("SAGE_LEGION_INITIAL_CONTEXT_CHARS", "4000"),
+                retrieval_initial_context_chars=values.get(
+                    "SAGE_RETRIEVAL_INITIAL_CONTEXT_CHARS",
+                    values.get("SAGE_LEGION_INITIAL_CONTEXT_CHARS", "4000"),
+                ),
                 reviewer_input_chars=values.get(
                     "SAGE_REVIEWER_INPUT_CHARS", "48000"
                 ),

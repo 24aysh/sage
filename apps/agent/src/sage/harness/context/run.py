@@ -12,7 +12,7 @@ from sage.harness.context.instructions import RoleInstructions
 if TYPE_CHECKING:
     from sage.artifacts.store import RunArtifacts
     from sage.config import Settings
-    from sage.harness.memory.session import MemorySession
+    from sage.harness.retrieval.session import RetrievalSession
     from sage.repository.service import Repository
 
 
@@ -24,7 +24,7 @@ class SolveContext:
     repository: Repository
     settings: Settings
     artifacts: RunArtifacts
-    memory: MemorySession | None = None
+    retrieval: RetrievalSession | None = None
     instructions: RoleInstructions = field(default_factory=RoleInstructions)
 
 
@@ -52,16 +52,16 @@ class SolverContext(RepositoryContext, Protocol):
 
     prepared_run: PreparedRun
     settings: Settings
-    memory: SolverMemorySession | None
+    retrieval: SolverRetrievalSession | None
     instructions: RoleInstructions
 
 
-class SolverMemorySession(Protocol):
-    """Narrow run-scoped memory surface consumed by Solver tool binding."""
+class SolverRetrievalSession(Protocol):
+    """Narrow run-scoped retrieval surface consumed by Solver tool binding."""
 
     service: Any
     repo_root: Path
-    memory_file: Path
+    index_file: Path
     tools_enabled: bool
 
     def enrich(self, **arguments: Any) -> str: ...

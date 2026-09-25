@@ -1,1 +1,1 @@
-"""Agent support: bounded context, source graph memory, and optional Jev navigation."""
+"""Agent support: bounded context, repository retrieval, and Jev filtering."""

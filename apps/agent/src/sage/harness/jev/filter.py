@@ -7,15 +7,15 @@ from collections.abc import Callable
 from time import perf_counter
 
 from sage.config import JevSettings
-from sage.domain.memory import MemoryRetrievalOutcome, MemoryRetrievalResult
+from sage.domain.retrieval import RetrievalOutcome, RetrievalResult
 from sage.domain.relevance import FileCandidate, RelevanceProvider, RelevanceReport, RelevanceUnavailable
 from sage.domain.usage import SemanticCallRecord
-from sage.harness.memory.retrieval import select_context_files
+from sage.harness.retrieval.ranking import select_context_files
 
 logger = logging.getLogger(__name__)
 
 
-def file_candidates(result: MemoryRetrievalResult) -> tuple[FileCandidate, ...]:
+def file_candidates(result: RetrievalResult) -> tuple[FileCandidate, ...]:
     """Group bounded graph locators, without source reads or model-generated paths."""
     grouped: dict[str, list[str]] = {}
     for item in result.items:
@@ -36,11 +36,11 @@ class RelevanceFilter:
             await self.provider.aclose()
 
     async def apply(
-        self, *, issue: str, retrieval: MemoryRetrievalResult, max_chars: int,
+        self, *, issue: str, retrieval: RetrievalResult, max_chars: int,
         usage_recorder: Callable[[SemanticCallRecord], None] | None = None,
         report_writer: Callable[[dict], object] | None = None,
         remaining_seconds: float | None = None,
-    ) -> MemoryRetrievalResult:
+    ) -> RetrievalResult:
         candidates = file_candidates(retrieval)
         paths = tuple(c.path for c in candidates)
         selected = set(paths)
@@ -109,8 +109,8 @@ class RelevanceFilter:
                 self._publish(report, report_writer)
         effective_paths = selected if self.settings.mode == "on" else set(paths)
         result = select_context_files(retrieval, effective_paths, max_chars=max_chars,
-            empty_outcome=MemoryRetrievalOutcome.RELEVANCE_UNAVAILABLE
-                if report.status == "unavailable" else MemoryRetrievalOutcome.RELEVANCE_REJECTED
+            empty_outcome=RetrievalOutcome.RELEVANCE_UNAVAILABLE
+                if report.status == "unavailable" else RetrievalOutcome.RELEVANCE_REJECTED
         ) if retrieval.items and not (
             self.settings.mode == "off" and retrieval.context_chars <= max_chars
         ) else retrieval
