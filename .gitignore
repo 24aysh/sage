@@ -30,6 +30,7 @@ jev_sage_integration_analysis.md
 .sage/legion-memory/
 .sage/embeddings
 .sage/retrieval
+.sage/evals/
 
 # Editors / OS
 .DS_Store

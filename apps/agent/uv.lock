@@ -942,6 +942,9 @@ dev = [
     { name = "pytest" },
     { name = "pyyaml" },
 ]
+eval = [
+    { name = "tqdm" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -963,6 +966,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pyyaml", specifier = "==6.0.3" },
 ]
+eval = [{ name = "tqdm", specifier = "==4.70.0" }]
 
 [[package]]
 name = "sniffio"
