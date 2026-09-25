@@ -13,14 +13,14 @@ under `docs/` for present behavior and commands.
 | [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Harness consolidation, repository-retrieval naming, and verification record |
 | [`../docs/relevance-filter-plan.md`](../docs/relevance-filter-plan.md) | Multilingual lexical retrieval and the replacement Jev file-filter pipeline |
 
-## Proposed work
+## Current evaluation work
 
 | Document | Status |
 | --- | --- |
+| [`26_RETRIEVAL_NOISE_EVALUATION_IMPLEMENTATION_PLAN.md`](26_RETRIEVAL_NOISE_EVALUATION_IMPLEMENTATION_PLAN.md) | Implemented retrieval noise/retention evaluator; a live paid dataset run remains pending |
 | [`25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md`](25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md) | Historical A–E navigation implementation; superseded by the file relevance filter on `feat/jev-relevance-filter` |
 
-This user-requested proposal does not change the current behavior described in
-the guides above.
+The current guides above describe the implemented evaluator and runtime behavior.
 
 ## Implemented consolidation
 
