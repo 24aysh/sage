@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from langchain_core.runnables import RunnableConfig
 
-from sage.domain.memory import LegionMemoryRunArtifact
+from sage.domain.retrieval import RetrievalRunArtifact
 from sage.domain.usage import AttemptKind, ModelCallRecord, ModelRole
 
 _STAGE_ACTIVITIES = {
@@ -141,9 +141,9 @@ def log_agent_result(
     logger.info(_panel(f"{role.value.capitalize()}: result", details))
 
 
-def log_legion_memory(
+def log_retrieval(
     logger: logging.Logger,
-    artifact: LegionMemoryRunArtifact,
+    artifact: RetrievalRunArtifact,
 ) -> None:
     """Log stable graph and retrieval summaries without graph payload content."""
 
@@ -154,7 +154,7 @@ def log_legion_memory(
             (
                 ("Status", "unavailable"),
                 ("Failure", artifact.failure_category or "unavailable"),
-                ("Memory file", artifact.resolved_memory_file),
+                ("Index file", artifact.resolved_index_file),
             )
         )
     else:
@@ -167,10 +167,10 @@ def log_legion_memory(
                     f"{build.files_parsed} updated / {build.files_indexed} indexed",
                 ),
                 ("Graph", f"{build.total_nodes} nodes / {build.total_edges} edges"),
-                ("Memory file", artifact.resolved_memory_file),
+                ("Index file", artifact.resolved_index_file),
             )
         )
-    title = "Legion Memory: graph ready" if build else "Legion Memory: graph unavailable"
+    title = "Repository retrieval: index ready" if build else "Repository retrieval: index unavailable"
     logger.info(_panel(title, graph_details))
 
     retrieval = artifact.retrieval
@@ -181,7 +181,7 @@ def log_legion_memory(
     )
     logger.info(
         _panel(
-            "Legion Memory: retrieval",
+            "Repository retrieval: Issue context",
             (
                 ("Status", artifact.status.value),
                 (

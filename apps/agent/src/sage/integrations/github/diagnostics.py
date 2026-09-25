@@ -20,7 +20,7 @@ _DIAGNOSTIC_FILES = (
     "changed-files.json",
     "diff.patch",
     "usage.json",
-    "legion-memory.json",
+    "repository-retrieval.json",
     "relevance-filter.json",
     "terminal.json",
     "verification-summary.json",
@@ -90,8 +90,8 @@ def persist_github_diagnostics(
         for name in _DIAGNOSTIC_FILES:
             source = source_root / name
             if source.is_file():
-                if name == "legion-memory.json":
-                    _copy_memory_diagnostic(source, destination / name)
+                if name == "repository-retrieval.json":
+                    _copy_retrieval_diagnostic(source, destination / name)
                 elif name == "relevance-filter.json":
                     _copy_relevance_diagnostic(source, destination / name)
                 else:
@@ -99,15 +99,15 @@ def persist_github_diagnostics(
     return provenance_path
 
 
-def _copy_memory_diagnostic(source: Path, destination: Path) -> None:
-    """Copy bounded memory evidence without its rendered model context."""
+def _copy_retrieval_diagnostic(source: Path, destination: Path) -> None:
+    """Copy bounded retrieval evidence without its rendered model context."""
 
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        raise ArtifactError("Invalid Legion Memory diagnostic artifact.") from error
+        raise ArtifactError("Invalid Repository retrieval index diagnostic artifact.") from error
     if not isinstance(payload, dict):
-        raise ArtifactError("Invalid Legion Memory diagnostic artifact.")
+        raise ArtifactError("Invalid Repository retrieval index diagnostic artifact.")
     retrieval = payload.get("retrieval")
     if isinstance(retrieval, dict):
         retrieval.pop("context", None)

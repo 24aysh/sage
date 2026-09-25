@@ -7,7 +7,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from sage.composition import build_legion_memory_service, build_orchestrator
+from sage.composition import build_retrieval_service, build_orchestrator
 from sage.config import Settings
 from sage.errors import GitHubConfigurationError
 from sage.integrations.github.client import RestGitHubClient
@@ -122,7 +122,7 @@ def _run_github_solve(arguments: argparse.Namespace) -> int:
             status_comment_id=arguments.status_comment_id,
             orchestrator_factory=build_orchestrator,
             settings_factory=lambda: Settings.from_env(environment),
-            memory_service_factory=build_legion_memory_service,
+            retrieval_service_factory=build_retrieval_service,
         )
     )
     print(f"GitHub solve outcome: {result.outcome.value}")

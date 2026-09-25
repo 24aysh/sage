@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from sage.artifacts.files import write_json_atomic, write_text_atomic
 from sage.config import Settings
-from sage.domain.memory import LegionMemoryRunArtifact
+from sage.domain.retrieval import RetrievalRunArtifact
 from sage.domain.solve import AgentFinalOutput, PreparedRun, SolveRequest, SolveResult
 from sage.domain.usage import RunProvenance
 from sage.errors import ArtifactError
@@ -48,8 +48,8 @@ class RunArtifacts:
         }
         try:
             request_payload = request.model_dump(mode="json")
-            if request.memory_file is None:
-                request_payload.pop("memory_file", None)
+            if request.index_file is None:
+                request_payload.pop("index_file", None)
             write_json_atomic(prepared_run.run_dir / "request.json", request_payload)
             write_json_atomic(prepared_run.run_dir / "metadata.json", metadata)
             write_text_atomic(prepared_run.run_dir / "issue.md", issue_text)
@@ -136,8 +136,8 @@ class RunArtifacts:
     def write_workflow_timing(self, duration_ms: float) -> Path:
         return self._json("workflow-timing.json", {"duration_ms": duration_ms})
 
-    def write_legion_memory(self, value: LegionMemoryRunArtifact) -> Path:
-        return self._json("legion-memory.json", value)
+    def write_retrieval(self, value: RetrievalRunArtifact) -> Path:
+        return self._json("repository-retrieval.json", value)
 
     def write_verification_preflight(self, value: dict[str, object]) -> Path:
         return self._json("verification-preflight.json", value)
