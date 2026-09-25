@@ -31,145 +31,99 @@ uv run --project apps/agent python -m compileall -q apps/agent/src
 The optional pinned-reference test skips when no reference checkout is supplied.
 A skip is not a parity certification.
 
-## Jev navigation experiments
+## Jev relevance filter
 
-Jev is off by default. Unit tests use scripted judgments and HTTP fixtures;
-they need no TypeSafe key and do not establish live efficiency gains.
+The pipeline is lexical/graph retrieval → one batched Jev file judgment → bounded
+Solver context. It no longer performs optional tool calls inside read/search
+responses. `make legion-memory` remains model-free; `make legion-retrieve` uses
+the same filter as a memory-enabled solve.
 
-```bash
-uv run --project apps/agent pytest \
-  apps/agent/tests/harness/jev/test_provider.py \
-  apps/agent/tests/harness/jev/test_session.py \
-  apps/agent/tests/harness/jev/test_evaluation.py \
-  apps/agent/tests/harness/memory/test_navigation.py \
-  apps/agent/tests/repository/test_search.py
-```
-
-For a local pilot, set `TYPESAFE_API_KEY` privately and use
-`SAGE_JEV_NAVIGATION_MODE=shadow|on`. This opts into sending bounded Issue,
-plan and source evidence to TypeSafe. Set `SAGE_JEV_NAVIGATION_POLICY` to
-`excerpts` (unchanged schemas) or `actions` (optional exploration goal).
-For actions, `SAGE_JEV_MAX_FOLLOWUP_ACTIONS=1|2` selects the bound. Existing
-`make solve` and `make legion-solve` honor these settings; memory is optional.
-Never put credentials in the candidate repository or sandbox.
-
-### Console logs for solve and legion-solve
-
-Set these in the `.env` loaded by Make (or your selected `ENV_FILE`):
+First remove retired `SAGE_JEV_NAVIGATION_POLICY`, `SAGE_JEV_MAX_FOLLOWUP_ACTIONS`,
+`SAGE_JEV_RUN_WAIT_SECONDS`, and the old READ/SEARCH/GRAPH probability and ACTION
+confidence threshold variables from `.env`. Configure:
 
 ```dotenv
+TYPESAFE_API_KEY=your-key
 SAGE_JEV_NAVIGATION_MODE=on
-SAGE_JEV_NAVIGATION_POLICY=actions
-SAGE_JEV_MAX_FOLLOWUP_ACTIONS=1
-SAGE_JEV_READ_PROBABILITY_THRESHOLD=0.65
-SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD=0.75
-SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD=0.80
-SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD=0.50
-SAGE_JEV_LOG_INPUT=true
+SAGE_JEV_MODEL=jev-1.13.0
+SAGE_JEV_RELEVANCE_SCORE_THRESHOLD=2.0
+SAGE_JEV_RELEVANCE_CONFIDENCE_THRESHOLD=0.5
+SAGE_JEV_TIMEOUT_SECONDS=2
+SAGE_JEV_LOG_INPUT=false
 SAGE_JEV_CAPTURE=false
 ```
 
-Also configure `OPENAI_API_KEY`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY` privately
-in that file. Run commands from the Sage checkout, with Docker running and the
-sandbox image available (`make bootstrap` for first-time setup; `make doctor`
-to check an existing setup). These solve commands make paid model requests.
-Put Jev settings in the loaded env file: Make sources it before solving, so its
-values override conflicting variables exported in your shell.
-
-Use a committed target repository and an Issue requiring source exploration,
-such as tracing a function's callers and tests. Replace the absolute example
-paths below. Keep the Issue file and memory database outside the target repository.
-
-Without Legion Memory:
+Mode `off` needs no Jev key and preserves lexical results. `shadow` pays for a
+judgment but does not remove anything. `on` applies both thresholds, inclusive.
+The score measures relevance on a described 0–3 scale; confidence measures the
+concentration of the returned distribution. These provisional thresholds need
+calibration on actual Issues, not interpretation as solve-success probabilities.
 
 ```bash
-make solve REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
-```
-
-For a tools-only benchmark baseline, use:
-
-```bash
-make solve-baseline REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
-```
-
-`solve-baseline` loads the selected `ENV_FILE`, then forcibly sets Jev navigation
-to `off` and never passes a memory database to the solve. This remains true even
-if the env file enables Jev or the command receives `MEMORY`/`LEGION_SOLVE`
-values. The Solver retains its ordinary repository and mutation tools; normal
-verification and Reviewer behavior are unchanged. Use the same Issue, base
-commit, models and other settings when comparing this baseline with `legion-solve`.
-
-With Legion Memory, first build the graph and then run a memory-enabled solve:
-
-```bash
-make legion-memory REPO=/absolute/repo \
-  MEMORY_FILE=/absolute/sage-memory/graph.sqlite3
-
+make legion-memory REPO=/absolute/repo MEMORY_FILE=/absolute/memory/graph.sqlite3
+make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  MEMORY=/absolute/memory/graph.sqlite3
 make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/sage-memory/graph.sqlite3 BASE_REF=HEAD
+  MEMORY=/absolute/memory/graph.sqlite3
+# Equivalent memory-enabled solve:
+make solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  MEMORY=/absolute/memory/graph.sqlite3
+make solve-baseline REPO=/absolute/repo ISSUE=/absolute/issue.md
 ```
 
-`legion-memory` builds committed-source memory; it does **not** call Jev, even
-when navigation mode is on. Jev runs during `solve` or `legion-solve` exploration.
-The build target uses `MEMORY_FILE`; the solve target uses `MEMORY`. Memory is
-always lexical and local. Keep the same repository/commit between build and solve.
+Make loads the selected `ENV_FILE` (default `.env`), so edit that file to select
+mode; a shell variable can be overwritten by values sourced from the env file.
+`solve-baseline` forcibly disables Jev and omits memory. `make solve` without
+`MEMORY` has no retrieval to filter and therefore makes no Jev request.
 
-The `actions` policy needs the Solver to supply `exploration_goal` on a read or
-search; without it, navigation logs a skip. Set `SAGE_JEV_MAX_FOLLOWUP_ACTIONS=2`
-to test dependent steps, though Jev may hand back before the second step.
-Alternatively, set `SAGE_JEV_NAVIGATION_POLICY=excerpts` to test search-result
-ranking without changed tool arguments; it needs at least two eligible windows.
-Neither policy guarantees a Jev call on every Issue or tool invocation.
+`legion-retrieve` prints candidate-file count, relevant files after filtering,
+discarded retrieval-item and file counts, unjudged/withheld counts, context-budget
+omissions, Jev time, and input/output tokens. Multiple retrieved symbols in one
+file share a decision, so item counts and file counts can differ. Off-mode output
+explicitly says that lexical results are not Jev-approved; shadow reports what
+it would discard separately. Paths and terminal controls are safely rendered.
 
-Both solve commands log Jev activity at INFO without `--debug` or replay capture:
+Inspect `graph.relevance.json`, `graph.retrieval.json`, and `graph.context.md`
+beside the database. Only accepted items reach the context file in `on` mode.
+No survivors is a valid `no_match` result and exit 0. Failure to judge candidates
+withholds them, reports `unavailable`, and exits 1; normal solve continues with
+source tools. A stale/unavailable graph still fails before filtering. Check the
+current status rather than treating an old context file as current output.
 
-- `Jev request`: the complete bounded JSON input (`model`, `state`, `questions`),
-  including candidate evidence and criteria. Input is logged before sending,
-  so it is visible even if the request fails. Oversized rejected inputs are not logged.
-- `Jev navigation`: run/session/sequence/step and request correlation, candidate
-  count, decisions/selected IDs, stop reasons and exposed character counts.
-  `input_tokens` and `output_tokens` are provider-reported counts after a valid
-  response, not estimates. Failed/unavailable usage is `"unknown"`, not zero.
-- `candidate_retrieval_ms` measures local shortlist construction;
-  `latency_ms` measures the complete Jev decision attempt, including request
-  construction, HTTP wait and validation; `retrieval_ms` measures the selected
-  read/search/graph operation, including failed retrieval attempts.
-  `structural_retrieval_ms` measures optional Legion enrichment.
-  `navigation_ms` is the total enrichment time for a returned root-tool result,
-  including those stages and logging/artifact overhead, but excluding the root
-  read/search itself. These measurements overlap: do not add them together.
+There is at most one batched request before the first Solver call, no retries,
+and no additional Jev requests for repairs. The complete Issue must fit 6,000
+characters and the encoded request 16,000 bytes; oversize is reported as withheld,
+not as irrelevance. Final context budgets still apply after selection. Explicit
+source/graph tools remain usable; automatic structural enrichment is disabled
+with mode `on` to prevent immediate reintroduction of rejected candidates.
 
-At the end, both commands print elapsed totals (example):
+Solve artifacts include `relevance-filter.json` and semantic calls in `usage.json`.
+The `solver-context` timing stage is part of Solver time including Jev, and the
+Jev duration remains separately accounted. Existing summaries report elapsed
+time per role, Solver including/excluding Jev, Jev, Reviewer, and total solve time.
 
-```text
-Elapsed time totals:
-  Solver (including Jev): 100.00 seconds
-  Solver (without Jev): 98.50 seconds
-  Jev (decisions only): 1.50 seconds
-  Reviewer: 15.00 seconds
-Total solve time: 125.50 seconds
+`SAGE_JEV_LOG_INPUT=true` logs the full bounded request in mode `on`. This can
+include private Issue text and repository metadata: review before sharing. The
+API credential is redacted, but arbitrary secrets inside Issue text are not.
+`SAGE_JEV_CAPTURE=true` saves request/response data locally for replay. GitHub
+keeps both off and sanitizes exported diagnostics.
+
+```bash
+uv run --project apps/agent pytest apps/agent/tests/harness/jev \
+  apps/agent/tests/harness/memory/test_relevance_pipeline.py
+uv run --project apps/agent python apps/agent/evals/navigation.py replay \
+  /absolute/run/relevance-filter.json
+uv run --env-file .env --project apps/agent python apps/agent/evals/navigation.py run \
+  --arm on --repo /absolute/repo --issue-file /absolute/issue.md \
+  --base-ref FIXED_SHA --memory-file /absolute/memory/graph.sqlite3 --allow-paid-solve
+uv run --project apps/agent python apps/agent/evals/navigation.py compare \
+  /absolute/manifest.json
 ```
 
-Solver totals sum complete initial/repair sessions, including tools and waits.
-Reviewer totals sum complete reviews/rereviews, including prompt preparation,
-retry backoff, schema repair and validation. Jev totals sum all decision attempts,
-including failures/timeouts, from `usage.json`'s `semantic_calls`. Solver without
-Jev subtracts that decision time; candidate/evidence retrieval remains Solver
-work. It is not an estimate of the runtime with Jev disabled. Jev is already
-included in the Solver total: do not add both together. Preparation, independent
-verification and cleanup explain why whole-solve time exceeds role totals.
-Per-session/stage measurements are recorded in `usage.json`'s `agent_timings`.
-An uninvoked role reports zero for newly measured runs; missing historical
-measurements report `unavailable` rather than inferring wall time from API latency.
-
-The final whole-solve total remains independent of the role subtotals.
-This uses the same duration as `workflow-timing.json`: from just before reading
-the Issue through workspace/sandbox preparation, optional memory setup, all
-Solver/Jev/Reviewer calls, verification/repairs, result persistence and resource
-cleanup. It excludes earlier CLI prerequisite checks, dependency installation,
-and final terminal rendering. It is shown with Jev/memory on or off, including
-returned no-change or unsuccessful outcomes; it is elapsed time, not a success
-claim. Legacy results without timing show `unavailable`, not zero.
+Run arms are `off`, `shadow`, and `on`. Use the example manifest, matching Issue,
+base, model settings, cache state and independent quality checks. Unknown token
+usage stays unknown; old navigation/embedding runs require their historical
+evaluator. Offline tests use fakes and never establish live quality or savings.
 
 ### Interrupting a solve with Ctrl-C
 
@@ -201,109 +155,6 @@ synchronous work may not be processed until that operation yields. Interruption
 before run initialization has no run summary; repeated Ctrl-C, forced termination
 or SIGKILL can prevent reporting or cleanup. Other failures retain their existing
 error handling rather than being labelled manual interruption.
-
-Full input logging defaults to **on only in navigation mode `on`**. Logs can
-contain private Issue text, plans and source; do not upload or share them without
-review. Authorization headers are never included, the TypeSafe key is redacted
-if present in input, and terminal controls are escaped. Other secrets embedded
-in source are **not automatically detected**. Set `SAGE_JEV_LOG_INPUT=false`
-to retain timing/token/status summaries without body logs, including at DEBUG.
-`shadow` logs summaries only; `off` constructs no Jev client and emits no Jev logs.
-No eligible goal/candidates or exhausted budgets produce skip reasons rather
-than a request; do not expect input/token logs for calls that never happen.
-Timing events also appear in `navigation.json`; full request/response artifact
-capture remains independently controlled by `SAGE_JEV_CAPTURE`.
-For paired latency comparisons keep logging settings and output sinks identical;
-terminal/file output itself can add overhead.
-
-### Budgets, captures and evaluation
-
-Time settings may lower, but not exceed, two seconds per request/eight seconds
-total Jev wait. Failures preserve ordinary tool results. Inspect `usage.json`
-(`semantic_calls`), `navigation.json`, and `workflow-timing.json`. Provisional
-Score acceptance is 2/3 with confidence 0.5 and is not configured by the action
-variables below.
-
-For `policy=actions`, Sage dispatches only when the selected candidate probability
-is greater than or equal to its configured operation threshold **and** overall
-Choice confidence is greater than or equal to its configured threshold:
-
-- `SAGE_JEV_READ_PROBABILITY_THRESHOLD` (default `0.65`)
-- `SAGE_JEV_SEARCH_PROBABILITY_THRESHOLD` (default `0.75`)
-- `SAGE_JEV_GRAPH_PROBABILITY_THRESHOLD` (default `0.80`)
-- `SAGE_JEV_ACTION_CONFIDENCE_THRESHOLD` (default `0.50`)
-
-All accept finite values from `0` through `1`. Candidate probability is Jev's
-relative weight for that action among the offered candidates (including the
-handback), while confidence describes how decisive the complete distribution is;
-neither is a measured correctness rate. Lower values allow more internal work
-but risk irrelevant evidence, context and operation latency. Higher values hand
-back more often but do not remove the already-incurred Jev request latency.
-Defaults are experimental policy values, not calibrated correctness guarantees.
-On rejection, the INFO summary and `navigation.json` record both observed and
-required values; the artifact also records all configured thresholds.
-
-For exact **local** replay, set `SAGE_JEV_CAPTURE=true` before a pilot. Captures
-contain sensitive prompts/source; never upload the local `navigation.json`.
-GitHub creates a separate allowlisted summary and does not copy replay captures.
-Ordinary navigation artifacts keep digests/locators, not raw objectives or source
-bodies.
-Replay never contacts a model:
-
-```bash
-uv run --project apps/agent python apps/agent/evals/navigation.py replay \
-  /absolute/run/navigation.json --labels /absolute/labels.json
-```
-
-Labels are separately adjudicated JSON mapping `"sequence:step"` to relevant
-candidate IDs, e.g. `{"1:1": ["c0", "c2"]}`. They never enter runtime selection.
-Replay compares Jev with stable-first selection under equal shortlist/count
-caps. Inspect missing candidates separately from wrong selections. Captured
-second steps belong to the actual trajectory, not a simulated counterfactual.
-Shadow executes nothing and cannot measure a hypothetical second step.
-
-For paired live experiments, the evaluation runner injects controls into the
-same production controller. Every arm still makes paid Solver/Reviewer calls
-and requires the usual Docker/model prerequisites. The normal suite never
-runs this command:
-
-```bash
-uv run --env-file .env --project apps/agent python apps/agent/evals/navigation.py run \
-  --arm actions-2 --repo /absolute/repository --issue-file /absolute/issue.md \
-  --base-ref FIXED_BASE_SHA --allow-paid-solve
-```
-
-Arms: `off`, `deterministic-excerpts`, `jev-excerpts`, `actions-0`, `actions-1`,
-`actions-2`. The zero-action control keeps objective-bearing schemas/prompts
-but executes no follow-ups. Optional `--memory-file` uses normal memory setup.
-Keep model versions, Issue/base, budgets, instruction files and graph state
-fixed within pairs; repeat to measure variance.
-
-Copy `apps/agent/evals/navigation-manifest.example.json`, fill actual run
-directories and independent quality verdicts, then compare:
-
-```bash
-uv run --project apps/agent python apps/agent/evals/navigation.py compare \
-  /absolute/experiment-manifest.json
-```
-
-Supply per-model `prices` with `input_per_million`, `output_per_million`, and
-optionally `cached_input_per_million` in USD applicable to the experiment.
-Missing prices/usage yield unknown cost, not zero. Estimates include Jev
-usage. Reports cover paired tokens/cost/wall time, Solver and
-Reviewer calls, sessions, operations, added characters and independently
-assessed verified completion. Counts, median/p95 and bootstrap mean intervals
-are reported; one pair has no interval. Small samples are not promotion
-evidence. Keep tuning and held-out runs in separate manifests.
-Legacy artifacts containing embedding usage are rejected by this evaluator;
-use the historical evaluator for those runs to avoid understating their cost.
-
-Use fixed cases covering explicit paths, ambiguous symbols, misleading hits,
-long files, test discovery, cross-file work, repairs and memory on/off.
-Historical next-read agreement is only a proxy; inspect redundant reads and
-failed/wasted observations alongside quality. A cheaper selector alone is not
-a whole-solve saving. Live paired quality/cost/latency gates remain pending;
-passing offline tests does not authorize default enablement or GitHub rollout.
 
 ## Select checks by responsibility
 
@@ -362,7 +213,7 @@ The checkout must match the fingerprints in
 [`reference_manifest.json`](../apps/agent/tests/harness/memory/reference_manifest.json).
 This checks normalized structural fixtures, not all language/framework behavior.
 
-## Inspect a repository's memory without a model
+## Inspect a repository's lexical memory
 
 Use an actual Git root with a committed `HEAD`. A nested non-repository is
 rejected instead of indexing its ancestor. Pass a disposable SQLite path when
@@ -431,7 +282,7 @@ use the current command result and indexed SHA when diagnosing failure.
 
 In a solve, only `used` binds the five-tool solve profile and initial packet.
 `no_match` binds no graph tools and performs no enrichment. The full registry
-retains 21 read-only operations for explicit use. Read/search enrichment must
+retains 21 read-only operations for explicit use. With Jev off/shadow, read/search enrichment must
 preserve source, respect ranges/caps, suppress edited locators and deduplicate
 visible responses; its failure must leave source output usable.
 
@@ -603,7 +454,8 @@ env:
   SAGE_SOLVER_INSTRUCTIONS_FILE: "sage-solver.md"
   SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
   SAGE_JEV_NAVIGATION_MODE: "off"         # change only for an explicit canary
-  SAGE_JEV_NAVIGATION_POLICY: "excerpts"  # or actions
+  SAGE_JEV_RELEVANCE_SCORE_THRESHOLD: "2.0"
+  SAGE_JEV_RELEVANCE_CONFIDENCE_THRESHOLD: "0.5"
   SAGE_JEV_LOG_INPUT: "false"
   SAGE_JEV_CAPTURE: "false"
 ```
@@ -629,11 +481,10 @@ bounded Issue naming a known symbol and verify:
 5. Idempotent finalization; each GitHub run has its own graph snapshot.
 
 For a Jev canary, add the `TYPESAFE_API_KEY` repository/environment Secret and
-first set `SAGE_JEV_NAVIGATION_MODE: "shadow"` with one explicit policy. Verify
+first set `SAGE_JEV_NAVIGATION_MODE: "shadow"`. Verify
 `usage.json` contains separately accounted semantic calls and the uploaded
-`navigation.json` contains timings, counts, digests and decisions but no capture,
-candidate/action arguments, paths, queries, objectives, Issue text or source.
-Shadow must perform no internal operation. Only an explicitly approved second
+`relevance-filter.json` contains operational counts and timings but no capture,
+file paths, Issue text or source. Shadow must leave context selection unchanged. Only an explicitly approved second
 canary should use `on`; restore mode to `off` afterward. Compare it with a fixed
 Issue/base/model baseline and do not treat a successful canary as promotion or
 an efficiency result.

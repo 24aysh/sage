@@ -11,7 +11,7 @@ selector or retained earlier implementation.
 
 The [agent harness](apps/agent/src/sage/harness/README.md) groups persistent role
 instructions, bounded context delivery, local Legion graph memory, and optional
-Jev navigation. Memory uses lexical search and graph relationships with no
+Jev file relevance filtering. Memory uses lexical search and graph relationships with no
 embedding API or external vector database. See the [architecture](docs/architecture.md)
 and [testing guide](docs/testing.md) for ownership and commands.
 
@@ -33,4 +33,3 @@ make check
 ```
 
 <img width="4265" height="7502" alt="diagram" src="https://github.com/user-attachments/assets/91d8c53c-b49f-47de-a04b-286a06b18be6" />
-

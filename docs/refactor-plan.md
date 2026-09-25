@@ -1,3 +1,6 @@
+> Follow-up: [Jev relevance filtering](relevance-filter-plan.md) replaces the
+> tool-triggered Jev behavior preserved by this earlier harness refactor.
+
 # Agent harness refactor
 
 ## Current objective and design

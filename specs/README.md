@@ -11,12 +11,13 @@ under `docs/` for present behavior and commands.
 | [`../docs/architecture.md`](../docs/architecture.md) | Implemented behavior, ownership, and dependency boundaries |
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
 | [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Harness consolidation, embedding removal, migration and verification record |
+| [`../docs/relevance-filter-plan.md`](../docs/relevance-filter-plan.md) | Multilingual lexical retrieval and the replacement Jev file-filter pipeline |
 
 ## Proposed work
 
 | Document | Status |
 | --- | --- |
-| [`25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md`](25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md) | A–E implemented, preserved under `harness/jev`; live promotion gates pending; embeddings removed |
+| [`25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md`](25_JEV_INTEGRATION_IMPLEMENTATION_PLAN.md) | Historical A–E navigation implementation; superseded by the file relevance filter on `feat/jev-relevance-filter` |
 
 This user-requested proposal does not change the current behavior described in
 the guides above.
