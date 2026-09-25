@@ -9,13 +9,13 @@ from collections.abc import Callable
 
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
-from sage.domain.memory import LegionMemoryRunArtifact
+from sage.domain.retrieval import RetrievalRunArtifact
 from sage.domain.solve import PreparedRun, SolveOutcome, SolveRequest, SolveResult
 from sage.errors import ArtifactError, WorkspaceError
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.session import MemorySession
-from sage.harness.memory.preparation import prepare_memory
-from sage.observability import log_legion_memory
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.session import RetrievalSession
+from sage.harness.retrieval.preparation import prepare_retrieval
+from sage.observability import log_retrieval
 from sage.harness.context.run import SolveContext, SolveEngine
 from sage.harness.context.instructions import RoleInstructions
 from sage.repository.service import Repository
@@ -38,7 +38,7 @@ async def solve_issue(
     sandbox_factory: SandboxFactory | None = None,
     repository_factory: RepositoryFactory | None = None,
     artifacts: RunArtifacts | None = None,
-    memory_service: LegionMemoryService | None = None,
+    retrieval_service: RepositoryRetrievalService | None = None,
     on_interrupted: Callable[[SolveResult], None] | None = None,
 ) -> SolveResult:
     """Execute one issue solve while guaranteeing sandbox cleanup."""
@@ -59,8 +59,8 @@ async def solve_issue(
         settings=effective_settings,
     )
 
-    memory_session: MemorySession | None = None
-    memory_artifact: LegionMemoryRunArtifact | None = None
+    retrieval_session: RetrievalSession | None = None
+    retrieval_artifact: RetrievalRunArtifact | None = None
     sandbox: Sandbox | None = None
     try:
         instructions = RoleInstructions.load(prepared.workspace_dir, effective_settings)
@@ -76,18 +76,18 @@ async def solve_issue(
                 raise
             run_artifacts.write_verification_preflight(report)
             logger.info("Verification environment preflight: ready (tooling only; tests not executed)")
-        if request.memory_file is not None:
-            memory_session, memory_artifact = prepare_memory(
+        if request.index_file is not None:
+            retrieval_session, retrieval_artifact = prepare_retrieval(
                 request=request,
                 prepared=prepared,
                 issue_text=issue_text,
-                service=memory_service,
+                service=retrieval_service,
                 context_chars=(50_000 if effective_settings.jev.mode != "off"
-                               else effective_settings.legion_initial_context_chars),
+                               else effective_settings.retrieval_initial_context_chars),
             )
-            run_artifacts.write_legion_memory(memory_artifact)
-            if effective_settings.jev.mode == "off" or memory_session is None:
-                log_legion_memory(logger, memory_artifact)
+            run_artifacts.write_retrieval(retrieval_artifact)
+            if effective_settings.jev.mode == "off" or retrieval_session is None:
+                log_retrieval(logger, retrieval_artifact)
 
         build_repository = repository_factory or _build_repository
         repository = build_repository(prepared, sandbox, effective_settings)
@@ -96,7 +96,7 @@ async def solve_issue(
             repository=repository,
             settings=effective_settings,
             artifacts=run_artifacts,
-            memory=memory_session,
+            retrieval=retrieval_session,
             instructions=instructions,
         )
         final_output = await orchestrator.solve(issue_text=issue_text, context=context)
@@ -120,8 +120,8 @@ async def solve_issue(
             workspace_dir=prepared.workspace_dir,
             outcome=outcome,
             provenance=final_output.provenance,
-            memory=(
-                memory_session.artifact() if memory_session else memory_artifact
+            retrieval=(
+                retrieval_session.artifact() if retrieval_session else retrieval_artifact
             ),
         )
         run_artifacts.write_result(final_output=final_output, result=result)
@@ -133,7 +133,7 @@ async def solve_issue(
             remaining_uncertainty=[], changed_files=[], diff="", run_dir=prepared.run_dir,
             workspace_dir=prepared.workspace_dir, outcome=SolveOutcome.INTERRUPTED,
             provenance=run_artifacts.latest_usage,
-            memory=memory_session.artifact() if memory_session else memory_artifact,
+            retrieval=retrieval_session.artifact() if retrieval_session else retrieval_artifact,
             workflow_duration_ms=(perf_counter() - workflow_started) * 1000)
         try:
             run_artifacts.write_interrupted(partial)
@@ -148,11 +148,11 @@ async def solve_issue(
                 sandbox.stop()
         finally:
             try:
-                if memory_session is not None:
+                if retrieval_session is not None:
                     try:
-                        run_artifacts.write_legion_memory(memory_session.artifact())
+                        run_artifacts.write_retrieval(retrieval_session.artifact())
                     finally:
-                        memory_session.close()
+                        retrieval_session.close()
             finally:
                 duration_ms = (perf_counter() - workflow_started) * 1000
                 run_artifacts.write_workflow_timing(duration_ms)

@@ -103,11 +103,11 @@ class Publisher(Protocol):
 
 SettingsFactory = Callable[[], Settings]
 OrchestratorFactory = Callable[[Settings], SolveEngine]
-MemoryServiceFactory = Callable[[], object]
+RetrievalServiceFactory = Callable[[], object]
 
 
 class SolveRunner(Protocol):
-    """Injected solve boundary with the production memory dependency."""
+    """Injected solve boundary with the production retrieval dependency."""
 
     def __call__(
         self,
@@ -115,7 +115,7 @@ class SolveRunner(Protocol):
         orchestrator: SolveEngine,
         settings: Settings,
         *,
-        memory_service: object | None = None,
+        retrieval_service: object | None = None,
     ) -> Awaitable[SolveResult]: ...
 
 
@@ -130,7 +130,7 @@ async def run_github_issue(
     runner_temp: Path,
     status_comment_id: int,
     orchestrator_factory: OrchestratorFactory,
-    memory_service_factory: MemoryServiceFactory,
+    retrieval_service_factory: RetrievalServiceFactory,
     settings_factory: SettingsFactory = Settings.from_env,
     solve_runner: SolveRunner = solve_issue,
     publisher: Publisher = publish_solve_result,
@@ -193,7 +193,7 @@ async def run_github_issue(
             context_dir=context_dir,
             target_checkout=checkout,
         )
-        memory_file = _github_memory_file(
+        index_file = _github_index_file(
             invocation,
             runner_temp=runner_temp,
             checkout=checkout,
@@ -204,16 +204,16 @@ async def run_github_issue(
             repo_path=checkout,
             issue_path=issue_path,
             base_ref=invocation.base_sha,
-            memory_file=memory_file,
+            index_file=index_file,
         )
         settings = settings_factory()
-        memory_service = memory_service_factory()
+        retrieval_service = retrieval_service_factory()
         orchestrator = orchestrator_factory(settings)
         solve_result = await solve_runner(
             request,
             orchestrator,
             settings,
-            memory_service=memory_service,
+            retrieval_service=retrieval_service,
         )
         if solve_result.base_sha != invocation.base_sha:
             raise GitHubPublicationError(
@@ -576,7 +576,7 @@ def _validate_runner_paths(
             )
 
 
-def _github_memory_file(
+def _github_index_file(
     invocation: GitHubInvocation,
     *,
     runner_temp: Path,
@@ -587,9 +587,9 @@ def _github_memory_file(
     """Select a fresh runner-owned graph path for one Actions attempt."""
 
     root = runner_temp.expanduser().resolve()
-    memory_file = (
+    index_file = (
         root
-        / "sage-legion-memory"
+        / "sage-retrieval"
         / f"{invocation.actions_run.run_id}-{invocation.actions_run.attempt}"
         / "graph.sqlite3"
     )
@@ -598,20 +598,20 @@ def _github_memory_file(
         context_dir.expanduser().resolve(),
         diagnostics_dir.expanduser().resolve(),
     )
-    if root not in memory_file.parents or any(
-        path == memory_file or path in memory_file.parents for path in protected
+    if root not in index_file.parents or any(
+        path == index_file or path in index_file.parents for path in protected
     ):
         raise ConfigurationError(
-            "The GitHub Legion Memory file must be isolated under runner temp."
+            "The GitHub Repository retrieval index file must be isolated under runner temp."
         )
     related = (
-        memory_file,
-        memory_file.with_suffix(memory_file.suffix + ".lock"),
-        memory_file.with_suffix(memory_file.suffix + "-wal"),
-        memory_file.with_suffix(memory_file.suffix + "-shm"),
+        index_file,
+        index_file.with_suffix(index_file.suffix + ".lock"),
+        index_file.with_suffix(index_file.suffix + "-wal"),
+        index_file.with_suffix(index_file.suffix + "-shm"),
     )
     if any(path.exists() for path in related):
         raise ConfigurationError(
-            "The GitHub Legion Memory path is not fresh for this run attempt."
+            "The GitHub Repository retrieval index path is not fresh for this run attempt."
         )
-    return memory_file
+    return index_file
