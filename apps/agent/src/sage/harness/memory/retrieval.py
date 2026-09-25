@@ -229,6 +229,44 @@ def retrieve_issue_context(
     )
 
 
+def select_context_files(
+    result: MemoryRetrievalResult, paths: set[str], *, max_chars: int,
+    empty_outcome: MemoryRetrievalOutcome = MemoryRetrievalOutcome.RELEVANCE_REJECTED,
+) -> MemoryRetrievalResult:
+    """Re-render existing evidence only; never refill from discarded candidates."""
+    accepted = tuple(item for item in result.items if item.file_path in paths)
+    selected_count = len(accepted)
+    names = {item.qualified_name for item in accepted}
+    accepted = tuple(item.model_copy(update={"rank": index, "relationships": tuple(
+        relation for relation in item.relationships if relation.seed_qualified_name in names
+    )}) for index, item in enumerate(accepted, 1))
+    if accepted:
+        context, count, details_truncated = _render_context(
+            accepted, indexed_sha=result.indexed_sha, max_chars=max_chars,
+        )
+        accepted = accepted[:count]
+    else:
+        context, count, details_truncated = "", 0, False
+    truncated = count < selected_count or details_truncated
+    if not accepted:
+        context = ""
+        if names:
+            empty_outcome = MemoryRetrievalOutcome.CONTEXT_BUDGET_EXHAUSTED
+    visible_names = {item.qualified_name for item in accepted}
+    return result.model_copy(update={
+        "items": accepted, "returned": len(accepted), "context": context,
+        "context_chars": len(context), "omitted": max(0, result.total_candidates - len(accepted)),
+        "truncated": truncated,
+        "status": MemoryRetrievalStatus.USED if accepted else MemoryRetrievalStatus.NO_MATCH,
+        "outcome": (MemoryRetrievalOutcome.USEFUL_CONTEXT_TRUNCATED if truncated
+                    else MemoryRetrievalOutcome.USEFUL_CONTEXT) if accepted else empty_outcome,
+        "summary": f"Context contains {len(accepted)} retrieval item(s) after file selection.",
+        "diagnostics": tuple(item.model_copy(update={"selection": "displayed"
+            if item.qualified_name in visible_names else "not_in_filtered_context"})
+            for item in result.diagnostics),
+    })
+
+
 def _select_diverse(candidates: list[_Candidate], limit: int) -> list[_Candidate]:
     """Select an evidenced Issue map, then diversify remaining file locators."""
     if not candidates:

@@ -384,7 +384,7 @@ legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optiona
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
 
-legion-retrieve: ## Retrieve memories for ISSUE from MEMORY, bound to REPO.
+legion-retrieve: ## Retrieve Issue context; log Jev-retained files and discarded item counts.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
 	if [[ -z "$(REPO)" || -z "$(ISSUE)" || -z "$(MEMORY)" ]]; then \

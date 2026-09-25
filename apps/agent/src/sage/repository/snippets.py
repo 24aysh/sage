@@ -1,23 +1,8 @@
-"""Shared bounded current-source reads and identities."""
+"""Shared bounded current-source reads."""
 
-import hashlib
 from collections.abc import Callable
-from pathlib import Path
 
 from sage.errors import RepositoryError
-from sage.repository.filesystem import resolve_workspace_path
-
-
-def source_identity(root: Path, path: str) -> str:
-    """Validate regular current files before optional navigation, capped at 1 MiB."""
-    resolved = resolve_workspace_path(root, path)
-    if not resolved.is_file() or resolved.stat().st_size > 1_048_576:
-        raise RepositoryError("Navigation source is unavailable or too large.")
-    with resolved.open("rb") as stream:
-        content = stream.read(1_048_577)
-    if len(content) > 1_048_576 or b"\0" in content:
-        raise RepositoryError("Navigation source is unavailable or binary.")
-    return hashlib.sha256(content).hexdigest()
 
 
 def source_snippets(nodes: list[dict], reader: Callable[..., str]) -> list[dict]:

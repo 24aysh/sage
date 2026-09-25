@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import asyncio
 import logging
 import subprocess
@@ -217,16 +219,6 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
         reviewer=ReviewerAgent(settings=settings),
         reviewer_provider=reviewer,
     )
-    lifecycle = []
-    async def close_navigation():
-        lifecycle.append("closed")
-    async def no_enrichment(**kwargs):
-        return ""
-    navigation = SimpleNamespace(action_policy=False, aclose=close_navigation,
-        begin_session=lambda **kw: lifecycle.append(kw["stage"]), enrich=no_enrichment,
-        invalidate=lambda *args: None)
-    orchestrator._navigation_factory = lambda **kw: navigation
-
     result = asyncio.run(
         orchestrator.solve(
             issue_text="Change app.py to the reviewer-approved value.",
@@ -241,7 +233,6 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
     )
 
     assert result.outcome is SolveOutcome.COMPLETED
-    assert lifecycle == ["solver", "solver-repair", "solver-repair", "closed"]
     assert (workspace / "app.py").read_text(encoding="utf-8") == "value = 4\n"
     assert result.provenance is not None
     assert result.provenance.solver_sessions == 3
@@ -370,7 +361,7 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
 
 
 @pytest.mark.parametrize("error", [RuntimeError("defect"), asyncio.CancelledError()])
-def test_navigation_closes_on_error_and_cancellation(tmp_path, error):
+def test_relevance_filter_closes_on_error_and_cancellation(tmp_path, error):
     workspace, sha = _repository(tmp_path)
     settings = Settings(openai_api_key="test")
     closed = []
@@ -386,7 +377,8 @@ def test_navigation_closes_on_error_and_cancellation(tmp_path, error):
     context = SolveContext(prepared_run=prepared, settings=settings, artifacts=RunArtifacts(prepared.run_dir),
         repository=Repository(workspace_root=workspace, sandbox=LocalSandbox(workspace), settings=settings))
     orchestrator = SolveOrchestrator(solver=SimpleNamespace(run=fail), reviewer=None, reviewer_provider=None,
-                                    navigation_factory=lambda **kw: SimpleNamespace(aclose=close))
+                                    relevance_filter_factory=lambda run_id: SimpleNamespace(aclose=close, apply=fail))
+    context = replace(context, memory=SimpleNamespace(retrieval=None))
     with pytest.raises(type(error)):
         asyncio.run(orchestrator.solve(issue_text="Fix it", context=context))
     assert closed == [True]

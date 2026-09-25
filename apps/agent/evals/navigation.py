@@ -12,53 +12,24 @@ import random
 import statistics
 from pathlib import Path
 
-from sage.domain.navigation import ActionCandidate, NavigationDecision
-from sage.harness.jev.candidates import (DEFAULT_ACTION_CONFIDENCE_THRESHOLD,
-    DEFAULT_ACTION_PROBABILITY_THRESHOLDS, accept_action, excerpt_selection)
+from sage.domain.relevance import FileCandidate
 from sage.harness.jev.provider import parse_response
-
-
-class DeterministicSelector:
-    """Evaluation-only stable-first excerpts or objective-bearing zero-action control."""
-    model = "deterministic-control"
-    capture = None
-
-    async def rank_excerpts(self, *, state, candidates, timeout):
-        return NavigationDecision(model=self.model, scores={c.id: 3 for c in candidates[:2]},
-            confidences={c.id: 1 for c in candidates[:2]}, input_tokens=0, output_tokens=0)
-
-    async def choose_action(self, **kwargs):
-        return NavigationDecision(model=self.model, input_tokens=0, output_tokens=0)
-
-    async def aclose(self):
-        pass
 
 
 async def solve_arm(args) -> dict:
     from sage.composition import build_orchestrator, build_legion_memory_service
     from sage.config import Settings, JevSettings
     from sage.domain.solve import SolveRequest
-    from sage.harness.jev.session import NavigationSession
     from sage.workflows.solve import solve_issue
 
     if not args.allow_paid_solve:
         raise ValueError("run requires --allow-paid-solve; Solver/Reviewer still incur cost in every arm")
     settings = Settings.from_env()
-    deterministic = args.arm in {"deterministic-excerpts", "actions-0"}
-    jev = JevSettings(mode="off") if args.arm == "off" else JevSettings(
-        mode="on", policy="actions" if args.arm.startswith("actions-") else "excerpts",
-        max_followup_actions=2 if args.arm == "actions-2" else 1,
-        api_key="evaluation-control" if deterministic else settings.jev.api_key,
-        model=settings.jev.model, capture=settings.jev.capture,
-        read_probability_threshold=settings.jev.read_probability_threshold,
-        search_probability_threshold=settings.jev.search_probability_threshold,
-        graph_probability_threshold=settings.jev.graph_probability_threshold,
-        action_confidence_threshold=settings.jev.action_confidence_threshold)
+    jev = settings.jev.model_copy(update={"mode": args.arm})
+    if args.arm != "off" and not jev.api_key:
+        raise ValueError("Enabled relevance filtering requires TYPESAFE_API_KEY")
     settings = settings.model_copy(update={"jev": jev})
     orchestrator = build_orchestrator(settings)
-    if deterministic:
-        # Use the same production controller, resource lifecycle and caps, with an injected judgment boundary.
-        orchestrator._navigation_factory = lambda **kw: NavigationSession(provider=DeterministicSelector(), **kw)
     request = SolveRequest(repo_path=args.repo, issue_path=args.issue_file, base_ref=args.base_ref,
                            memory_file=args.memory_file)
     memory = build_legion_memory_service() if args.memory_file else None
@@ -69,38 +40,21 @@ async def solve_arm(args) -> dict:
 
 def replay(path: Path, labels: dict | None = None) -> dict:
     artifact = json.loads(path.read_text())
-    probability_thresholds = artifact.get("action_probability_thresholds", DEFAULT_ACTION_PROBABILITY_THRESHOLDS)
-    confidence_threshold = artifact.get("action_confidence_threshold", DEFAULT_ACTION_CONFIDENCE_THRESHOLD)
-    cases = []
-    for record in artifact["records"]:
-        capture = record.get("capture")
-        if not capture or "response" not in capture:
-            continue
-        candidates = tuple(ActionCandidate.model_validate(c) for c in capture["candidates"])
-        request = capture["request"]
-        actions = artifact["policy"] == "actions"
-        decision = parse_response(capture["response"], model=request["model"], candidates=candidates, actions=actions)
-        selected = decision.selected if actions else excerpt_selection(decision)
-        if actions and selected:
-            candidate = next(c for c in candidates if c.id == selected[0])
-            probability_threshold = probability_thresholds.get(candidate.action.kind,
-                DEFAULT_ACTION_PROBABILITY_THRESHOLDS[candidate.action.kind])
-            if not accept_action(decision, candidate, probability_threshold=probability_threshold,
-                                 confidence_threshold=confidence_threshold):
-                selected = ()
-        key = f"{record['sequence']}:{record['step']}"
-        relevant = set((labels or {}).get(key, []))
-        available = {c.id for c in candidates}
-        # Stable-first baseline has the same candidate and exposure-count caps.
-        baseline = tuple(c.id for c in candidates[:1 if actions else 2])
-        cases.append({"sequence_step": key, "candidate_count": len(candidates),
-            "jev_selected": selected, "deterministic_selected": baseline,
-            "labeled": key in (labels or {}), "candidate_coverage": bool(available & relevant),
-            "jev_relevant_selected": len(set(selected) & relevant),
-            "deterministic_relevant_selected": len(set(baseline) & relevant)})
-    return {"kind": "offline_selection_proxy", "cases": cases,
-        "note": "Captured dependent steps are replayed, not counterfactual executions. "
-                "Selection agreement is not token, cost, or latency savings."}
+    if artifact.get("policy") != "file-relevance-v1":
+        raise ValueError("Legacy navigation captures require the historical evaluator")
+    capture = artifact.get("capture") or {}
+    if "response" not in capture:
+        return {"kind": "offline_relevance_proxy", "retained_files": [], "note": "No captured response"}
+    request = capture["request"]
+    candidates = tuple(FileCandidate(id=key, path=q["instructions"]["file"],
+        evidence=q["instructions"]["evidence"]) for key, q in request["questions"].items())
+    decision = parse_response(capture["response"], model=request["model"], candidates=candidates)
+    accepted = [c.path for c in candidates if decision.scores[c.id] >= artifact["score_threshold"]
+                and decision.confidences[c.id] >= artifact["confidence_threshold"]]
+    return {"kind": "offline_relevance_proxy", "retained_files": accepted,
+            "rejected_files": [c.path for c in candidates if c.path not in accepted],
+            "labeled_relevant_retained": sum(bool((labels or {}).get(path)) for path in accepted),
+            "note": "Selection replay does not establish token, cost, or latency savings."}
 
 
 def _cost(calls: list[dict], prices: dict) -> float | None:
@@ -132,14 +86,17 @@ def run_metrics(row: dict, prices: dict) -> dict:
         raise ValueError("Legacy embedding runs require the historical evaluator; do not compare them as graph-only runs.")
     known = [c["input_tokens"] for c in calls if c.get("input_tokens") is not None]
     unknown = sum(c.get("input_tokens") is None or c.get("output_tokens") is None for c in calls)
-    navigation_path = root / "navigation.json"
-    navigation = json.loads(navigation_path.read_text()) if navigation_path.exists() else {}
+    if (root / "navigation.json").exists():
+        raise ValueError("Legacy navigation runs cannot be compared as relevance-filter runs")
+    filter_path = root / "relevance-filter.json"
+    relevance = json.loads(filter_path.read_text()) if filter_path.exists() else {}
     return {"wall_ms": timing["duration_ms"], "input_tokens": sum(known) if not unknown else None,
         "known_input_tokens": sum(known), "unknown_usage_calls": unknown, "cost_usd": _cost(calls, prices),
         "solver_calls": sum(c.get("role") == "solver" for c in usage.get("calls", [])),
         "review_calls": sum(c.get("role") == "reviewer" for c in usage.get("calls", [])),
         "semantic_calls": len(usage.get("semantic_calls", [])),
-        "internal_operations": navigation.get("operations", 0), "added_chars": navigation.get("added_chars", 0),
+        "discarded_items": relevance.get("discarded_items", 0),
+        "retained_files": len(relevance.get("retained_files", [])),
         "quality_pass": final["outcome"] == "completed" and row["independent_quality_pass"],
         "model_sessions": usage.get("solver_sessions", 0)}
 
@@ -168,7 +125,7 @@ def compare(manifest: dict) -> dict:
     arms = sorted({arm for group in runs.values() for arm in group})
     baseline = manifest.get("baseline", "off")
     metrics = ("wall_ms", "input_tokens", "cost_usd", "solver_calls", "review_calls", "semantic_calls",
-               "internal_operations", "added_chars", "model_sessions", "quality_pass")
+               "discarded_items", "retained_files", "model_sessions", "quality_pass")
     summary, pairs = {}, {}
     for arm in arms:
         values = [group[arm] for group in runs.values() if arm in group]
@@ -188,12 +145,11 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     replay_parser = commands.add_parser("replay")
     replay_parser.add_argument("capture", type=Path)
-    replay_parser.add_argument("--labels", type=Path, help='Optional JSON mapping "sequence:step" to relevant candidate IDs')
+    replay_parser.add_argument("--labels", type=Path, help='Optional JSON mapping file paths to relevance labels')
     compare_parser = commands.add_parser("compare")
     compare_parser.add_argument("manifest", type=Path)
     run_parser = commands.add_parser("run", help="Explicit paid local solve; requires Docker and configured credentials")
-    run_parser.add_argument("--arm", required=True, choices=["off", "deterministic-excerpts", "jev-excerpts",
-                                                          "actions-0", "actions-1", "actions-2"])
+    run_parser.add_argument("--arm", required=True, choices=["off", "shadow", "on"])
     run_parser.add_argument("--repo", type=Path, required=True)
     run_parser.add_argument("--issue-file", type=Path, required=True)
     run_parser.add_argument("--base-ref", required=True, help="Use a fixed base SHA for every paired arm")

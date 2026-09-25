@@ -235,7 +235,7 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "diff.patch",
         "usage.json",
         "legion-memory.json",
-        "navigation.json",
+        "relevance-filter.json",
         "terminal.json",
         "verification-summary.json",
         "review.json",

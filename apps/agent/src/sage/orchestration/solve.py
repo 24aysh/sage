@@ -21,7 +21,7 @@ from sage.domain.review import ReviewFailureType, ReviewVerdict
 from sage.domain.solve import AgentFinalOutput, SolveOutcome
 from sage.domain.verification import VerificationStatus
 from sage.errors import AgentRuntimeError
-from sage.observability import workflow_trace_config
+from sage.observability import workflow_trace_config, log_legion_memory
 from sage.orchestration.candidate import (
     create_candidate_snapshot,
     ensure_candidate_unchanged,
@@ -55,12 +55,12 @@ class SolveOrchestrator:
         solver: SolverAgent,
         reviewer: ReviewerAgent,
         reviewer_provider: ModelProvider,
-        navigation_factory: Callable | None = None,
+        relevance_filter_factory: Callable | None = None,
     ) -> None:
         self._solver = solver
         self._reviewer = reviewer
         self._reviewer_provider = reviewer_provider
-        self._navigation_factory = navigation_factory
+        self._relevance_filter_factory = relevance_filter_factory
 
     async def solve(
         self,
@@ -111,9 +111,22 @@ class SolveOrchestrator:
         )
 
         try:
-            if self._navigation_factory is not None:
-                context = replace(context, navigation=self._navigation_factory(
-                    context=context, calls=calls, issue=issue_text, plan=lambda: plans.saved))
+            if self._relevance_filter_factory is not None and context.memory is not None:
+                relevance = self._relevance_filter_factory(context.prepared_run.run_id)
+                try:
+                    context.memory.retrieval = await calls.measure_agent(
+                        role="solver", stage="solver-context",
+                        operation=relevance.apply(issue=issue_text, retrieval=context.memory.retrieval,
+                            max_chars=context.settings.legion_initial_context_chars,
+                            remaining_seconds=calls.remaining_context_seconds(),
+                            usage_recorder=calls.record_semantic_call,
+                            report_writer=artifacts.write_relevance_filter),
+                    )
+                    context.memory.enrichment_enabled = context.settings.jev.mode != "on"
+                    artifacts.write_legion_memory(context.memory.artifact())
+                    log_legion_memory(logger, context.memory.artifact())
+                finally:
+                    await relevance.aclose()
             solver_result = await calls.measure_agent(
                 role="solver", stage="solver",
                 operation=self._solver.run(
@@ -286,9 +299,6 @@ class SolveOrchestrator:
             final = failure_terminal(error, calls)
             if final is None:
                 raise
-        finally:
-            if context.navigation is not None:
-                await context.navigation.aclose()
         final = self._persist_terminal(final, context, calls)
         logger.info(
             "Sage solve: finished run=%s outcome=%s model_calls=%d",

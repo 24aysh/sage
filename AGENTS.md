@@ -114,8 +114,8 @@ cross-run state engine.
 - `sage/harness/memory/` — rebuildable committed-source navigation: `indexing.py`
   owns provenance/builds, `service.py` validated queries, `retrieval.py` Issue
   ranking, and `session.py` run visibility; `bindings.py` infers source bindings;
-- `sage/harness/jev/` — bounded navigation session, candidates and TypeSafe transport;
-  keep Jev modes, thresholds and accounting explicit; no embedding backend exists;
+- `sage/harness/jev/` — one-shot file relevance filter and TypeSafe transport;
+  keep filtering modes, thresholds and accounting explicit; no embedding backend exists;
 - `sage/providers/`, `sage/integrations/`, `sage/sandbox/` — external adapters;
 - `sage/artifacts/` — atomic evidence for one run;
 - `sage/composition.py` — the only production construction map; and

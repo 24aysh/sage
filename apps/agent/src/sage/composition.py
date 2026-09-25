@@ -6,13 +6,13 @@ from langchain_openai import ChatOpenAI
 
 from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent
-from sage.config import Settings
+from sage.config import JevSettings, Settings
 from sage.errors import ConfigurationError
 from sage.harness.memory.service import LegionMemoryService
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.google import GoogleProvider
 from sage.harness.jev.provider import TypeSafeProvider
-from sage.harness.jev.session import NavigationSession
+from sage.harness.jev.filter import RelevanceFilter
 
 
 def build_legion_memory_service(*, data_root: Path | None = None) -> LegionMemoryService:
@@ -40,16 +40,21 @@ def build_orchestrator(settings: Settings) -> SolveOrchestrator:
         model_name=settings.reviewer_model,
         timeout_seconds=settings.model_request_timeout_seconds,
     )
-    def navigation_factory(**arguments) -> NavigationSession:
-        assert settings.jev.api_key is not None
-        provider = TypeSafeProvider(api_key=settings.jev.api_key, model=settings.jev.model,
-            capture=settings.jev.capture, log_input=settings.jev.mode == "on" and settings.jev.log_input,
-            run_id=arguments["context"].prepared_run.run_id)
-        return NavigationSession(provider=provider, **arguments)
-
     return SolveOrchestrator(
         solver=SolverAgent(settings=settings, model=solver_model),
         reviewer=ReviewerAgent(settings=settings),
         reviewer_provider=reviewer_provider,
-        navigation_factory=navigation_factory if settings.jev.mode != "off" else None,
+        relevance_filter_factory=(lambda run_id: build_relevance_filter(settings.jev, run_id=run_id))
+            if settings.jev.mode != "off" else None,
     )
+
+
+def build_relevance_filter(settings: JevSettings, *, run_id: str | None = None) -> RelevanceFilter:
+    """Standalone retrieval needs only Jev credentials, never Solver/Reviewer keys."""
+    provider = None
+    if settings.mode != "off":
+        assert settings.api_key is not None
+        provider = TypeSafeProvider(api_key=settings.api_key, model=settings.model,
+            capture=settings.capture, log_input=settings.mode == "on" and settings.log_input,
+            run_id=run_id)
+    return RelevanceFilter(settings=settings, provider=provider)

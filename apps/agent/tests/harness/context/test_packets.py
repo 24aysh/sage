@@ -18,8 +18,7 @@ def test_repair_resets_visibility_and_adds_only_the_fresh_history_packet():
     repaired = prepare_solver_message("Repair evidence", stage="solver-repair", context=context)
     assert repaired.startswith("Repair evidence")
     assert repaired.count("Unchanged source locator") == 1
-    assert calls == [{"stage": "solver"}, {"initial_visible": True},
-                     {"stage": "solver-repair"}, {"initial_visible": False}]
+    assert calls == [{"initial_visible": True}, {"initial_visible": False}]
 
 
 def test_solver_cap_checks_context_after_repair_enrichment():

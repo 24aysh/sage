@@ -130,8 +130,8 @@ class RunArtifacts:
     def write_interrupted(self, result: SolveResult) -> Path:
         return self._json("interrupted.json", result)
 
-    def write_navigation(self, value: dict[str, object]) -> Path:
-        return self._json("navigation.json", value)
+    def write_relevance_filter(self, value: dict[str, object]) -> Path:
+        return self._json("relevance-filter.json", value)
 
     def write_workflow_timing(self, duration_ms: float) -> Path:
         return self._json("workflow-timing.json", {"duration_ms": duration_ms})

@@ -22,7 +22,7 @@ resource lifecycles are in `sage/workflows/`; agent behavior is in
 `sage/harness/` owns the support an agent receives throughout an Issue:
 `context/` assembles bounded packets and persistent role guidance; `memory/`
 indexes committed source and supplies lexical graph navigation; `jev/` optionally
-selects bounded read-only observations. Memory requires no credentials or
+filters retrieved files before Solver context assembly. Graph memory requires no credentials or
 external store. Orchestration retains all plan, verification, and review gates.
 
 `sage/cli/` mirrors the solve, memory, and GitHub commands. Within

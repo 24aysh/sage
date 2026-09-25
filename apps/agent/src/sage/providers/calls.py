@@ -71,7 +71,7 @@ class ModelCalls:
             > self._settings.finalization_reserve_seconds
         )
 
-    def remaining_navigation_seconds(self) -> float:
+    def remaining_context_seconds(self) -> float:
         return max(0, self._deadline - self._clock() - self._settings.finalization_reserve_seconds)
 
     @property

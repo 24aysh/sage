@@ -55,7 +55,7 @@ class AgentToolCallRecord(BaseModel):
 
 
 class SemanticCallRecord(BaseModel):
-    """Navigation usage, separate from generative model turns."""
+    """Jev relevance usage, separate from generative model turns."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     call_number: int

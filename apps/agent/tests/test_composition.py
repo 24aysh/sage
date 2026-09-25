@@ -21,7 +21,7 @@ def test_composition_builds_the_single_solve_architecture() -> None:
     )
 
     assert isinstance(orchestrator, SolveOrchestrator)
-    assert orchestrator._navigation_factory is None
+    assert orchestrator._relevance_filter_factory is None
     assert isinstance(orchestrator._solver, SolverAgent)
     assert isinstance(orchestrator._reviewer, ReviewerAgent)
     assert (
@@ -54,15 +54,15 @@ def test_composition_builds_legion_memory_without_provider_credentials(tmp_path)
 def test_composition_only_logs_inputs_when_on_and_allowed(monkeypatch, settings, mode, log_input, expected):
     providers = []
     monkeypatch.setattr("sage.composition.TypeSafeProvider", lambda **kw: providers.append(kw))
-    monkeypatch.setattr("sage.composition.NavigationSession", lambda **kw: kw)
+    monkeypatch.setattr("sage.composition.RelevanceFilter", lambda **kw: kw)
     config = settings.model_copy(update={"gemini_api_key": "gemini-test",
         "jev": JevSettings(mode=mode, api_key="test", log_input=log_input)})
     orchestrator = build_orchestrator(config)
     if mode == "off":
-        assert orchestrator._navigation_factory is None
+        assert orchestrator._relevance_filter_factory is None
         assert not providers
     else:
         context = SimpleNamespace(prepared_run=SimpleNamespace(run_id="run-1"))
-        orchestrator._navigation_factory(context=context)
+        orchestrator._relevance_filter_factory("run-1")
         assert providers[0]["log_input"] is expected
         assert providers[0]["run_id"] == "run-1"
