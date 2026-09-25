@@ -21,7 +21,7 @@ from sage.domain.review import ReviewFailureType, ReviewVerdict
 from sage.domain.solve import AgentFinalOutput, SolveOutcome
 from sage.domain.verification import VerificationStatus
 from sage.errors import AgentRuntimeError
-from sage.observability import workflow_trace_config, log_legion_memory
+from sage.observability import workflow_trace_config, log_retrieval
 from sage.orchestration.candidate import (
     create_candidate_snapshot,
     ensure_candidate_unchanged,
@@ -111,20 +111,20 @@ class SolveOrchestrator:
         )
 
         try:
-            if self._relevance_filter_factory is not None and context.memory is not None:
+            if self._relevance_filter_factory is not None and context.retrieval is not None:
                 relevance = self._relevance_filter_factory(context.prepared_run.run_id)
                 try:
-                    context.memory.retrieval = await calls.measure_agent(
+                    context.retrieval.retrieval = await calls.measure_agent(
                         role="solver", stage="solver-context",
-                        operation=relevance.apply(issue=issue_text, retrieval=context.memory.retrieval,
-                            max_chars=context.settings.legion_initial_context_chars,
+                        operation=relevance.apply(issue=issue_text, retrieval=context.retrieval.retrieval,
+                            max_chars=context.settings.retrieval_initial_context_chars,
                             remaining_seconds=calls.remaining_context_seconds(),
                             usage_recorder=calls.record_semantic_call,
                             report_writer=artifacts.write_relevance_filter),
                     )
-                    context.memory.enrichment_enabled = context.settings.jev.mode != "on"
-                    artifacts.write_legion_memory(context.memory.artifact())
-                    log_legion_memory(logger, context.memory.artifact())
+                    context.retrieval.enrichment_enabled = context.settings.jev.mode != "on"
+                    artifacts.write_retrieval(context.retrieval.artifact())
+                    log_retrieval(logger, context.retrieval.artifact())
                 finally:
                     await relevance.aclose()
             solver_result = await calls.measure_agent(
@@ -134,8 +134,8 @@ class SolveOrchestrator:
                     message=build_solver_message(
                         base_sha=context.prepared_run.base_sha,
                         issue_text=issue_text,
-                        memory_context=(
-                            context.memory.initial_context if context.memory else None
+                        retrieval_context=(
+                            context.retrieval.initial_context if context.retrieval else None
                         ),
                     ),
                     context=context,

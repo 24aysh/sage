@@ -2,14 +2,16 @@
 
 ## Active follow-up: coherent agent harness
 
-Branch: `refactor/agent-harness`. This follow-up supersedes the ownership map
-below; the older implementation record remains historical.
+The original `refactor/agent-harness` work is complete. The current
+`refactor/retrieval-harness` follow-up supersedes its “memory” naming while
+preserving the deterministic graph behavior; the older implementation record
+remains historical.
 
 The agent needs a stable answer to four questions: what is authoritative, what
 evidence is available, what has already been seen, and what can safely happen
 next. The harness owns evidence preparation and delivery; orchestration owns
 permission to mutate, verify, review, repair, and publish. Repository tools remain
-the source of current facts. Neither graph memory nor Jev gains authority.
+the source of current facts. Neither repository retrieval nor Jev gains authority.
 
 Implementation scope and sequence:
 
@@ -17,20 +19,20 @@ Implementation scope and sequence:
    Issue/repair/review envelopes, and the run-scoped capability contracts.
    Keep static role objectives in `agents/prompts.py`. Carry instructions into
    every role call, including repairs; do not add inference or summarization.
-2. Move Legion implementation and graph tool binding to `harness/memory/`.
+2. Keep index construction, lexical ranking, graph tools, and run visibility in
+   `harness/retrieval/`, with Issue ranking in `ranking.py`.
    Preserve committed-source indexing, SQLite/FTS retrieval, graph expansion,
    source locators, freshness invalidation, per-session deduplication, and caps.
-   Move memory preparation out of the workflow into this owner.
+   Keep retrieval preparation out of the workflow resource owner.
 3. Move Jev session, candidate selection, and TypeSafe transport to
    `harness/jev/`. Preserve provider payloads, modes, policies, thresholds,
    budgets, deadline/cancellation, failure fallback, and accounting. Typed
    contracts shared with repository/providers stay in `domain/` so dependencies
    continue to point inward. Environment loading stays in `config.py` and
    concrete construction stays in `composition.py`.
-4. Remove embeddings completely: adapters, hybrid ranking, schemas/usage,
-   configuration, CLI switches, Make overrides, Qdrant secrets, and dependencies.
-   Retain the exact lexical ranking path. Migrate existing SQLite graphs forward
-   without discarding graph data. Never contact or delete old external stores.
+4. Keep repository retrieval local and deterministic. Build schema 4 directly;
+   accept current schema-4 databases and reject obsolete partial schemas with
+   explicit rebuild guidance because the index is derived from committed source.
 5. Align tests and imports with ownership. Add guards against outer-layer
    dependencies and embedding reintroduction; preserve Jev and lexical behavior
    with deterministic fixtures. Update active documentation and mark historical
@@ -47,10 +49,10 @@ Literal search and graph relationships remain available; Jev remains optional.
 Do not claim savings from moving files: measure source/tool exposure, model
 usage, Jev time, and total solve time through the existing artifacts.
 
-Compatibility: CLI embedding flags are removed, obsolete embedding environment
-variables have no consumer, graph storage migrates forward, and internal import
-paths change without dormant compatibility packages. Existing user data and
-untracked role markdown files are preserved. No new production dependency.
+Compatibility: `sage memory`, `--memory-file`, and `legion-*` Make targets remain
+deprecated aliases for one migration window. Primary interfaces are
+`sage retrieval`, `--index-file`, and `retrieval-build|preview|solve`. Existing
+user data and untracked role markdown files are preserved. No new dependency.
 
 ## Document status
 

@@ -17,7 +17,7 @@ from sage.harness.jev.provider import parse_response
 
 
 async def solve_arm(args) -> dict:
-    from sage.composition import build_orchestrator, build_legion_memory_service
+    from sage.composition import build_orchestrator, build_retrieval_service
     from sage.config import Settings, JevSettings
     from sage.domain.solve import SolveRequest
     from sage.workflows.solve import solve_issue
@@ -31,9 +31,9 @@ async def solve_arm(args) -> dict:
     settings = settings.model_copy(update={"jev": jev})
     orchestrator = build_orchestrator(settings)
     request = SolveRequest(repo_path=args.repo, issue_path=args.issue_file, base_ref=args.base_ref,
-                           memory_file=args.memory_file)
-    memory = build_legion_memory_service() if args.memory_file else None
-    result = await solve_issue(request, orchestrator, settings, memory_service=memory)
+                           index_file=args.index_file)
+    retrieval = build_retrieval_service() if args.index_file else None
+    result = await solve_issue(request, orchestrator, settings, retrieval_service=retrieval)
     return {"arm": args.arm, "run_dir": str(result.run_dir), "outcome": result.outcome.value,
             "base_sha": result.base_sha}
 
@@ -80,10 +80,6 @@ def run_metrics(row: dict, prices: dict) -> dict:
     final = json.loads((root / "agent-final.json").read_text())
     timing = json.loads((root / "workflow-timing.json").read_text())
     calls = [*usage.get("calls", []), *usage.get("semantic_calls", [])]
-    memory_path = root / "legion-memory.json"
-    memory = json.loads(memory_path.read_text()) if memory_path.exists() else {}
-    if memory.get("embedding_usage"):
-        raise ValueError("Legacy embedding runs require the historical evaluator; do not compare them as graph-only runs.")
     known = [c["input_tokens"] for c in calls if c.get("input_tokens") is not None]
     unknown = sum(c.get("input_tokens") is None or c.get("output_tokens") is None for c in calls)
     if (root / "navigation.json").exists():
@@ -153,7 +149,7 @@ def main() -> None:
     run_parser.add_argument("--repo", type=Path, required=True)
     run_parser.add_argument("--issue-file", type=Path, required=True)
     run_parser.add_argument("--base-ref", required=True, help="Use a fixed base SHA for every paired arm")
-    run_parser.add_argument("--memory-file", type=Path)
+    run_parser.add_argument("--index-file", "--memory-file", dest="index_file", type=Path)
     run_parser.add_argument("--allow-paid-solve", action="store_true")
     args = parser.parse_args()
     if args.command == "replay":

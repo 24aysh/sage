@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from sage.artifacts.store import RunArtifacts
-from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus
+from sage.domain.retrieval import RetrievalRunArtifact, RetrievalStatus
 from sage.domain.solver import (
     SavedSolverPlan,
     SolverAcceptanceCriterion,
@@ -39,21 +39,21 @@ def test_run_artifacts_writes_fixed_atomic_stage_artifacts(tmp_path: Path) -> No
     assert "constrained-cross-provider" in usage_path.read_text()
 
 
-def test_run_artifacts_writes_legion_memory_evidence(tmp_path: Path) -> None:
+def test_run_artifacts_writes_repository_retrieval_evidence(tmp_path: Path) -> None:
     store = RunArtifacts(tmp_path)
-    memory_file = tmp_path / "graph.sqlite3"
+    index_file = tmp_path / "graph.sqlite3"
 
-    path = store.write_legion_memory(
-        LegionMemoryRunArtifact(
-            requested_memory_file=memory_file,
-            resolved_memory_file=memory_file,
-            status=MemoryRetrievalStatus.UNAVAILABLE,
-            failure_category="LegionMemoryBuildError",
+    path = store.write_retrieval(
+        RetrievalRunArtifact(
+            requested_index_file=index_file,
+            resolved_index_file=index_file,
+            status=RetrievalStatus.UNAVAILABLE,
+            failure_category="RetrievalBuildError",
             fallback="normal repository inspection",
         )
     )
 
-    assert path == tmp_path / "legion-memory.json"
+    assert path == tmp_path / "repository-retrieval.json"
     assert '"status": "unavailable"' in path.read_text(encoding="utf-8")
 
 

@@ -30,7 +30,7 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
         "candidate_files": ["private.py", "other.py"], "retained_files": ["private.py"],
         "rejected_files": ["other.py"], "capture": {"request": "private Jev replay"}}))
     (run_dir / "usage.json").write_text('{"semantic_calls":[{"model":"jev-1.13.0","input_tokens":23}]}')
-    (run_dir / "legion-memory.json").write_text(
+    (run_dir / "repository-retrieval.json").write_text(
         '{"status":"used","retrieval":{"context":"private source body",'
         '"context_chars":19}}\n',
         encoding="utf-8",
@@ -59,10 +59,10 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
     )
 
     assert (diagnostics / "solver-final.json").is_file()
-    memory = (diagnostics / "legion-memory.json").read_text(encoding="utf-8")
-    assert '"status": "used"' in memory
-    assert '"context_chars": 19' in memory
-    assert "private source body" not in memory
+    retrieval = (diagnostics / "repository-retrieval.json").read_text(encoding="utf-8")
+    assert '"status": "used"' in retrieval
+    assert '"context_chars": 19' in retrieval
+    assert "private source body" not in retrieval
     assert not (diagnostics / "unlisted-context.json").exists()
     navigation = json.loads((diagnostics / "relevance-filter.json").read_text())
     assert navigation["policy"] == "file-relevance-v1"
@@ -76,10 +76,10 @@ def test_github_diagnostics_copy_only_allowlisted_run_artifacts(
     )
 
 
-def test_github_diagnostics_reject_invalid_memory_artifact(tmp_path: Path) -> None:
+def test_github_diagnostics_reject_invalid_retrieval_artifact(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "legion-memory.json").write_text("not-json", encoding="utf-8")
+    (run_dir / "repository-retrieval.json").write_text("not-json", encoding="utf-8")
 
     provenance = GitHubProvenance(
         repository="owner/repository",
@@ -97,7 +97,7 @@ def test_github_diagnostics_reject_invalid_memory_artifact(tmp_path: Path) -> No
         outcome="completed",
     )
 
-    with pytest.raises(ArtifactError, match="Invalid Legion Memory"):
+    with pytest.raises(ArtifactError, match="Invalid Repository retrieval index"):
         persist_github_diagnostics(
             provenance,
             diagnostics_dir=tmp_path / "diagnostics",

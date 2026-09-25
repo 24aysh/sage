@@ -3,10 +3,10 @@ from types import SimpleNamespace
 
 from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent
-from sage.composition import build_legion_memory_service, build_orchestrator
+from sage.composition import build_retrieval_service, build_orchestrator
 from sage.config import JevSettings, Settings
 from sage.errors import ConfigurationError
-from sage.harness.memory.service import LegionMemoryService
+from sage.harness.retrieval.service import RepositoryRetrievalService
 from sage.orchestration.solve import SolveOrchestrator
 
 
@@ -41,10 +41,10 @@ def test_composition_refuses_rejected_google_context_use() -> None:
         )
 
 
-def test_composition_builds_legion_memory_without_provider_credentials(tmp_path) -> None:
-    service = build_legion_memory_service(data_root=tmp_path)
+def test_composition_builds_retrieval_without_provider_credentials(tmp_path) -> None:
+    service = build_retrieval_service(data_root=tmp_path)
 
-    assert isinstance(service, LegionMemoryService)
+    assert isinstance(service, RepositoryRetrievalService)
     assert service._data_root == tmp_path
 
 

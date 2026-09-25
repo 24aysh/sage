@@ -10,7 +10,7 @@ under `docs/` for present behavior and commands.
 | --- | --- |
 | [`../docs/architecture.md`](../docs/architecture.md) | Implemented behavior, ownership, and dependency boundaries |
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
-| [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Harness consolidation, embedding removal, migration and verification record |
+| [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Harness consolidation, repository-retrieval naming, and verification record |
 | [`../docs/relevance-filter-plan.md`](../docs/relevance-filter-plan.md) | Multilingual lexical retrieval and the replacement Jev file-filter pipeline |
 
 ## Proposed work
@@ -26,7 +26,7 @@ the guides above.
 
 | Document | Status |
 | --- | --- |
-| [`24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md`](24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md) | Original consolidation plus active harness ownership and embedding-removal follow-up |
+| [`24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md`](24_AGENT_INTUITIVE_ARCHITECTURE_IMPLEMENTATION_PLAN.md) | Original consolidation plus the retrieval-ownership follow-up |
 
 The plan records migration rationale. It does not override the current guides.
 

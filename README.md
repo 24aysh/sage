@@ -10,9 +10,9 @@ There is one supported architecture and one construction path—no runtime
 selector or retained earlier implementation.
 
 The [agent harness](apps/agent/src/sage/harness/README.md) groups persistent role
-instructions, bounded context delivery, local Legion graph memory, and optional
-Jev file relevance filtering. Memory uses lexical search and graph relationships with no
-embedding API or external vector database. See the [architecture](docs/architecture.md)
+instructions, bounded context delivery, local repository retrieval, and optional
+Jev file relevance filtering. Retrieval uses a rebuildable SQLite graph, lexical
+search, and source relationships; it has no model or remote-store dependency. See the [architecture](docs/architecture.md)
 and [testing guide](docs/testing.md) for ownership and commands.
 
 ## Start in 60 seconds

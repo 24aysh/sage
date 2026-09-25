@@ -68,7 +68,7 @@ def main() -> int:
             'SAGE_JEV_CAPTURE: "false"',
             'SOLVER_MODEL: "gpt-5.4-mini"',
             'REVIEWER_MODEL: "gemini-3.5-flash"',
-            "/legion-memory.json",
+            "/repository-retrieval.json",
             "/relevance-filter.json",
         )
         if all(value in action_body for value in required_action_wiring) and all(

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from sage.config import JevSettings
-from sage.domain.memory import MemoryRetrievalItem, MemoryRetrievalResult, MemoryRetrievalStatus, MemoryRetrievalOutcome
+from sage.domain.retrieval import RetrievalItem, RetrievalResult, RetrievalStatus, RetrievalOutcome
 from sage.domain.relevance import RelevanceDecision, RelevanceUnavailable
 from sage.harness.context.tools import build_repository_read_tools
 from sage.harness.jev.filter import RelevanceFilter
@@ -14,13 +14,13 @@ from sage.harness.jev.filter import RelevanceFilter
 
 @pytest.fixture
 def retrieval(tmp_path):
-    items = tuple(MemoryRetrievalItem(rank=index, kind="Function", name=name,
+    items = tuple(RetrievalItem(rank=index, kind="Function", name=name,
         qualified_name=f"{path}::{name}", file_path=path, line_start=1, line_end=2,
         language="rust", score=10, signature=f"fn {name}()")
         for index, (path, name) in enumerate([
             ("orders.rs", "process"), ("orders.rs", "save"), ("noise.rs", "unrelated")], 1))
-    return MemoryRetrievalResult(status=MemoryRetrievalStatus.USED,
-        outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT, summary="lexical", memory_file=tmp_path / "graph.db",
+    return RetrievalResult(status=RetrievalStatus.USED,
+        outcome=RetrievalOutcome.USEFUL_CONTEXT, summary="lexical", index_file=tmp_path / "graph.db",
         indexed_sha="base", items=items, returned=3, total_candidates=3, context="unfiltered noise.rs",
         context_chars=19)
 
@@ -69,8 +69,8 @@ def test_score_confidence_boundaries_and_all_rejected(retrieval, scores, confide
     result = apply(retrieval, provider=Provider(scores, confidence))
     assert len(result.items) == retained
     if not retained:
-        assert result.context == "" and result.status is MemoryRetrievalStatus.NO_MATCH
-        assert result.outcome is MemoryRetrievalOutcome.RELEVANCE_REJECTED
+        assert result.context == "" and result.status is RetrievalStatus.NO_MATCH
+        assert result.outcome is RetrievalOutcome.RELEVANCE_REJECTED
 
 
 @pytest.mark.parametrize("mode", ["off", "shadow"])
@@ -84,7 +84,7 @@ def test_off_skips_calls_and_shadow_keeps_original_candidates(retrieval, mode):
 
 
 @pytest.mark.parametrize("error", [RelevanceUnavailable("http_529"), TimeoutError()])
-def test_failure_withholds_unjudged_memory_without_claiming_rejections(retrieval, error):
+def test_failure_withholds_unjudged_retrieval_without_claiming_rejections(retrieval, error):
     records = []
     result = apply(retrieval, provider=Provider(error=error), usage_recorder=records.append)
     assert not result.items and not result.context

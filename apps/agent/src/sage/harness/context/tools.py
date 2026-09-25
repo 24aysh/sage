@@ -9,26 +9,26 @@ from langchain_core.tools import BaseTool, tool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from sage.harness.context.run import RepositoryContext, SolverContext
-from sage.harness.memory.tools import build_legion_memory_tools
+from sage.harness.retrieval.tools import build_retrieval_tools
 
 
 def build_context_tools(context: SolverContext) -> list[BaseTool]:
     """Expose source tools plus only the useful graph profile, preserving order."""
-    memory = context.memory
-    memory_tools = build_legion_memory_tools(
-        memory.service, repo_root=memory.repo_root, memory_file=memory.memory_file,
+    retrieval = context.retrieval
+    retrieval_tools = build_retrieval_tools(
+        retrieval.service, repo_root=retrieval.repo_root, index_file=retrieval.index_file,
         output_chars=context.settings.max_tool_output_chars,
-        usage_recorder=memory.record_tool_call, source_reader=context.repository.read_file,
-        profile="solve", response_filter=memory.filter_response,
-    ) if memory is not None and memory.tools_enabled else []
-    if memory is not None and memory_tools:
-        memory.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in memory_tools],
+        usage_recorder=retrieval.record_tool_call, source_reader=context.repository.read_file,
+        profile="solve", response_filter=retrieval.filter_response,
+    ) if retrieval is not None and retrieval.tools_enabled else []
+    if retrieval is not None and retrieval_tools:
+        retrieval.record_schemas(len(json.dumps([convert_to_openai_tool(t) for t in retrieval_tools],
                                             separators=(",", ":"))))
     return [
-        *build_repository_read_tools(context, enrich=memory.enrich if memory else None,
+        *build_repository_read_tools(context, enrich=retrieval.enrich if retrieval else None,
                                      output_chars=context.settings.max_tool_output_chars),
         *build_repository_branch_tools(context),
-        *memory_tools,
+        *retrieval_tools,
     ]
 
 
@@ -102,8 +102,8 @@ def build_repository_branch_tools(context: RepositoryContext) -> list[BaseTool]:
         """Switch the clean sandbox worktree to an existing Git branch."""
 
         result = context.repository.switch_branch(branch_name=branch_name)
-        if memory := getattr(context, "memory", None):
-            memory.close()
+        if retrieval := getattr(context, "retrieval", None):
+            retrieval.close()
         return result
 
     return [list_branches, switch_branch]

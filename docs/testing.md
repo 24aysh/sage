@@ -35,8 +35,8 @@ A skip is not a parity certification.
 
 The pipeline is lexical/graph retrieval → one batched Jev file judgment → bounded
 Solver context. It no longer performs optional tool calls inside read/search
-responses. `make legion-memory` remains model-free; `make legion-retrieve` uses
-the same filter as a memory-enabled solve.
+responses. `make retrieval-build` remains model-free; `make retrieval-preview` uses
+the same filter as a retrieval-enabled solve.
 
 First remove retired `SAGE_JEV_NAVIGATION_POLICY`, `SAGE_JEV_MAX_FOLLOWUP_ACTIONS`,
 `SAGE_JEV_RUN_WAIT_SECONDS`, and the old READ/SEARCH/GRAPH probability and ACTION
@@ -60,23 +60,21 @@ concentration of the returned distribution. These provisional thresholds need
 calibration on actual Issues, not interpretation as solve-success probabilities.
 
 ```bash
-make legion-memory REPO=/absolute/repo MEMORY_FILE=/absolute/memory/graph.sqlite3
-make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3
-make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3
-# Equivalent memory-enabled solve:
-make solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3
+make retrieval-build REPO=/absolute/repo INDEX_FILE=/absolute/index/graph.sqlite3
+make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  INDEX=/absolute/index/graph.sqlite3
+make retrieval-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  INDEX=/absolute/index/graph.sqlite3
 make solve-baseline REPO=/absolute/repo ISSUE=/absolute/issue.md
 ```
 
 Make loads the selected `ENV_FILE` (default `.env`), so edit that file to select
 mode; a shell variable can be overwritten by values sourced from the env file.
-`solve-baseline` forcibly disables Jev and omits memory. `make solve` without
-`MEMORY` has no retrieval to filter and therefore makes no Jev request.
+`solve-baseline` forcibly disables Jev and omits retrieval. Plain `make solve`
+also omits retrieval, while retaining the configured Jev mode for other future
+uses; use `retrieval-solve` to bind an explicit index.
 
-`legion-retrieve` prints candidate-file count, relevant files after filtering,
+`retrieval-preview` prints candidate-file count, relevant files after filtering,
 discarded retrieval-item and file counts, unjudged/withheld counts, context-budget
 omissions, Jev time, and input/output tokens. Multiple retrieved symbols in one
 file share a decision, so item counts and file counts can differ. Off-mode output
@@ -110,29 +108,29 @@ keeps both off and sanitizes exported diagnostics.
 
 ```bash
 uv run --project apps/agent pytest apps/agent/tests/harness/jev \
-  apps/agent/tests/harness/memory/test_relevance_pipeline.py
+  apps/agent/tests/harness/retrieval/test_relevance_pipeline.py
 uv run --project apps/agent python apps/agent/evals/navigation.py replay \
   /absolute/run/relevance-filter.json
 uv run --env-file .env --project apps/agent python apps/agent/evals/navigation.py run \
   --arm on --repo /absolute/repo --issue-file /absolute/issue.md \
-  --base-ref FIXED_SHA --memory-file /absolute/memory/graph.sqlite3 --allow-paid-solve
+  --base-ref FIXED_SHA --index-file /absolute/index/graph.sqlite3 --allow-paid-solve
 uv run --project apps/agent python apps/agent/evals/navigation.py compare \
   /absolute/manifest.json
 ```
 
 Run arms are `off`, `shadow`, and `on`. Use the example manifest, matching Issue,
 base, model settings, cache state and independent quality checks. Unknown token
-usage stays unknown; old navigation/embedding runs require their historical
+usage stays unknown; artifacts from the retired navigation pipeline require their historical
 evaluator. Offline tests use fakes and never establish live quality or savings.
 
 ### Interrupting a solve with Ctrl-C
 
-Run either `make solve` or `make legion-solve` as above. Once the run is
+Run either `make solve` or `make retrieval-solve` as above. Once the run is
 initialized, press **Ctrl-C once** while the Solver, Jev, or Reviewer is working.
 The CLI prints `Solve interrupted` with the run/workspace paths, recorded token
 and tool usage, and the same Solver/Jev/Reviewer timing breakdown. The last time
 line is `Elapsed time at interruption`, measured when cancellation reaches the
-workflow, before sandbox/memory cleanup. No candidate is declared completed,
+workflow, before sandbox/retrieval cleanup. No candidate is declared completed,
 verified, or unchanged. Wait for cleanup to finish; the CLI retains its nonzero
 interruption exit (1), and Make reports a failed/interrupted command.
 
@@ -140,8 +138,8 @@ Token totals include known Solver, Reviewer **and Jev** input/output usage.
 `Model calls` counts generative requests; `Jev calls` is separate. Cancelled
 in-flight requests may never report usage: those counts remain unknown, the
 summary marks incomplete totals, and the provider may still bill them. Cached
-input tokens are a subset of input tokens and are not added twice. Graph memory
-has no separate model usage.
+input tokens are a subset of input tokens and are not added twice. Deterministic
+repository retrieval has no separate model usage.
 
 Inspect `interrupted.json` for the interruption-time snapshot and `usage.json`
 for recorded calls and elapsed agent sessions. `workflow-timing.json` still
@@ -168,11 +166,11 @@ Paths in this table are relative to `apps/agent/tests/`.
 | Jev decisions, transport, budgets and evaluation | `harness/jev/` |
 | Candidate, verification/review/repair routing | `orchestration/` |
 | File paths, diffs and command execution | `repository/`, `verification/` |
-| Memory build and persistence | `harness/memory/test_indexing.py`, `test_store.py` |
-| Parser and source binding | `harness/memory/test_parsing.py`, `test_resolution.py` |
-| Graph query/analysis semantics | `harness/memory/test_queries.py`, `test_analysis.py` |
-| Issue ranking and context budgets | `harness/memory/test_retrieval.py` |
-| Memory tools, visibility, deduplication and edited locators | `harness/memory/test_tools.py`, `test_session.py` |
+| Index build and persistence | `harness/retrieval/test_indexing.py`, `test_store.py` |
+| Parser and source binding | `harness/retrieval/test_parsing.py`, `test_resolution.py` |
+| Graph query/analysis semantics | `harness/retrieval/test_queries.py`, `test_analysis.py` |
+| Issue ranking and context budgets | `harness/retrieval/test_retrieval.py` |
+| Retrieval tools, visibility, deduplication and edited locators | `harness/retrieval/test_tools.py`, `test_session.py` |
 | Provider behavior/accounting | `providers/`, `test_observability.py` |
 | Atomic evidence and cleanup | `artifacts/`, `workflows/` |
 | Ownership/import rules | `test_architecture.py` |
@@ -183,7 +181,7 @@ For example:
 LANGSMITH_TRACING=false uv run --project apps/agent pytest \
   apps/agent/tests/test_cli.py apps/agent/tests/cli
 LANGSMITH_TRACING=false uv run --project apps/agent pytest \
-  apps/agent/tests/harness/memory
+  apps/agent/tests/harness/retrieval
 make github-test
 make actions-check
 make graph
@@ -194,48 +192,48 @@ Architecture checks traverse nested packages, resolve package-member imports,
 check domain dependencies and reject cycles. The CLI initializer may only
 re-export the existing entrypoint. Extraction permits more focused files while
 retaining the nonblank source budget and bounding internal imports. The workflow
-coordinates the context and memory preparation owners explicitly.
+coordinates the context and retrieval preparation owners explicitly.
 
-Shared graph setup lives in `harness/memory/conftest.py`; use `apply_files` for
-parser/store fixtures, `fixture_repo` for committed Git state, `built_memory`
-for a ready service, and `memory_session` for read enrichment. Regression tests
+Shared graph setup lives in `harness/retrieval/conftest.py`; use `apply_files` for
+parser/store fixtures, `fixture_repo` for committed Git state, `built_index`
+for a ready service, and `retrieval_session` for read enrichment. Regression tests
 must not import another test module for fixture construction.
 
 Reference certification remains optional and offline:
 
 ```bash
 uv run --project apps/agent pytest \
-  apps/agent/tests/harness/memory/test_reference_differential.py \
-  --legion-reference /absolute/path/to/trusted/reference-checkout
+  apps/agent/tests/harness/retrieval/test_reference_differential.py \
+  --retrieval-reference /absolute/path/to/trusted/reference-checkout
 ```
 
 The checkout must match the fingerprints in
-[`reference_manifest.json`](../apps/agent/tests/harness/memory/reference_manifest.json).
+[`reference_manifest.json`](../apps/agent/tests/harness/retrieval/reference_manifest.json).
 This checks normalized structural fixtures, not all language/framework behavior.
 
-## Inspect a repository's lexical memory
+## Inspect a repository's lexical index
 
 Use an actual Git root with a committed `HEAD`. A nested non-repository is
 rejected instead of indexing its ancestor. Pass a disposable SQLite path when
 testing; do not point probes at a database that another process owns.
 
 ```bash
-make legion-memory REPO=/absolute/repo \
-  MEMORY_FILE=/absolute/memory/graph.sqlite3
+make retrieval-build REPO=/absolute/repo \
+  INDEX_FILE=/absolute/index/graph.sqlite3
 
-uv run --project apps/agent sage memory status \
-  --repo /absolute/repo --memory-file /absolute/memory/graph.sqlite3
+uv run --project apps/agent sage retrieval status \
+  --repo /absolute/repo --index-file /absolute/index/graph.sqlite3
 
-make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3
+make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  INDEX=/absolute/index/graph.sqlite3
 ```
 
-`MEMORY_FILE` selects the build destination; `MEMORY` selects the database for
+`INDEX_FILE` selects the build destination; `INDEX` selects the database for
 retrieval/solve. Without a build destination, the repository checkout defaults
-under `.sage/legion-memory/<repo-name>-<identity-prefix>/graph.sqlite3`.
+under `.sage/retrieval/<repo-name>-<identity-prefix>/graph.sqlite3`.
 Make arguments use `REPO=...`, not a positional repository path.
 
-The direct build equivalent is `sage memory build --repo ... --memory-file ...`.
+The direct build equivalent is `sage retrieval build --repo ... --index-file ...`.
 It also accepts `--full-rebuild`. The same operation normally chooses the build
 mode automatically; no separate cold/warm command is needed.
 
@@ -257,13 +255,13 @@ Go (`.go`), Rust (`.rs`), C++ (`.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`,
 `.ipp`, `.tpp`), HTML (`.html`, `.htm`), and CSS (`.css`) support lexical symbol
 and path retrieval. `.h` retains the existing C grammar. Try an Issue naming a
 real function, struct, element ID, or selector; namespaced C++ implementations
-use the function name, not a parameter name. Parser version 6 automatically
+use the function name, not a parameter name. Parser version 7 automatically
 rebuilds older indexes. This is structural retrieval, not compiler-level name
 resolution or macro expansion. Focused checks:
 
 ```bash
-uv run --project apps/agent pytest apps/agent/tests/harness/memory/test_parsing.py \
-  apps/agent/tests/harness/memory/test_retrieval.py
+uv run --project apps/agent pytest apps/agent/tests/harness/retrieval/test_parsing.py \
+  apps/agent/tests/harness/retrieval/test_retrieval.py
 ```
 
 For an HTML/CSS repository, commit an `.html` page and its `.css` files before
@@ -286,25 +284,21 @@ retains 21 read-only operations for explicit use. With Jev off/shadow, read/sear
 preserve source, respect ranges/caps, suppress edited locators and deduplicate
 visible responses; its failure must leave source output usable.
 
-## Graph-only memory and migration
+## Index compatibility
 
-Legion Memory always uses local lexical search and graph relationships. Building
-and retrieving memory require no model keys, Qdrant, or network access:
+Repository retrieval always uses local lexical search and graph relationships.
+Building and querying an index require no model keys or network access:
 
 ```bash
-make legion-memory REPO=/absolute/repo MEMORY_FILE=/absolute/memory/graph.sqlite3
-make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3
+make retrieval-build REPO=/absolute/repo INDEX_FILE=/absolute/index/graph.sqlite3
+make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  INDEX=/absolute/index/graph.sqlite3
 ```
 
-Run a build once on older databases to migrate to schema 4. Expect graph rows
-and provenance to survive while obsolete vector metadata is removed. Repeat the
-build at the same SHA and expect `no_change`. No external vector store is opened.
-Old Qdrant files and server collections remain user-owned; remove them manually
-only when no other consumer needs them. Old `SAGE_LEGION_EMBEDDING_*`,
-`SAGE_LEGION_EMBEDDINGS_ENABLED`, and `SAGE_LEGION_QDRANT_*` values have no effect
-and can be removed from local `.env` and repository Secrets. Remove `EMBEDDINGS=`
-from Make invocations and `--embeddings` from direct CLI commands.
+Current schema-4 databases remain readable. An older partial schema is rejected
+because the SQLite file is a disposable derivative of committed source: move or
+remove that specific index, then build it again. Repeat a build at the same SHA
+and expect `no_change`; a parser-version change performs a full rebuild.
 
 ### Clear local Sage data
 
@@ -312,11 +306,11 @@ Clear one local data store at a time with:
 
 ```bash
 make clean-runs
-make clean-legion-memory
+make clean-retrieval
 ```
 
 Each command deletes all nested and hidden content from its matching directory
-under `.sage/`. The `.sage/runs` and `.sage/legion-memory`
+under `.sage/`. The `.sage/runs` and `.sage/retrieval`
 parent directories themselves are preserved (and created if absent). The other
 stores are not changed.
 
@@ -339,9 +333,9 @@ env:
   SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
 ```
 
-No enable switch is needed. `make solve`, `make solve-baseline`, `make legion-solve`
-and GitHub use the same role context path. The baseline still disables graph
-memory and Jev. To verify instruction lifetime and isolation without paid calls:
+No enable switch is needed. `make solve`, `make solve-baseline`, `make retrieval-solve`
+and GitHub use the same role context path. The baseline still disables repository
+retrieval and Jev. To verify instruction lifetime and isolation without paid calls:
 
 ```bash
 uv run --project apps/agent pytest apps/agent/tests/harness/context \
@@ -389,15 +383,15 @@ solve and inspects its evidence. For subsequent solves:
 
 ```bash
 make solve REPO=/absolute/repo ISSUE=/absolute/issue.md
-make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  MEMORY=/absolute/memory/graph.sqlite3
+make retrieval-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
+  INDEX=/absolute/index/graph.sqlite3
 make run-status RUN_DIR=/absolute/run-directory
 make run-test RUN_DIR=/absolute/run-directory \
   TEST_COMMAND="python3 -m unittest discover -v"
 ```
 
 The source checkout is not mutated. Both solve modes use an isolated checkout,
-sandbox, plan gate, deterministic checks and independent review. Memory preparation
+sandbox, plan gate, deterministic checks and independent review. Retrieval preparation
 runs after sandbox startup and optional verification-tooling preflight, before
 model calls. Preflight checks installed tooling without importing repository code,
 running tests, installing dependencies or enabling networking.
@@ -426,8 +420,8 @@ availability without reading secret values.
 
 Accepted `/sage solve` Issue comments recheck authorization and
 duplicate state before model construction, and solve at the gate's exact SHA.
-GitHub memory uses fresh runner-owned SQLite with lexical retrieval and no
-external memory service.
+GitHub solves use fresh runner-owned SQLite indexes; they are not cached or
+uploaded.
 
 Configure credentials only as repository or environment Secrets:
 
@@ -462,7 +456,7 @@ env:
 
 The action inherits this repository-owned configuration. It exposes inputs only
 for credentials and run identity, preventing hidden input defaults from
-overriding the YAML. Memory requires no credentials. Invalid Jev configuration
+overriding the YAML. Retrieval requires no credentials. Invalid Jev configuration
 fails before the first model call. The TypeSafe secret is optional while mode is
 `off`; `shadow` and `on` require it. Keep `SAGE_JEV_LOG_INPUT=false` and
 `SAGE_JEV_CAPTURE=false` on GitHub: raw Issue/source bodies belong only in
@@ -473,10 +467,9 @@ pinned to its full immutable commit SHA. In a disposable repository, invoke a
 bounded Issue naming a known symbol and verify:
 
 1. Authorization, accepted SHA and one status-comment lifecycle.
-2. Memory build `full` at that SHA, exact/FTS retrieval and recorded exposure/use.
-   No embedding settings, API calls, or Qdrant secret requirements.
+2. Index build `full` at that SHA, exact/FTS retrieval and recorded exposure/use.
 3. A creation-only `sage/issue-<number>` branch and draft PR.
-4. Allowlisted diagnostics without checkout, Issue body, rendered memory context,
+4. Allowlisted diagnostics without checkout, Issue body, rendered retrieval context,
    or credentials.
 5. Idempotent finalization; each GitHub run has its own graph snapshot.
 
@@ -504,9 +497,9 @@ GitHub uploads intentionally contain less data than local run directories.
 | Docker unavailable/image missing | `docker info`, `make sandbox-build`, then `make doctor` |
 | Reviewer configuration rejected | Gemini key and approved Google context use |
 | Candidate rejected after review | Base SHA and digest in candidate snapshot versus final diff |
-| Memory missing/stale/foreign | Same explicit database and repository; rebuild at accepted SHA |
+| Index missing/stale/foreign | Same explicit database and repository; rebuild at accepted SHA |
 | Corrupt/unsupported graph | Move the disposable database aside, then build a fresh graph |
-| Solve memory unavailable | Artifact failure category, standalone build/status/retrieve |
+| Solve retrieval unavailable | Artifact failure category, standalone build/status/retrieve |
 | GitHub workflow failure | Action tests, allowlisted diagnostics, bot-owned status comment |
 
 Do not claim a skipped live check passed. Do not infer readiness from old context

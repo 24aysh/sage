@@ -1,19 +1,27 @@
 > Follow-up: [Jev relevance filtering](relevance-filter-plan.md) replaces the
 > tool-triggered Jev behavior preserved by this earlier harness refactor.
+>
+> Current naming: the derived source index and its runtime session now live in
+> `harness/retrieval/`, with `RepositoryRetrievalService` as the capability and
+> `repository-retrieval.json` as run evidence. `memory` and `legion-*` survive
+> only as deprecated command-line compatibility aliases. Obsolete partial SQLite
+> schemas are rebuilt from committed source rather than migrated.
 
 # Agent harness refactor
 
 ## Current objective and design
 
-Branch: `refactor/agent-harness`. The user requested one discoverable home for
-context management, Legion Memory, and Jev, and complete removal of embeddings.
+Branch: `refactor/retrieval-harness`. The derived SQLite source graph is context
+engineering infrastructure, not long-term agent memory. The refactor gives that
+responsibility a direct name while keeping context delivery and Jev judgment as
+separate harness layers.
 The unit of design is still one solve: task, role policy, source observations,
 bounded context, candidate, verification, review, and terminal evidence.
 
 The resulting tower of capabilities is explicit:
 
 1. Domain contracts name facts without importing implementations.
-2. Repository capabilities supply current source; graph memory supplies
+2. Repository capabilities supply current source; retrieval supplies
    source-linked, accepted-base navigation with lexical ranking and reasons.
 3. Harness context controls instruction lifetime, packet assembly, and delivery
    through read tools. Visibility and invalidation belong to a specific history.
@@ -24,24 +32,25 @@ The resulting tower of capabilities is explicit:
 
 An agent can inspect an Issue, follow an attributed source locator, see why it
 was suggested, and recover using ordinary reads when optional context is absent.
-It need not reason about embedding models, index publication, vector health,
-remote stores, or duplicated retrieval modes. This removes resource costs and
-failure states without replacing them with another inference step.
+The index is rebuildable from committed source and has no independent authority.
 
 ## Implementation checklist
 
-- [x] Create `harness/context`, `harness/memory`, and `harness/jev` owners.
+- [x] Rename `harness/memory` to `harness/retrieval` and rename the public domain,
+  service, session, workflow, artifact, and CLI vocabulary with it.
+- [x] Rename Issue ranking to `ranking.py`, avoiding the ambiguous
+  `retrieval/retrieval.py` path.
 - [x] Move context envelopes and tool delivery out of role definitions; move
-  memory preparation out of workflow resource management.
+  retrieval preparation out of workflow resource management.
 - [x] Load role markdown once from the accepted checkout and retain each role's
   guidance on every invocation, including repairs and rereviews.
 - [x] Relocate Jev without changing payloads, policies, budgets, or accounting.
-- [x] Remove embedding adapters, hybrid ranking, Qdrant dependency/configuration,
-  vector artifact fields, CLI switches, and GitHub secret wiring.
-- [x] Add schema 4 migration removing only obsolete vector state; preserve
-  graph rows, source metadata, lexical ranking, and build locking.
-- [x] Move tests to harness owners and add invariants for local-only memory,
-  context lifetime, migration preservation, and dependency direction.
+- [x] Build the current schema directly and reject obsolete partial schemas with
+  rebuild guidance; retain current schema-4 database compatibility and locking.
+- [x] Add primary `retrieval-build`, `retrieval-preview`, and `retrieval-solve`
+  Make targets plus `sage retrieval` and `--index-file` CLI interfaces.
+- [x] Keep old command names as deprecated aliases for a bounded migration.
+- [x] Move tests and active documentation to retrieval ownership.
 - [x] Complete canonical checks and record final results below.
 
 ## Tradeoffs and compatibility
@@ -53,15 +62,14 @@ new learning subsystem is introduced. Improvements accumulate as regression
 fixtures and versioned policy changes, checked against recorded tokens, time,
 exposure, and independently verified outcomes.
 
-Lexical retrieval cannot find every synonym-only match that embeddings could.
 Exact paths, identifiers, FTS, graph relationships, and current source inspection
-remain. `semantic_search_nodes_tool` becomes `search_nodes_tool`; its schema and
-lexical behavior are retained. Jev remains optional with its existing defaults.
+remain. Jev remains an optional filter over deterministic candidates; retrieval
+does not import providers or model configuration.
 
-CLI `--embeddings` and Make embedding overrides are removed. Old environment
-variables have no consumer. SQLite graphs upgrade on build. External Qdrant data
-is untouched and must be managed by its owner; no remote cleanup is attempted.
-The old migration SQL is retained to support existing graph databases.
+Old schema 1–3 databases require a rebuild. This is intentionally simpler and
+safer than preserving migration code for disposable derived state. Current
+schema-4 databases remain supported. The parser version changes so a database
+built under the old metadata vocabulary is rebuilt deterministically.
 
 Role markdown is bounded, role-specific, and read once, but appears in every
 model request. Stable prompts may benefit from provider caching; the refactor
@@ -73,20 +81,17 @@ or live quality/cost improvements. No commit, push, or paid call is implicit.
 
 ## Verification
 
-Completed on `refactor/agent-harness`:
+Completed on `refactor/retrieval-harness`:
 
-- `make check`: 567 passed, one optional reference-checkout test skipped;
+- `make check`: 560 passed, one optional reference-checkout test skipped;
   package compilation passed.
 - `make graph`: passed.
-- `make github-smoke`: passed using local substitutes, without model calls or
-  remote publication.
-- `make github-doctor`: passed with read-only Docker socket access.
-- AST comparisons confirm Jev's provider, session, and candidates are unchanged
-  apart from import paths; `JevSettings` is unchanged.
-- Regression tests cover graph-preserving migration, local-only memory, writer
-  locking, role-instruction snapshots across repairs/rereviews, context budgets,
-  and harness dependency boundaries.
-- `git diff --check`: passed. No paid live solves were performed.
+- `make github-smoke`: passed using local substitutes with zero model and network
+  calls.
+- `make github-doctor`: passed, including the read-only Docker daemon check.
+- `git diff --check`: passed.
+
+No paid live solve was performed.
 
 See [testing.md](testing.md) for executable procedures and
 [architecture.md](architecture.md) for current ownership. Live quality, cost,

@@ -111,8 +111,8 @@ cross-run state engine.
 - `sage/repository/`, `sage/verification/` — deterministic capabilities;
 - `sage/harness/context/` — immutable role instructions, bounded message envelopes,
   run capabilities, and repository tool context delivery;
-- `sage/harness/memory/` — rebuildable committed-source navigation: `indexing.py`
-  owns provenance/builds, `service.py` validated queries, `retrieval.py` Issue
+- `sage/harness/retrieval/` — rebuildable committed-source navigation: `indexing.py`
+  owns provenance/builds, `service.py` validated queries, `ranking.py` Issue
   ranking, and `session.py` run visibility; `bindings.py` infers source bindings;
 - `sage/harness/jev/` — one-shot file relevance filter and TypeSafe transport;
   keep filtering modes, thresholds and accounting explicit; no embedding backend exists;
@@ -126,12 +126,12 @@ orchestration may depend on agents and capabilities; agents may depend on typed
 capabilities and providers; domain modules depend only on standard-library,
 Pydantic, and other domain modules. Agents and orchestration must not import
 CLI, GitHub workflow, publication, or concrete Docker implementations.
-The harness must not import agents or orchestration. Memory is local lexical/graph
+The harness must not import agents or orchestration. Retrieval is local lexical/graph
 retrieval and must not depend on model providers, Jev, or model configuration.
 
 See `docs/architecture.md` for the complete ownership and extension map.
 Keep tests grouped by those responsibilities; extend shared graph fixtures in
-`tests/harness/memory/conftest.py` instead of importing another test module or
+`tests/harness/retrieval/conftest.py` instead of importing another test module or
 adding chronology-named suites such as `remaining` or `efficiency_gaps`.
 
 ## 4. New features

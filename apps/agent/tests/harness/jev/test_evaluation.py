@@ -49,15 +49,6 @@ def test_live_arm_requires_explicit_paid_acknowledgment(evaluator):
         asyncio.run(evaluator.solve_arm(SimpleNamespace(allow_paid_solve=False)))
 
 
-def test_legacy_embedding_costs_are_not_silently_omitted(evaluator, tmp_path):
-    (tmp_path / "usage.json").write_text('{"calls": [], "semantic_calls": []}')
-    (tmp_path / "agent-final.json").write_text('{"outcome": "completed"}')
-    (tmp_path / "workflow-timing.json").write_text('{"duration_ms": 100}')
-    (tmp_path / "legion-memory.json").write_text('{"embedding_usage": {"document_calls": 2}}')
-    with pytest.raises(ValueError, match="historical evaluator"):
-        evaluator.run_metrics({"run_dir": str(tmp_path)}, {})
-
-
 def test_exact_capture_replays_without_provider(evaluator, tmp_path):
     from sage.harness.jev.provider import build_request, SCORE_LEVELS
     from sage.domain.relevance import FileCandidate

@@ -10,6 +10,8 @@ ENV_FILE ?= .env
 ENV_PATH = $(if $(filter /%,$(ENV_FILE)),$(ENV_FILE),$(ROOT_DIR)/$(ENV_FILE))
 SANDBOX_IMAGE ?=
 REPO ?=
+INDEX_FILE ?=
+INDEX ?=
 MEMORY_FILE ?=
 MEMORY ?=
 ISSUE ?=
@@ -20,15 +22,16 @@ OUTPUT_DIR ?=
 ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
 REQUIRE_COMPLETED ?= false
-LEGION_SOLVE ?= false
+RETRIEVAL_SOLVE ?= false
 BASELINE_SOLVE ?= false
 DEBUG_FLAG :=
 
 .PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-baseline solve-debug \
+	retrieval-build retrieval-preview retrieval-solve \
 	legion-memory legion-retrieve legion-solve run-status run-test \
-	clean-runs clean-legion-memory
+	clean-runs clean-retrieval clean-legion-memory
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -54,21 +57,21 @@ help: ## Show the available commands and variables.
 		'  make actions-check     Validate action/workflow syntax and policy.' \
 		'  make github-doctor     Diagnose the installed GitHub workflow.' \
 		'  make graph             Print the compiled LangGraph Mermaid diagram.' \
-		'  make legion-memory REPO=/absolute/path/to/repo' \
-		'                        Build or update the local Legion Memory graph.' \
-		'  make legion-retrieve REPO=... ISSUE=... MEMORY=...' \
-		'                        Print Issue-relevant memories from a ready graph.' \
+		'  make retrieval-build REPO=/absolute/path/to/repo' \
+		'                        Build or update the local repository index.' \
+		'  make retrieval-preview REPO=... ISSUE=... INDEX=...' \
+		'                        Print Issue-relevant context from a ready index.' \
 		'  make clean-runs       Delete run contents while preserving .sage/runs.' \
-		'  make clean-legion-memory' \
-		'                        Delete graph contents while preserving .sage/legion-memory.' \
+		'  make clean-retrieval' \
+		'                        Delete index contents while preserving .sage/retrieval.' \
 		'' \
 		'Manual solve:' \
 		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
 		'  make solve REPO=/absolute/path/to/repo ISSUE=/absolute/path/to/issue.md' \
 		'  make solve-baseline REPO=... ISSUE=...' \
-		'                        Solve with repository tools, without Jev or Legion Memory.' \
-		'  make legion-solve REPO=... ISSUE=... MEMORY=...' \
-		'                        Solve with a build/update and Legion Memory retrieval.' \
+		'                        Solve with repository tools, without Jev or retrieval context.' \
+		'  make retrieval-solve REPO=... ISSUE=... INDEX=...' \
+		'                        Solve with repository indexing and Issue retrieval.' \
 		'  make solve-debug REPO=... ISSUE=...' \
 		'  make run-status RUN_DIR=/absolute/path/to/run' \
 		'  make run-test RUN_DIR=... TEST_COMMAND="python3 -m unittest -v"' \
@@ -363,14 +366,24 @@ graph: ## Print Mermaid generated from the shared LangGraph tool loop.
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" -q -s \
 		"$(AGENT_PROJECT)/tests/agents/test_loop.py::test_compiled_graph_renders_expected_mermaid"
 
-clean-runs clean-legion-memory:
+clean-runs:
 	@set -euo pipefail; \
-	directory="$(ROOT_DIR)/.sage/$(@:clean-%=%)"; \
+	directory="$(ROOT_DIR)/.sage/runs"; \
 	mkdir -p "$$directory"; \
 	find "$$directory" -mindepth 1 -delete; \
 	echo "Cleared $$directory (directory preserved)."
 
-legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optional.
+clean-retrieval:
+	@set -euo pipefail; \
+	directory="$(ROOT_DIR)/.sage/retrieval"; \
+	mkdir -p "$$directory"; \
+	find "$$directory" -mindepth 1 -delete; \
+	echo "Cleared $$directory (directory preserved)."
+
+clean-legion-memory: clean-retrieval ## Deprecated alias for clean-retrieval.
+	@echo "NOTE: clean-legion-memory is deprecated; use clean-retrieval."
+
+retrieval-build: ## Build or update the repository index for REPO; INDEX_FILE is optional.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
 	if [[ -z "$(REPO)" ]]; then \
@@ -378,26 +391,34 @@ legion-memory: ## Build or update Legion Memory for REPO; MEMORY_FILE is optiona
 		exit 1; \
 	fi; \
 	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
-	args=(memory build --repo "$(REPO)"); \
+	args=(retrieval build --repo "$(REPO)"); \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
-	if [[ -n "$(MEMORY_FILE)" ]]; then args+=(--memory-file "$(MEMORY_FILE)"); fi; \
-	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
+	if [[ -n "$(INDEX_FILE)" ]]; then args+=(--index-file "$(INDEX_FILE)"); fi; \
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-retrieval-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
 
-legion-retrieve: ## Retrieve Issue context; log Jev-retained files and discarded item counts.
+legion-memory: override INDEX_FILE := $(MEMORY_FILE)
+legion-memory: retrieval-build ## Deprecated alias for retrieval-build.
+	@echo "NOTE: legion-memory is deprecated; use retrieval-build."
+
+retrieval-preview: ## Preview Issue context; log Jev-retained files and discard counts.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
-	if [[ -z "$(REPO)" || -z "$(ISSUE)" || -z "$(MEMORY)" ]]; then \
-		echo "ERROR: REPO, ISSUE, and MEMORY are required." >&2; \
-		echo "Use: make legion-retrieve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
+	if [[ -z "$(REPO)" || -z "$(ISSUE)" || -z "$(INDEX)" ]]; then \
+		echo "ERROR: REPO, ISSUE, and INDEX are required." >&2; \
+		echo "Use: make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md INDEX=/absolute/graph.sqlite3" >&2; \
 		exit 1; \
 	fi; \
 	[[ -d "$(REPO)" ]] || { echo "ERROR: repository path does not exist: $(REPO)" >&2; exit 1; }; \
 	[[ -f "$(ISSUE)" ]] || { echo "ERROR: issue file does not exist: $(ISSUE)" >&2; exit 1; }; \
 	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
-	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-legion-memory-uv-cache \
-		uv run --project "$(AGENT_PROJECT)" sage memory retrieve \
-		--repo "$(REPO)" --issue-file "$(ISSUE)" --memory-file "$(MEMORY)"
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-retrieval-uv-cache \
+		uv run --project "$(AGENT_PROJECT)" sage retrieval retrieve \
+		--repo "$(REPO)" --issue-file "$(ISSUE)" --index-file "$(INDEX)"
+
+legion-retrieve: override INDEX := $(MEMORY)
+legion-retrieve: retrieval-preview ## Deprecated alias for retrieval-preview.
+	@echo "NOTE: legion-retrieve is deprecated; use retrieval-preview."
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \
@@ -434,16 +455,16 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	fi; \
 	image_args=(); \
 	if [[ -n "$(SANDBOX_IMAGE)" ]]; then image_args=(--sandbox-image "$(SANDBOX_IMAGE)"); fi; \
-	memory_args=(); \
+	index_args=(); \
 	if [[ "$(BASELINE_SOLVE)" == "true" ]]; then \
 		export SAGE_JEV_NAVIGATION_MODE=off; \
-	elif [[ "$(LEGION_SOLVE)" == "true" ]]; then \
-		if [[ -z "$(MEMORY)" ]]; then \
-			echo "ERROR: MEMORY is required for legion-solve." >&2; \
-			echo "Use: make legion-solve REPO=/absolute/repo ISSUE=/absolute/issue.md MEMORY=/absolute/graph.sqlite3" >&2; \
+	elif [[ "$(RETRIEVAL_SOLVE)" == "true" ]]; then \
+		if [[ -z "$(INDEX)" ]]; then \
+			echo "ERROR: INDEX is required for retrieval-solve." >&2; \
+			echo "Use: make retrieval-solve REPO=/absolute/repo ISSUE=/absolute/issue.md INDEX=/absolute/graph.sqlite3" >&2; \
 			exit 1; \
 		fi; \
-		memory_args=(--memory-file "$(MEMORY)"); \
+		index_args=(--index-file "$(INDEX)"); \
 	fi; \
 	set +e; \
 	uv run --project "$(AGENT_PROJECT)" sage solve \
@@ -451,7 +472,7 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 		--issue-file "$(ISSUE)" \
 		--base-ref "$(BASE_REF)" \
 		"$${image_args[@]}" \
-		"$${memory_args[@]}" \
+		"$${index_args[@]}" \
 		$(DEBUG_FLAG); \
 	status=$$?; \
 	set -e; \
@@ -467,13 +488,18 @@ solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make fa
 	exit "$$status"
 
 solve-baseline: override BASELINE_SOLVE := true
-solve-baseline: solve ## Run a live solve with tools only; disable Jev and Legion Memory.
+solve-baseline: solve ## Run a live solve with tools only; disable Jev and retrieval context.
 
 solve-debug: DEBUG_FLAG := --debug
 solve-debug: solve ## Run a live solve with debug logs and tracebacks.
 
-legion-solve: LEGION_SOLVE := true
-legion-solve: solve ## Run a live solve with Legion Memory enabled.
+retrieval-solve: override RETRIEVAL_SOLVE := true
+retrieval-solve: solve ## Run a live solve with repository retrieval enabled.
+
+legion-solve: override RETRIEVAL_SOLVE := true
+legion-solve: override INDEX := $(MEMORY)
+legion-solve: solve ## Deprecated alias for retrieval-solve.
+	@echo "NOTE: legion-solve is deprecated; use retrieval-solve."
 
 run-status: ## Validate and summarize a completed run directory.
 	@set -euo pipefail; \

@@ -70,8 +70,8 @@ def test_prepare_run_preserves_host_git_failure_messages(
         )
 
 
-@pytest.mark.parametrize("memory", [None, Path("graph.sqlite3")])
-def test_nested_request_is_rejected_before_cloning(tmp_path, memory):
+@pytest.mark.parametrize("index_file", [None, Path("graph.sqlite3")])
+def test_nested_request_is_rejected_before_cloning(tmp_path, index_file):
     source = tmp_path / "source"
     source.mkdir()
     _git(source, "init")
@@ -81,7 +81,7 @@ def test_nested_request_is_rejected_before_cloning(tmp_path, memory):
     issue.write_text("Fix it")
     runs = tmp_path / "runs"
     with pytest.raises(WorkspaceError, match="ancestor Git root"):
-        prepare_run(SolveRequest(repo_path=nested, issue_path=issue, memory_file=memory),
+        prepare_run(SolveRequest(repo_path=nested, issue_path=issue, index_file=index_file),
                     Settings(openai_api_key="test", runs_dir=runs))
     assert not runs.exists()
 

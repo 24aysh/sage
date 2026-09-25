@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 from sage.cli.output import _render_result
-from sage.composition import build_orchestrator, build_legion_memory_service
+from sage.composition import build_orchestrator, build_retrieval_service
 from sage.config import Settings
 from sage.domain.solve import SolveOutcome, SolveRequest
 from sage.errors import ConfigurationError
@@ -22,7 +22,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     solve_parser.add_argument("--issue-file", required=True, type=Path)
     solve_parser.add_argument("--base-ref", default="HEAD")
     solve_parser.add_argument("--sandbox-image")
-    solve_parser.add_argument("--memory-file", type=Path)
+    solve_parser.add_argument("--index-file", "--memory-file", dest="index_file", type=Path)
     solve_parser.add_argument("--debug", action="store_true")
     solve_parser.set_defaults(handler=_run_local_solve)
     return solve_parser
@@ -37,22 +37,22 @@ def _run_local_solve(arguments: argparse.Namespace) -> int:
         issue_path=arguments.issue_file.expanduser().resolve(),
         base_ref=arguments.base_ref,
         sandbox_image=arguments.sandbox_image,
-        memory_file=(
-            arguments.memory_file.expanduser().resolve()
-            if arguments.memory_file is not None
+        index_file=(
+            arguments.index_file.expanduser().resolve()
+            if arguments.index_file is not None
             else None
         ),
     )
     effective_image = request.sandbox_image or settings.sandbox_image
     _validate_prerequisites(request, settings, sandbox_image=effective_image)
     orchestrator = build_orchestrator(settings)
-    if request.memory_file is not None:
+    if request.index_file is not None:
         result = asyncio.run(
             solve_issue(
                 request,
                 orchestrator,
                 settings,
-                memory_service=build_legion_memory_service(),
+                retrieval_service=build_retrieval_service(),
                 on_interrupted=lambda partial: _render_result(partial, model=settings.solver_model),
             )
         )

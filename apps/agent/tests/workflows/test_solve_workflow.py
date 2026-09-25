@@ -8,17 +8,17 @@ import pytest
 from sage.config import Settings
 from sage.artifacts.store import RunArtifacts
 from sage.domain.usage import AgentTimingRecord, RunProvenance
-from sage.domain.memory import (
-    MemoryBuildResult,
-    MemoryBuildType,
-    MemoryRetrievalItem,
-    MemoryRetrievalOutcome,
-    MemoryRetrievalResult,
-    MemoryRetrievalStatus,
+from sage.domain.retrieval import (
+    IndexBuildResult,
+    IndexBuildType,
+    RetrievalItem,
+    RetrievalOutcome,
+    RetrievalResult,
+    RetrievalStatus,
 )
 from sage.domain.solve import PreparedRun, SolveRequest
 from sage.domain.solve import AgentFinalOutput, SolveOutcome
-from sage.errors import AgentRuntimeError, ArtifactError, LegionMemoryBuildError, WorkspaceError
+from sage.errors import AgentRuntimeError, ArtifactError, RetrievalBuildError, WorkspaceError
 from sage.workflows.solve import solve_issue
 
 
@@ -61,7 +61,7 @@ class FakeStore:
     def __init__(self) -> None:
         self.initialized = False
         self.persisted = False
-        self.memory_artifacts = []
+        self.retrieval_artifacts = []
 
     def initialize(self, **kwargs) -> None:
         self.initialized = True
@@ -69,8 +69,8 @@ class FakeStore:
     def write_result(self, **kwargs) -> None:
         self.persisted = True
 
-    def write_legion_memory(self, value) -> None:
-        self.memory_artifacts.append(value)
+    def write_retrieval(self, value) -> None:
+        self.retrieval_artifacts.append(value)
 
 
 class SuccessfulEngine:
@@ -337,14 +337,14 @@ def test_solve_issue_rejects_no_change_result_with_candidate(
     assert sandbox.stopped is True
 
 
-def test_memory_is_prepared_after_sandbox_start_before_solver(
+def test_retrieval_is_prepared_after_sandbox_start_before_solver(
     tmp_path: Path,
     monkeypatch,
     caplog,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    memory_file = tmp_path / "graph.sqlite3"
-    request = request.model_copy(update={"memory_file": memory_file})
+    index_file = tmp_path / "graph.sqlite3"
+    request = request.model_copy(update={"index_file": index_file})
     events: list[str] = []
     caplog.set_level(logging.INFO, logger="sage.workflows.solve")
 
@@ -352,28 +352,28 @@ def test_memory_is_prepared_after_sandbox_start_before_solver(
         events.append("workspace")
         return prepared
 
-    class MemoryService:
+    class RetrievalService:
 
         def build_or_update_graph_tool(self, **arguments):
             events.append("build")
             assert arguments["repo_root"] == prepared.workspace_dir
-            return _memory_build(memory_file, prepared.base_sha)
+            return _retrieval_build(index_file, prepared.base_sha)
 
         def retrieve_issue_context(self, **arguments):
             events.append("retrieve")
             assert arguments["issue_text"] == "Fix it."
-            return _memory_retrieval(memory_file, prepared.base_sha)
+            return _retrieval_retrieval(index_file, prepared.base_sha)
 
     class OrderedSandbox(FakeSandbox):
         def start(self) -> None:
             events.append("sandbox")
             super().start()
 
-    class MemoryEngine:
+    class RetrievalEngine:
         async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
             events.append("solver")
-            assert context.memory is not None
-            assert context.memory.initial_context == "base graph context"
+            assert context.retrieval is not None
+            assert context.retrieval.initial_context == "base graph context"
             return AgentFinalOutput(summary="Fixed.")
 
     monkeypatch.setattr("sage.workflows.solve.prepare_run", prepare)
@@ -383,52 +383,52 @@ def test_memory_is_prepared_after_sandbox_start_before_solver(
     result = asyncio.run(
         solve_issue(
             request,
-            MemoryEngine(),
+            RetrievalEngine(),
             settings,
             sandbox_factory=lambda *_: sandbox,
             repository_factory=lambda *_: FakeRepository(),
             artifacts=store,
-            memory_service=MemoryService(),  # type: ignore[arg-type]
+            retrieval_service=RetrievalService(),  # type: ignore[arg-type]
         )
     )
 
     assert events == ["workspace", "sandbox", "build", "retrieve", "solver"]
-    assert result.memory is not None
-    assert result.memory.status is MemoryRetrievalStatus.USED
-    assert result.memory.indexed_sha == prepared.base_sha
+    assert result.retrieval is not None
+    assert result.retrieval.status is RetrievalStatus.USED
+    assert result.retrieval.indexed_sha == prepared.base_sha
     assert result.workflow_duration_ms == store.duration_ms
-    assert len(store.memory_artifacts) == 2
-    assert store.memory_artifacts[-1].status is MemoryRetrievalStatus.USED
-    assert "Legion Memory: graph ready" in caplog.text
+    assert len(store.retrieval_artifacts) == 2
+    assert store.retrieval_artifacts[-1].status is RetrievalStatus.USED
+    assert "Repository retrieval: index ready" in caplog.text
     assert "Status: used" in caplog.text
     assert sandbox.stopped is True
 
 
-def test_no_match_keeps_memory_tools_available_without_prompt_context(
+def test_no_match_keeps_retrieval_tools_available_without_prompt_context(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    memory_file = tmp_path / "graph.sqlite3"
-    request = request.model_copy(update={"memory_file": memory_file})
+    index_file = tmp_path / "graph.sqlite3"
+    request = request.model_copy(update={"index_file": index_file})
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
 
-    class MemoryService:
+    class RetrievalService:
 
         def build_or_update_graph_tool(self, **_):
-            return _memory_build(memory_file, prepared.base_sha)
+            return _retrieval_build(index_file, prepared.base_sha)
 
         def retrieve_issue_context(self, **_):
-            return _memory_retrieval(
-                memory_file,
+            return _retrieval_retrieval(
+                index_file,
                 prepared.base_sha,
-                status=MemoryRetrievalStatus.NO_MATCH,
+                status=RetrievalStatus.NO_MATCH,
             )
 
     class NoMatchEngine:
         async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
-            assert context.memory is not None
-            assert context.memory.initial_context is None
+            assert context.retrieval is not None
+            assert context.retrieval.initial_context is None
             return AgentFinalOutput(summary="Fixed.")
 
     result = asyncio.run(
@@ -439,29 +439,29 @@ def test_no_match_keeps_memory_tools_available_without_prompt_context(
             sandbox_factory=lambda *_: FakeSandbox(),
             repository_factory=lambda *_: FakeRepository(),
             artifacts=FakeStore(),
-            memory_service=MemoryService(),  # type: ignore[arg-type]
+            retrieval_service=RetrievalService(),  # type: ignore[arg-type]
         )
     )
 
-    assert result.memory is not None
-    assert result.memory.status is MemoryRetrievalStatus.NO_MATCH
+    assert result.retrieval is not None
+    assert result.retrieval.status is RetrievalStatus.NO_MATCH
 
 
-def test_memory_build_failure_falls_back_and_unrelated_failure_propagates(
+def test_retrieval_build_failure_falls_back_and_unrelated_failure_propagates(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    request = request.model_copy(update={"memory_file": tmp_path / "graph.sqlite3"})
+    request = request.model_copy(update={"index_file": tmp_path / "graph.sqlite3"})
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
 
     class ExpectedFailureService:
         def build_or_update_graph_tool(self, **_):
-            raise LegionMemoryBuildError("database is unavailable")
+            raise RetrievalBuildError("database is unavailable")
 
     class FallbackEngine:
         async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
-            assert context.memory is None
+            assert context.retrieval is None
             return AgentFinalOutput(summary="Fixed.")
 
     result = asyncio.run(
@@ -472,16 +472,16 @@ def test_memory_build_failure_falls_back_and_unrelated_failure_propagates(
             sandbox_factory=lambda *_: FakeSandbox(),
             repository_factory=lambda *_: FakeRepository(),
             artifacts=FakeStore(),
-            memory_service=ExpectedFailureService(),  # type: ignore[arg-type]
+            retrieval_service=ExpectedFailureService(),  # type: ignore[arg-type]
         )
     )
-    assert result.memory is not None
-    assert result.memory.status is MemoryRetrievalStatus.UNAVAILABLE
-    assert result.memory.failure_category == "LegionMemoryBuildError"
+    assert result.retrieval is not None
+    assert result.retrieval.status is RetrievalStatus.UNAVAILABLE
+    assert result.retrieval.failure_category == "RetrievalBuildError"
 
     class MismatchedBaseService:
         def build_or_update_graph_tool(self, **_):
-            return _memory_build(tmp_path / "graph.sqlite3", "b" * 40)
+            return _retrieval_build(tmp_path / "graph.sqlite3", "b" * 40)
 
     mismatch = asyncio.run(
         solve_issue(
@@ -491,11 +491,11 @@ def test_memory_build_failure_falls_back_and_unrelated_failure_propagates(
             sandbox_factory=lambda *_: FakeSandbox(),
             repository_factory=lambda *_: FakeRepository(),
             artifacts=FakeStore(),
-            memory_service=MismatchedBaseService(),  # type: ignore[arg-type]
+            retrieval_service=MismatchedBaseService(),  # type: ignore[arg-type]
         )
     )
-    assert mismatch.memory is not None
-    assert mismatch.memory.status is MemoryRetrievalStatus.UNAVAILABLE
+    assert mismatch.retrieval is not None
+    assert mismatch.retrieval.status is RetrievalStatus.UNAVAILABLE
 
     class DefectiveService:
         def build_or_update_graph_tool(self, **_):
@@ -510,34 +510,34 @@ def test_memory_build_failure_falls_back_and_unrelated_failure_propagates(
                 sandbox_factory=lambda *_: FakeSandbox(),
                 repository_factory=lambda *_: FakeRepository(),
                 artifacts=FakeStore(),
-                memory_service=DefectiveService(),  # type: ignore[arg-type]
+                retrieval_service=DefectiveService(),  # type: ignore[arg-type]
             )
         )
 
 
 @pytest.mark.parametrize("error_type", [AgentRuntimeError, asyncio.CancelledError])
-def test_memory_session_closes_when_solver_fails(
+def test_retrieval_session_closes_when_solver_fails(
     tmp_path: Path,
     monkeypatch,
     error_type,
 ) -> None:
     request, prepared, settings = _run_values(tmp_path)
-    memory_file = tmp_path / "graph.sqlite3"
-    request = request.model_copy(update={"memory_file": memory_file})
+    index_file = tmp_path / "graph.sqlite3"
+    request = request.model_copy(update={"index_file": index_file})
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
     captured = []
 
-    class MemoryService:
+    class RetrievalService:
 
         def build_or_update_graph_tool(self, **_):
-            return _memory_build(memory_file, prepared.base_sha)
+            return _retrieval_build(index_file, prepared.base_sha)
 
         def retrieve_issue_context(self, **_):
-            return _memory_retrieval(memory_file, prepared.base_sha)
+            return _retrieval_retrieval(index_file, prepared.base_sha)
 
     class CapturingFailureEngine:
         async def solve(self, *, issue_text: str, context) -> AgentFinalOutput:
-            captured.append(context.memory)
+            captured.append(context.retrieval)
             raise error_type("model failed")
 
     with pytest.raises(error_type, match="model failed"):
@@ -549,7 +549,7 @@ def test_memory_session_closes_when_solver_fails(
                 sandbox_factory=lambda *_: FakeSandbox(),
                 repository_factory=lambda *_: FakeRepository(),
                 artifacts=RunArtifacts(prepared.run_dir),
-                memory_service=MemoryService(),  # type: ignore[arg-type]
+                retrieval_service=RetrievalService(),  # type: ignore[arg-type]
             )
         )
 
@@ -557,12 +557,12 @@ def test_memory_session_closes_when_solver_fails(
 
 
 @pytest.mark.parametrize("with_memory", [False, True])
-def test_preflight_failure_stops_both_modes_before_memory_or_model(tmp_path, monkeypatch, with_memory):
+def test_preflight_failure_stops_both_modes_before_retrieval_or_model(tmp_path, monkeypatch, with_memory):
     from sage.config import ConfiguredVerificationCommand
     from sage.sandbox.base import CommandResult
     request, prepared, settings = _run_values(tmp_path)
     if with_memory:
-        request = request.model_copy(update={"memory_file": tmp_path / "graph.sqlite3"})
+        request = request.model_copy(update={"index_file": tmp_path / "graph.sqlite3"})
     settings = settings.model_copy(update={"verification_preflight": True,
         "verification_commands": (ConfiguredVerificationCommand(id="tests", command="python3 -m pytest"),)})
     monkeypatch.setattr("sage.workflows.solve.prepare_run", lambda *_: prepared)
@@ -574,13 +574,13 @@ def test_preflight_failure_stops_both_modes_before_memory_or_model(tmp_path, mon
             self.report = report
     class MustNotRun:
         def build_or_update_graph_tool(self, **kwargs):
-            raise AssertionError("Memory must not build on failed preflight")
+            raise AssertionError("Retrieval must not build on failed preflight")
         async def solve(self, **kwargs):
             raise AssertionError("Models must not run on failed preflight")
     sandbox, store = MissingPython(), Store()
     with pytest.raises(WorkspaceError, match="before model calls"):
         asyncio.run(solve_issue(request, MustNotRun(), settings,
-            sandbox_factory=lambda *_: sandbox, artifacts=store, memory_service=MustNotRun()))
+            sandbox_factory=lambda *_: sandbox, artifacts=store, retrieval_service=MustNotRun()))
     assert sandbox.stopped
     assert store.report["status"] == "unavailable"
     assert store.report["model_calls_started"] is False
@@ -603,10 +603,10 @@ def _run_values(tmp_path: Path) -> tuple[SolveRequest, PreparedRun, Settings]:
     return request, prepared, Settings(openai_api_key="test", runs_dir=tmp_path)
 
 
-def _memory_build(memory_file: Path, indexed_sha: str) -> MemoryBuildResult:
-    return MemoryBuildResult(
-        build_type=MemoryBuildType.FULL,
-        memory_file=memory_file,
+def _retrieval_build(index_file: Path, indexed_sha: str) -> IndexBuildResult:
+    return IndexBuildResult(
+        build_type=IndexBuildType.FULL,
+        index_file=index_file,
         repository_id="repository-id",
         indexed_sha=indexed_sha,
         schema_version=1,
@@ -622,22 +622,22 @@ def _memory_build(memory_file: Path, indexed_sha: str) -> MemoryBuildResult:
     )
 
 
-def _memory_retrieval(
-    memory_file: Path,
+def _retrieval_retrieval(
+    index_file: Path,
     indexed_sha: str,
     *,
-    status: MemoryRetrievalStatus = MemoryRetrievalStatus.USED,
-) -> MemoryRetrievalResult:
-    used = status is MemoryRetrievalStatus.USED
-    return MemoryRetrievalResult(
+    status: RetrievalStatus = RetrievalStatus.USED,
+) -> RetrievalResult:
+    used = status is RetrievalStatus.USED
+    return RetrievalResult(
         status=status,
         outcome=(
-            MemoryRetrievalOutcome.USEFUL_CONTEXT
+            RetrievalOutcome.USEFUL_CONTEXT
             if used
-            else MemoryRetrievalOutcome.NO_LEXICAL_CANDIDATES
+            else RetrievalOutcome.NO_LEXICAL_CANDIDATES
         ),
-        summary="Retrieved memory." if used else "No memory matched.",
-        memory_file=memory_file,
+        summary="Retrieved context." if used else "No retrieval matched.",
+        index_file=index_file,
         repository_id="repository-id",
         indexed_sha=indexed_sha,
         search_modes=("fts",),
@@ -647,7 +647,7 @@ def _memory_retrieval(
         context_chars=18 if used else 0,
         items=(
             (
-                MemoryRetrievalItem(
+                RetrievalItem(
                     rank=1,
                     kind="Function",
                     name="helper",

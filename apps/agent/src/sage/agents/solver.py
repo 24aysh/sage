@@ -215,7 +215,7 @@ def build_solver_tools(
     *,
     command_recorder: Callable[[str], None] | None = None,
 ) -> list[BaseTool]:
-    """Build the Solver's structured repository and memory tool set."""
+    """Build the Solver's repository and structural-retrieval tool set."""
 
     @tool
     async def save_plan(
@@ -299,8 +299,8 @@ def build_solver_tools(
             new_text=new_text,
             expected_occurrences=expected_occurrences,
         )
-        if context.memory is not None:
-            context.memory.invalidate(path)
+        if context.retrieval is not None:
+            context.retrieval.invalidate(path)
         return result
 
     @tool
@@ -317,8 +317,8 @@ def build_solver_tools(
             content=content,
             mode=mode,
         )
-        if context.memory is not None:
-            context.memory.invalidate(path)
+        if context.retrieval is not None:
+            context.retrieval.invalidate(path)
         return result
 
     @tool
@@ -327,8 +327,8 @@ def build_solver_tools(
 
         plans.require_implementable()
         result = context.repository.delete_file(path=path)
-        if context.memory is not None:
-            context.memory.invalidate(path)
+        if context.retrieval is not None:
+            context.retrieval.invalidate(path)
         return result
 
     @tool
@@ -340,8 +340,8 @@ def build_solver_tools(
             source_path=source_path,
             destination_path=destination_path,
         )
-        if context.memory is not None:
-            context.memory.invalidate(source_path, destination_path)
+        if context.retrieval is not None:
+            context.retrieval.invalidate(source_path, destination_path)
         return result
 
     @tool

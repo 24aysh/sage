@@ -6,10 +6,10 @@ import textwrap
 
 import pytest
 
-from sage.cli import memory as cli_memory, solve
+from sage.cli import retrieval as cli_retrieval, solve
 from sage.cli.app import _build_parser
 from sage.config import Settings
-from sage.domain.memory import LegionMemoryRunArtifact, MemoryRetrievalStatus
+from sage.domain.retrieval import RetrievalRunArtifact, RetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveResult
 from sage.domain.usage import AgentToolCallRecord, AttemptKind, ModelCallRecord, ModelRole, RunProvenance
 
@@ -35,12 +35,12 @@ def test_local_solve_arguments_remain_compatible(tmp_path: Path) -> None:
     assert arguments.issue_file == tmp_path / "issue.md"
     assert arguments.base_ref == "main"
     assert arguments.sandbox_image == "custom:test"
-    assert arguments.memory_file is None
+    assert arguments.index_file is None
     assert arguments.debug is True
 
 
-def test_local_solve_accepts_explicit_memory_file(tmp_path: Path) -> None:
-    memory_file = tmp_path / "graph.sqlite3"
+def test_local_solve_accepts_explicit_index_file(tmp_path: Path) -> None:
+    index_file = tmp_path / "graph.sqlite3"
     arguments = _build_parser().parse_args(
         [
             "solve",
@@ -48,12 +48,12 @@ def test_local_solve_accepts_explicit_memory_file(tmp_path: Path) -> None:
             str(tmp_path / "repo"),
             "--issue-file",
             str(tmp_path / "issue.md"),
-            "--memory-file",
-            str(memory_file),
+            "--index-file",
+            str(index_file),
         ]
     )
 
-    assert arguments.memory_file == memory_file
+    assert arguments.index_file == index_file
 
 
 def test_non_publishable_partial_diff_returns_exit_two(
@@ -97,7 +97,7 @@ def test_non_publishable_partial_diff_returns_exit_two(
     assert solve._run_local_solve(arguments) == 2
 
 
-def test_memory_solve_injects_service_and_reports_comparable_usage(
+def test_retrieval_solve_injects_service_and_reports_comparable_usage(
     monkeypatch,
     tmp_path: Path,
     capsys,
@@ -107,12 +107,12 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
         gemini_api_key="gemini-test",
         google_model_context_approved=True,
     )
-    memory_file = tmp_path / "graph.sqlite3"
+    index_file = tmp_path / "graph.sqlite3"
     service = object()
-    memory = LegionMemoryRunArtifact(
-        requested_memory_file=memory_file,
-        resolved_memory_file=memory_file,
-        status=MemoryRetrievalStatus.NO_MATCH,
+    retrieval = RetrievalRunArtifact(
+        requested_index_file=index_file,
+        resolved_index_file=index_file,
+        status=RetrievalStatus.NO_MATCH,
         fallback="normal repository inspection",
     )
     provenance = RunProvenance(
@@ -160,23 +160,23 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
         workspace_dir=tmp_path / "repo",
         outcome=SolveOutcome.NO_CHANGE,
         provenance=provenance,
-        memory=memory,
+        retrieval=retrieval,
     )
     monkeypatch.setattr(solve.Settings, "from_env", lambda: settings)
     monkeypatch.setattr(solve, "_validate_prerequisites", lambda *args, **kwargs: None)
     monkeypatch.setattr(solve, "build_orchestrator", lambda value: object())
-    monkeypatch.setattr(solve, "build_legion_memory_service", lambda: service)
+    monkeypatch.setattr(solve, "build_retrieval_service", lambda: service)
 
     async def fake_solve(
         request,
         orchestrator,
         effective_settings,
         *,
-        memory_service,
+        retrieval_service,
         on_interrupted,
     ):
-        assert request.memory_file == memory_file
-        assert memory_service is service
+        assert request.index_file == index_file
+        assert retrieval_service is service
         return result
 
     monkeypatch.setattr(solve, "solve_issue", fake_solve)
@@ -187,14 +187,14 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
             str(tmp_path / "repo"),
             "--issue-file",
             str(tmp_path / "issue.md"),
-            "--memory-file",
-            str(memory_file),
+            "--index-file",
+            str(index_file),
         ]
     )
 
     assert solve._run_local_solve(arguments) == 2
     output = capsys.readouterr().out
-    assert "Legion Memory:" in output
+    assert "Repository retrieval:" in output
     assert "Status: no_match" in output
     assert "Total tool calls: 2" in output
     assert "Tools: read_file=2" in output
@@ -202,8 +202,8 @@ def test_memory_solve_injects_service_and_reports_comparable_usage(
     assert "Total tokens: 25" in output
 
 
-@pytest.mark.parametrize("with_memory", [False, True])
-def test_sigint_prints_partial_run_summary_and_preserves_cleanup(tmp_path, with_memory):
+@pytest.mark.parametrize("with_retrieval", [False, True])
+def test_sigint_prints_partial_run_summary_and_preserves_cleanup(tmp_path, with_retrieval):
     script = textwrap.dedent('''
         import asyncio, signal, sys
         from pathlib import Path
@@ -249,15 +249,15 @@ def test_sigint_prints_partial_run_summary_and_preserves_cleanup(tmp_path, with_
         cli.Settings.from_env = lambda: settings
         cli._validate_prerequisites = lambda *args, **kwargs: None
         cli.build_orchestrator = lambda settings: Engine()
-        cli._memory_service = lambda arguments: None
+        cli._retrieval_service = lambda arguments: None
         cli.solve_issue = lambda *args, **kwargs: workflow.solve_issue(*args, **kwargs,
             sandbox_factory=lambda *args: Sandbox(), repository_factory=lambda *args: object())
         arguments = ["solve", "--repo", str(root), "--issue-file", str(issue)]
-        if sys.argv[2] == "memory":
-            arguments += ["--memory-file", str(root / "graph.sqlite3")]
+        if sys.argv[2] == "retrieval":
+            arguments += ["--index-file", str(root / "graph.sqlite3")]
         sys.exit(main(arguments))
     ''')
-    result = subprocess.run([sys.executable, "-c", script, str(tmp_path), "memory" if with_memory else "plain"],
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path), "retrieval" if with_retrieval else "plain"],
         capture_output=True, text=True, timeout=20, env={**os.environ, "LANGSMITH_TRACING": "false"})
     assert result.returncode == 1, result.stderr
     assert "Solve interrupted" in result.stdout

@@ -24,10 +24,10 @@ from sage.domain.review import (
     ReviewResult,
     ReviewVerdict,
 )
-from sage.domain.memory import (
-    MemoryRetrievalOutcome,
-    MemoryRetrievalResult,
-    MemoryRetrievalStatus,
+from sage.domain.retrieval import (
+    RetrievalOutcome,
+    RetrievalResult,
+    RetrievalStatus,
 )
 from sage.domain.solve import PreparedRun, SolveOutcome
 from sage.domain.solver import SolverFinalResult, SolverOutcome
@@ -36,8 +36,8 @@ from sage.harness.context.instructions import RoleInstructions
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.base import ProviderResult
 from sage.providers.calls import ModelCalls
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.session import MemorySession
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.session import RetrievalSession
 from sage.repository.service import Repository
 from sage.sandbox.base import CommandResult
 
@@ -263,7 +263,7 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
     assert "Admission:" not in caplog.text
 
 
-def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path) -> None:
+def test_solver_uses_retrieval_locator_then_verifies_current_source(tmp_path: Path) -> None:
     workspace, base_sha = _repository(tmp_path)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -274,19 +274,19 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
         run_deadline_seconds=600,
         finalization_reserve_seconds=60,
     )
-    service = LegionMemoryService(data_root=tmp_path / "memory")
+    service = RepositoryRetrievalService(data_root=tmp_path / "retrieval")
     build = service.build_or_update_graph_tool(repo_root=workspace)
-    memory = MemorySession(
+    retrieval = RetrievalSession(
         service=service,
         repo_root=workspace,
-        requested_memory_file=build.memory_file,
-        memory_file=build.memory_file,
+        requested_index_file=build.index_file,
+        index_file=build.index_file,
         build=build,
-        retrieval=MemoryRetrievalResult(
-            status=MemoryRetrievalStatus.USED,
-            outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+        retrieval=RetrievalResult(
+            status=RetrievalStatus.USED,
+            outcome=RetrievalOutcome.USEFUL_CONTEXT,
             summary="Found app.py.",
-            memory_file=build.memory_file,
+            index_file=build.index_file,
             repository_id=build.repository_id,
             indexed_sha=base_sha,
             search_modes=("exact",),
@@ -303,16 +303,16 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
                 _tool(
                     "search_nodes_tool",
                     {"query": "app.py", "limit": 5},
-                    "memory",
+                    "retrieval",
                 ),
                 _tool("read_file", {"path": "app.py"}, "source"),
                 _tool("save_plan", _plan_args(), "plan"),
-                _final("inspected memory and current source"),
+                _final("inspected retrieval and current source"),
             ]
         ]
     )
     prepared = PreparedRun(
-        run_id="memory-solver-test",
+        run_id="retrieval-solver-test",
         source_repo=workspace,
         run_dir=run_dir,
         workspace_dir=workspace,
@@ -330,7 +330,7 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
         repository=repository,
         settings=settings,
         artifacts=artifacts,
-        memory=memory,
+            retrieval=retrieval,
     )
     calls = ModelCalls(
         settings=settings,
@@ -341,8 +341,8 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
         SolverAgent(settings=settings, model=model).run(  # type: ignore[arg-type]
             stage="solver",
             message=(
-                "<untrusted-legion-memory>\nFile app.py at app.py:1-1\n"
-                "</untrusted-legion-memory>"
+                    "<untrusted-retrieval-context>\nFile app.py at app.py:1-1\n"
+                    "</untrusted-retrieval-context>"
             ),
             context=context,
             plans=SolverPlanSession(artifacts),
@@ -357,7 +357,7 @@ def test_solver_uses_memory_locator_then_verifies_current_source(tmp_path: Path)
         "read_file",
         "save_plan",
     ]
-    assert memory.tool_calls[0].tool_name == "search_nodes_tool"
+    assert retrieval.tool_calls[0].tool_name == "search_nodes_tool"
 
 
 @pytest.mark.parametrize("error", [RuntimeError("defect"), asyncio.CancelledError()])
@@ -378,7 +378,7 @@ def test_relevance_filter_closes_on_error_and_cancellation(tmp_path, error):
         repository=Repository(workspace_root=workspace, sandbox=LocalSandbox(workspace), settings=settings))
     orchestrator = SolveOrchestrator(solver=SimpleNamespace(run=fail), reviewer=None, reviewer_provider=None,
                                     relevance_filter_factory=lambda run_id: SimpleNamespace(aclose=close, apply=fail))
-    context = replace(context, memory=SimpleNamespace(retrieval=None))
+    context = replace(context, retrieval=SimpleNamespace(retrieval=None))
     with pytest.raises(type(error)):
         asyncio.run(orchestrator.solve(issue_text="Fix it", context=context))
     assert closed == [True]

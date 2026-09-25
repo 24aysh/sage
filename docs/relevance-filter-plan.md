@@ -9,7 +9,7 @@
 2. Create `feat/jev-relevance-filter` before changing Jev's pipeline. Carry the
    language improvements into that branch without committing user work.
 3. Replace tool-triggered excerpt/action navigation with a single pre-context
-   relevance filter shared by solve and `make legion-retrieve`.
+   relevance filter shared by solve and `make retrieval-preview`.
 4. Update configuration, artifacts, logging, evaluation, documentation, and tests;
    run the focused suites followed by canonical offline checks. Do not commit or
    make paid API calls without a separate request.
@@ -54,7 +54,7 @@ remain Solver-controlled capabilities, not a Jev file-access allowlist.
 - Enforce bounded candidates, Issue text, request bytes, response bytes, and time.
   Do not classify a budget omission as a model rejection.
 - When filtering is on, timeout/invalid output/insufficient budget withholds
-  unjudged memory, logs a visible fallback, and lets normal source tools continue.
+  unjudged retrieval, logs a visible fallback, and lets normal source tools continue.
   All-rejected is a valid empty context, distinct from unavailable filtering.
 - Do not refill with rejected results to meet a context-size target. Re-render
   accepted items and remove relationship references to rejected candidates.
@@ -85,8 +85,9 @@ timeouts, cancellation, off/shadow modes, no tool-loop inference, repair reuse,
 CLI/solve parity, deterministic rendering/budgets, and per-run token/time records.
 Keep language changes separate from Jev changes when commits are later requested.
 
-Status: implemented. Language support is committed on `main` (`1898810`);
-`feat/jev-relevance-filter` includes that commit plus the pipeline replacement.
+Status: implemented. The production owner is now `harness/retrieval/`; the
+primary commands are `retrieval-build`, `retrieval-preview`, and
+`retrieval-solve`. The former `legion-*` commands are compatibility aliases.
 
 Verification completed:
 

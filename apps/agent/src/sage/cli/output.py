@@ -1,11 +1,11 @@
-"""Stable terminal rendering shared by solve and memory commands."""
+"""Stable terminal rendering shared by solve and retrieval commands."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from sage.domain.memory import MemoryRetrievalResult, MemoryRetrievalStatus
+from sage.domain.retrieval import RetrievalResult, RetrievalStatus
 from sage.domain.solve import SolveOutcome, SolveResult
 
 
@@ -48,7 +48,7 @@ def _render_result(result: SolveResult, *, model: str) -> None:
         print("Run artifacts:")
         print(f"  {result.run_dir}")
 
-    _render_solve_memory_summary(result)
+    _render_solve_retrieval_summary(result)
     _render_solve_usage_summary(result)
     _render_solve_timing_summary(result)
     if result.outcome is SolveOutcome.INTERRUPTED:
@@ -74,29 +74,29 @@ def _render_solve_timing_summary(result: SolveResult) -> None:
     print(f"{label}: {duration / 1000:.2f} seconds" if duration is not None else f"{label}: unavailable")
 
 
-def _render_solve_memory_summary(result: SolveResult) -> None:
-    memory = result.memory
-    if memory is None:
+def _render_solve_retrieval_summary(result: SolveResult) -> None:
+    retrieval = result.retrieval
+    if retrieval is None:
         return
     print()
-    print("Legion Memory:")
-    print(f"  Status: {memory.status.value}")
+    print("Repository retrieval:")
+    print(f"  Status: {retrieval.status.value}")
     print(
         "  Initial retrieval: "
-        f"{memory.retrieval.returned if memory.retrieval is not None else 0} memories"
+        f"{retrieval.retrieval.returned if retrieval.retrieval is not None else 0} items"
     )
-    print(f"  Native memory tool calls: {len(memory.tool_calls)}")
-    exposure = memory.exposure
+    print(f"  Graph tool calls: {len(retrieval.tool_calls)}")
+    exposure = retrieval.exposure
     print("  Exposure: " + ", ".join(f"{name}={'yes' if getattr(exposure, name) else 'no'}"
           for name in ("available", "retrieved", "exposed", "queried", "read_enriched")))
-    print(f"  Memory characters (across {exposure.sessions} histories): initial={exposure.initial_context_chars}, "
+    print(f"  Retrieval characters (across {exposure.sessions} histories): initial={exposure.initial_context_chars}, "
           f"enrichment={exposure.enrichment_chars}, graph responses={exposure.graph_response_chars}")
     print(f"  Source-read characters: {exposure.source_read_chars}; schema characters per binding summed: {exposure.tool_schema_chars}")
-    print(f"  Memory preflight: {exposure.preflight_duration_ms:.2f} ms")
+    print(f"  Retrieval preflight: {exposure.preflight_duration_ms:.2f} ms")
     print(f"  Retrieved paths later read: {len(exposure.retrieved_paths_read)} (overlap, not causal use)")
-    print(f"  Read/search enrichments: {sum(e.status == 'used' for e in memory.enrichments)} used / {len(memory.enrichments)} attempted")
-    print(f"  Fallback: {memory.fallback}")
-    print(f"  Artifact: {result.run_dir / 'legion-memory.json'}")
+    print(f"  Read/search enrichments: {sum(e.status == 'used' for e in retrieval.enrichments)} used / {len(retrieval.enrichments)} attempted")
+    print(f"  Fallback: {retrieval.fallback}")
+    print(f"  Artifact: {result.run_dir / 'repository-retrieval.json'}")
 
 
 def _render_solve_usage_summary(result: SolveResult) -> None:
@@ -138,18 +138,18 @@ def _render_solve_usage_summary(result: SolveResult) -> None:
         print(f"  Token usage incomplete: {missing} call(s) have unreported usage; totals include known tokens only.")
 
 
-def _render_memory_retrieval(
-    result: MemoryRetrievalResult,
+def _render_retrieval(
+    result: RetrievalResult,
     *,
     context_file: Path | None = None,
 ) -> None:
     """Render stable retrieval logs without trusting database text as terminal data."""
 
-    print(f"Legion Memory retrieval: {result.status.value}")
-    print(f"  Memory used: {'yes' if result.status is MemoryRetrievalStatus.USED else 'no'}")
+    print(f"Repository retrieval: {result.status.value}")
+    print(f"  Context used: {'yes' if result.status is RetrievalStatus.USED else 'no'}")
     print(f"  Outcome: {result.outcome.value}")
     print(f"  Summary: {_safe_log_value(result.summary, 500)}")
-    print(f"  Memory file: {result.memory_file}")
+    print(f"  Index file: {result.index_file}")
     print(f"  Indexed SHA: {result.indexed_sha or 'unavailable'}")
     print(f"  Search modes: {', '.join(result.search_modes) or 'none'}")
     print(
@@ -187,7 +187,7 @@ def _render_memory_retrieval(
         print(f"  Context file: {context_file}")
     print(f"  Duration: {result.duration_ms:.2f} ms")
     if result.items:
-        print("  Retrieved memories:")
+        print("  Retrieved items:")
         for item in result.items:
             location = (
                 f"{_safe_log_value(item.file_path, 300)}:"

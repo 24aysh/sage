@@ -111,12 +111,12 @@ def test_github_solve_wires_runner_paths_and_status_id(
     monkeypatch.setenv("OPENAI_API_KEY", "model-token")
     monkeypatch.setenv("GEMINI_API_KEY", "reviewer-token")
     monkeypatch.setattr(github, "RestGitHubClient", lambda settings: fake_client)
-    memory_service = object()
+    retrieval_service = object()
 
-    def build_memory_service():
-        return memory_service
+    def build_retrieval_service():
+        return retrieval_service
 
-    monkeypatch.setattr(github, "build_legion_memory_service", build_memory_service)
+    monkeypatch.setattr(github, "build_retrieval_service", build_retrieval_service)
 
     async def fake_run(invocation, client, settings, **kwargs):
         assert client is fake_client
@@ -127,7 +127,7 @@ def test_github_solve_wires_runner_paths_and_status_id(
         assert kwargs["status_comment_id"] == 7001
         loaded = kwargs["settings_factory"]()
         assert loaded.openai_api_key == "model-token"
-        assert kwargs["memory_service_factory"]() is memory_service
+        assert kwargs["retrieval_service_factory"]() is retrieval_service
         return GitHubWorkflowResult(outcome=GitHubWorkflowOutcome.NO_CHANGES)
 
     monkeypatch.setattr(github, "run_github_issue", fake_run)

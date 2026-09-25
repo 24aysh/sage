@@ -10,9 +10,9 @@ from sage.harness.context.packets import build_review_message, prepare_solver_me
 
 def test_repair_resets_visibility_and_adds_only_the_fresh_history_packet():
     calls = []
-    memory = SimpleNamespace(begin_session=lambda **kw: calls.append(kw) or "Unchanged source locator")
+    retrieval = SimpleNamespace(begin_session=lambda **kw: calls.append(kw) or "Unchanged source locator")
     navigation = SimpleNamespace(begin_session=lambda **kw: calls.append(kw))
-    context = SimpleNamespace(memory=memory, navigation=navigation,
+    context = SimpleNamespace(retrieval=retrieval, navigation=navigation,
                               settings=SimpleNamespace(solver_input_chars=1000, repair_input_chars=200))
     assert prepare_solver_message("Initial packet", stage="solver", context=context) == "Initial packet"
     repaired = prepare_solver_message("Repair evidence", stage="solver-repair", context=context)
@@ -22,7 +22,7 @@ def test_repair_resets_visibility_and_adds_only_the_fresh_history_packet():
 
 
 def test_solver_cap_checks_context_after_repair_enrichment():
-    context = SimpleNamespace(memory=SimpleNamespace(begin_session=lambda **kw: "x" * 100),
+    context = SimpleNamespace(retrieval=SimpleNamespace(begin_session=lambda **kw: "x" * 100),
         navigation=None, settings=SimpleNamespace(solver_input_chars=200, repair_input_chars=100))
     with pytest.raises(AgentRuntimeError, match="safe input cap"):
         prepare_solver_message("Repair evidence", stage="solver-repair", context=context)

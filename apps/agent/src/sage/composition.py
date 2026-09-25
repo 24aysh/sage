@@ -8,16 +8,16 @@ from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent
 from sage.config import JevSettings, Settings
 from sage.errors import ConfigurationError
-from sage.harness.memory.service import LegionMemoryService
+from sage.harness.retrieval.service import RepositoryRetrievalService
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.google import GoogleProvider
 from sage.harness.jev.provider import TypeSafeProvider
 from sage.harness.jev.filter import RelevanceFilter
 
 
-def build_legion_memory_service(*, data_root: Path | None = None) -> LegionMemoryService:
+def build_retrieval_service(*, data_root: Path | None = None) -> RepositoryRetrievalService:
     """Construct the local, deterministic graph capability; no model credentials."""
-    return LegionMemoryService(data_root=data_root)
+    return RepositoryRetrievalService(data_root=data_root)
 
 
 def build_orchestrator(settings: Settings) -> SolveOrchestrator:
