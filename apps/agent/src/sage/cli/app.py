@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
-from sage.cli import github, memory, solve
+from sage.cli import github, retrieval, solve
 from sage.errors import SageError
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     solve.add_parser(subparsers)
-    memory.add_parser(subparsers)
+    retrieval.add_parser(subparsers)
     github.add_parser(subparsers)
     return parser
 
