@@ -11,13 +11,13 @@ There is one solve architecture and no runtime selector.
 CLI / trusted GitHub Action
   -> workflow: accept Issue and base SHA, prepare clean checkout
   -> start isolated sandbox; optional verification-tooling preflight
-  -> optional memory: index accepted HEAD, retrieve bounded navigation context
+  -> optional retrieval: index accepted HEAD, retrieve bounded navigation context
   -> orchestrator:
        Solver session -> Git candidate -> verification -> Reviewer
             ^                                               |
             +------------- bounded fresh-session repair ----+
   -> final base-SHA and diff-digest guard
-  -> persist terminal evidence; close sandbox and memory session
+  -> persist terminal evidence; close sandbox and retrieval session
   -> GitHub only: creation-only branch and draft PR
 ```
 
@@ -31,9 +31,9 @@ Three different facts must stay distinct:
 | --- | --- | --- |
 | What should change | Issue and persisted Solver plan | Solver, verifier, Reviewer |
 | What actually changed | Git at the accepted base SHA | Candidate guard, artifacts, publication |
-| Where to look | Current source reads and optional base-snapshot memory | Solver |
+| Where to look | Current source reads and optional base-snapshot retrieval | Solver |
 
-Memory cannot satisfy acceptance criteria, grant mutation authority, or replace
+Retrieved context cannot satisfy acceptance criteria, grant mutation authority, or replace
 current source. Model summaries cannot define a diff or changed-file list.
 
 ## The harness: one evidence lifecycle
@@ -46,7 +46,7 @@ a single question to answer:
 | --- | --- | --- |
 | Task and policy | What must this role accomplish and obey? | Issue, `agents/prompts.py`, `harness/context/instructions.py` |
 | Context | What evidence belongs in this invocation? | `harness/context/packets.py`, `run.py`, `tools.py` |
-| Memory | Where should I inspect, and why? | `harness/memory/` |
+| Retrieval | Where should I inspect, and why? | `harness/retrieval/` |
 | Optional judgment | Which retrieved files belong in initial context? | `harness/jev/` |
 | Current facts | What does the candidate actually contain? | `repository/` |
 | Decision and proof | Is the candidate verified, reviewed, and safe to publish? | `orchestration/`, `verification/`, `artifacts/` |
@@ -86,7 +86,7 @@ removed. `harness/jev/filter.py` groups the deterministic shortlist by file;
 No inference runs inside repository tools, and Jev cannot request reads, searches,
 graph queries, edits, verification, review, or publication.
 
-Memory still uses exact/FTS seeds and bounded graph expansion. With Jev enabled,
+Retrieval uses exact/FTS seeds and bounded graph expansion. With Jev enabled,
 candidate metadata is retained within a 50,000-character staging budget (normally
 at most 12 items), then accepted items are rendered using the existing final
 context limit: 4,000 characters for solve, 12,000 for standalone retrieval.
@@ -111,7 +111,7 @@ mode ignores retired settings so `solve-baseline` remains usable.
 
 One request uses the existing two-second maximum timeout, no retries, strict
 answer IDs/distributions/score validation, and actual API token accounting.
-Empty/unavailable memory skips inference. Timeout, invalid response, oversized
+Empty/unavailable retrieval skips inference. Timeout, invalid response, oversized
 input, and insufficient time withhold unjudged context in `on` mode, with a
 visible reason; they are not reported as model rejections. All-rejected is a
 valid empty selection. Ordinary source inspection remains available in both
@@ -122,7 +122,7 @@ generative call. Semantic usage remains in `usage.json`; solver time includes
 Jev, with its duration separately available for subtraction and Ctrl-C reporting.
 Repair histories reuse accepted, unchanged locators without another Jev call.
 Automatic read/search graph enrichment is disabled in `on` mode so it cannot
-immediately reintroduce discarded memory. Explicit Solver-requested source and
+immediately reintroduce discarded context. Explicit Solver-requested source and
 graph tools remain capabilities, not a file-access allowlist.
 
 `relevance-filter.json` records file decisions, thresholds, retained/rejected/
@@ -130,7 +130,7 @@ withheld counts, context-budget omissions, time, and tokens. Standalone retrieva
 writes `graph.relevance.json` plus its normal context and retrieval files. Input
 logging and exact captures are sensitive and independently configurable; GitHub
 forces them off and exports only an allowlisted numeric/status summary. It also
-sanitizes the nested filter report in memory diagnostics.
+sanitizes the nested filter report in retrieval diagnostics.
 
 The benefits are fewer tool-loop API round trips and a smaller initial context;
 neither guarantees an end-to-end improvement. Metadata-only judgments can reject
@@ -148,7 +148,7 @@ Tests mirror owners under `apps/agent/tests/`.
 
 | Change or question | Start here | Boundary to preserve |
 | --- | --- | --- |
-| Command flags, dispatch, exit policy | `cli/app.py`, `cli/solve.py`, `cli/memory.py`, `cli/github.py` | CLI names and installed `sage.cli:main` entrypoint |
+| Command flags, dispatch, exit policy | `cli/app.py`, `cli/solve.py`, `cli/retrieval.py`, `cli/github.py` | CLI names and installed `sage.cli:main` entrypoint |
 | Terminal output | `cli/output.py` | Stable output and redaction |
 | Concrete dependency wiring | `composition.py` | Construct adapters explicitly |
 | Environment/settings | `config.py`, `integrations/github/config.py` | Existing settings loaders; no environment reads in capabilities |
@@ -157,7 +157,7 @@ Tests mirror owners under `apps/agent/tests/`.
 | Candidate truth | `orchestration/candidate.py` | Git-derived paths/diff and final digest guard |
 | Solver role and mutation gate | `agents/solver.py`, `prompts.py` | Persist implementable plan before mutation |
 | Role loop execution | `agents/loop.py` | Typed, bounded model/tool loop |
-| Context and tool delivery | `harness/context/`, `harness/memory/tools.py` | One evidence path, immutable instructions, bounded output |
+| Context and tool delivery | `harness/context/`, `harness/retrieval/tools.py` | One evidence path, immutable instructions, bounded output |
 | Jev relevance filter | `harness/jev/filter.py`, `provider.py`, `domain/relevance.py` | One batched file judgment before context; no tool execution |
 | Reviewer packet and contract | `agents/reviewer.py`, `domain/review.py` | Independent judgment and complete criterion coverage |
 | File, search, Git, command operations | `repository/` | Validated paths, command allowlist, bounded output |
@@ -172,14 +172,14 @@ Tests mirror owners under `apps/agent/tests/`.
 dependencies. Package names describe responsibilities. A generic helper or
 another runtime layer is not needed to connect them.
 
-## Local graph memory
+## Local repository retrieval
 
-`LegionMemoryService` remains the public repository-bound capability. Its
+`RepositoryRetrievalService` is the public repository-bound capability. Its
 implementation delegates committed-source indexing to `RepositoryIndex`,
-using the existing parser and SQLite store. Memory requires no model credentials
+using the existing parser and SQLite store. Retrieval requires no model credentials
 and performs no network calls.
 
-| Responsibility | Owner in `harness/memory/` |
+| Responsibility | Owner in `harness/retrieval/` |
 | --- | --- |
 | Git root, identity, source inventory, full/incremental/no-change build | `indexing.py` |
 | Grammar extraction and symbol metadata | `parsing.py`, `symbol_metadata.py` |
@@ -187,7 +187,7 @@ and performs no network calls.
 | SQLite transactions, migrations, graph reconciliation | `store.py`, `migrations.py` |
 | Communities and structural diagnostics | `communities.py`, `analysis.py` |
 | Validated read operations and result provenance | `service.py`, `queries.py`, `review.py` |
-| Issue signals, lexical ranking, expansion, bounded packet | `retrieval.py` |
+| Issue signals, lexical ranking, expansion, bounded packet | `ranking.py` |
 | Accepted-base preparation and build serialization | `preparation.py`, `locking.py` |
 | Run/session visibility, deduplication and edit invalidation | `session.py`, `context.py` |
 
@@ -201,7 +201,7 @@ repository must equal its resolved Git root. SQLite records repository identity,
 exact SHA, schema/parser versions and readiness. One operation selects full,
 incremental, or no-change processing. Full and incremental results use the same
 result assembly. Directory exclusions reuse `repository/selection.py`, with
-memory-specific exclusions added explicitly.
+retrieval-specific exclusions added explicitly.
 
 Tree-sitter supplies grammar extraction, NetworkX graph analysis, and igraph
 seeded weighted Leiden communities. The supported language table lives in
@@ -216,7 +216,9 @@ inheritance is bounded; package-based or multiple-parent inheritance is unsuppor
 
 ### Retrieval and exposure
 
-Local `make solve` is memory-free. Explicit `legion-solve` requests memory.
+Local `make solve` has no repository index. Explicit `make retrieval-solve`
+enables repository retrieval. The former `legion-*` Make targets remain
+deprecated aliases for one migration window.
 Accepted GitHub solves always build a fresh SQLite graph under runner temporary
 storage; that database is not cached or uploaded.
 
@@ -224,7 +226,7 @@ The workflow builds after sandbox startup and optional tooling preflight, before
 model calls. Retrieval uses bounded Issue paths, identifiers and terms, exact/FTS
 ranking, and bounded relationship/flow/community expansion. Exact identifiers
 and explicit paths anchor the ranking; results include reasons and source
-locations. There is no vector index, semantic seed retrieval, or embedding API.
+locations. Retrieval is entirely local and deterministic.
 
 | Retrieval result | Solver exposure |
 | --- | --- |
@@ -237,32 +239,26 @@ impact. The full native registry retains 21 operations for explicit use. All are
 read-only, accept neither arbitrary SQL nor a database path from the model, and
 retain bounded schemas/defaults/order. The former `semantic_search_nodes_tool`
 is renamed to `search_nodes_tool` to accurately describe its lexical behavior. The Reviewer receives candidate evidence
-without memory tools.
+without retrieval tools.
 
 Initial solve context defaults to 4,000 characters. In Jev `on` mode, only filtered
 items reach this packet and automatic read/search enrichment is disabled.
-Otherwise read/search enrichment is
-lexical and makes no hidden embedding calls. It respects source ranges, tool
+Otherwise read/search enrichment is lexical. It respects source ranges, tool
 output limits, and 3,000-character per-call, 16,000-character history and
 48,000-character run caps. Session resets restore base locators; edits suppress
 stale enrichment and remove old line ranges from native responses. Duplicate
 visible responses are suppressed. Source output survives enrichment failures.
 
-### Storage migration and concurrency
+### Storage compatibility and concurrency
 
-Schema 4 removes obsolete `vector_nodes`, `vectors:*` metadata and the unused
-memory namespace. The ordered schema history remains solely to upgrade existing
-graphs safely. Graph rows, provenance, source bindings, and FTS remain intact.
-Builds apply migrations before deciding full/incremental/no-change processing;
-read-only queries require a current schema and ask for a build when outdated.
-Writers retain a nonblocking per-database file lock; SQLite WAL supports ready
-graph readers. Standalone build/status/retrieve need only local Git and SQLite.
-
-Embedding adapters, Qdrant integration, hybrid ranking, usage fields, settings,
-CLI flags, Make overrides and secrets are removed. Existing external collections
-and local Qdrant directories are not opened or deleted. Unused environment
-variables cannot enable embeddings. `--embeddings` is no longer accepted.
-Google's SDK remains transitively installed for the independent Reviewer.
+Schema 4 is the only supported SQLite schema. Because the index is derived from
+committed source, obsolete partial schemas are rejected with an instruction to
+rebuild instead of carrying historical migration machinery. A current schema-4
+database remains readable; obsolete files must be moved or removed explicitly
+before rebuilding, and a parser-version change triggers a full rebuild.
+Writers retain a nonblocking per-database file lock, and SQLite WAL supports
+ready graph readers. Standalone build/status/retrieve need only local Git and
+SQLite.
 
 ## Dependency rules
 
@@ -285,7 +281,7 @@ Executable guards in `tests/test_architecture.py` enforce:
 - Agents/orchestration never reach into CLI, workflows, GitHub or concrete Docker.
 - Providers and deterministic capabilities never reach back into agent control.
 - The harness never imports agents, orchestration, CLI, workflows, GitHub or Docker.
-- Memory never imports providers, Jev, or model configuration; retrieval is deterministic.
+- Retrieval never imports providers, Jev, or model configuration; ranking is deterministic.
 - Internal module imports are acyclic, including imports through package names.
 - Initializers contain no implementation; the CLI only re-exports `main` for
   entrypoint compatibility.
@@ -303,7 +299,7 @@ One `RunArtifacts` instance owns atomic evidence for one run:
 | `candidate-snapshot.json`, `changed-files.json`, `diff.patch` | What did Git observe? |
 | `verification-summary.json`, `review.json` | Which checks and criteria passed? |
 | `usage.json` | Which model/tool calls and accepted commands consumed resources? |
-| `legion-memory.json` when requested | Was memory available, retrieved, exposed, queried or enriched? |
+| `repository-retrieval.json` when requested | Was retrieval available, exposed, queried or enriched? |
 | `terminal.json`, `agent-final.json` | Why did the run stop? |
 
 Immutable histories live under `solver-plans/`, `verification/`, and `reviews/`.
@@ -315,7 +311,7 @@ feedback. Provider failures, repair limits and candidate guard failures have
 explicit terminal outcomes. Publication requires completed, nonempty, verified,
 reviewed evidence at the accepted base. Host credentials never enter prompts,
 candidate sandbox or uploaded diagnostics. GitHub uploads use a fixed allowlist
-and remove rendered memory context.
+and remove rendered retrieval context.
 
 ## Make improvements accumulate
 
