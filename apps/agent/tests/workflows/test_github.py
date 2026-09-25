@@ -37,7 +37,7 @@ from sage.integrations.github.status import (
 )
 from sage.workflows.github import (
     GitHubWorkflowOutcome,
-    _github_memory_file,
+    _github_index_file,
     classify_github_failure,
     finalize_github_issue,
     run_github_issue,
@@ -118,10 +118,10 @@ def _pull_request() -> GitHubPullRequestSnapshot:
     )
 
 
-def test_github_memory_file_is_fresh_and_runner_owned(tmp_path: Path) -> None:
+def test_github_index_file_is_fresh_and_runner_owned(tmp_path: Path) -> None:
     checkout, base_sha = _checkout(tmp_path)
     invocation = _invocation(base_sha)
-    memory_file = _github_memory_file(
+    index_file = _github_index_file(
         invocation,
         runner_temp=tmp_path / "runner",
         checkout=checkout,
@@ -129,13 +129,13 @@ def test_github_memory_file_is_fresh_and_runner_owned(tmp_path: Path) -> None:
         diagnostics_dir=tmp_path / "diagnostics",
     )
 
-    assert memory_file == (
-        tmp_path / "runner" / "sage-legion-memory" / "9001-1" / "graph.sqlite3"
+    assert index_file == (
+        tmp_path / "runner" / "sage-retrieval" / "9001-1" / "graph.sqlite3"
     ).resolve()
-    memory_file.parent.mkdir(parents=True)
-    memory_file.touch()
+    index_file.parent.mkdir(parents=True)
+    index_file.touch()
     with pytest.raises(ConfigurationError, match="not fresh"):
-        _github_memory_file(
+        _github_index_file(
             invocation,
             runner_temp=tmp_path / "runner",
             checkout=checkout,
@@ -150,18 +150,18 @@ def test_no_change_uses_exact_sha_without_calling_publisher(tmp_path: Path) -> N
     client = FakeClient(invocation)
     factories: list[str] = []
 
-    async def solve_runner(request, orchestrator, settings, *, memory_service=None):
+    async def solve_runner(request, orchestrator, settings, *, retrieval_service=None):
         assert request.repo_path == checkout.resolve()
         assert request.base_ref == base_sha
         assert request.issue_path.parent == (tmp_path / "context").resolve()
-        assert request.memory_file == (
+        assert request.index_file == (
             tmp_path
             / "runner"
-            / "sage-legion-memory"
+            / "sage-retrieval"
             / "9001-1"
             / "graph.sqlite3"
         ).resolve()
-        assert memory_service is not None
+        assert retrieval_service is not None
         assert "Base commit: " + base_sha in request.issue_path.read_text(
             encoding="utf-8"
         )
@@ -208,8 +208,8 @@ def test_non_empty_result_hands_authoritative_candidate_to_publisher(tmp_path: P
     )
     published_calls: list[SolveResult] = []
 
-    async def solve_runner(request, orchestrator, settings, *, memory_service=None):
-        assert memory_service is not None
+    async def solve_runner(request, orchestrator, settings, *, retrieval_service=None):
+        assert retrieval_service is not None
         return candidate
 
     def publisher(invocation_value, result, api, **kwargs):
@@ -266,8 +266,8 @@ def test_human_required_after_start_is_terminal_and_never_publishes(
         }
     )
 
-    async def solve_runner(request, orchestrator, settings, *, memory_service=None):
-        assert memory_service is not None
+    async def solve_runner(request, orchestrator, settings, *, retrieval_service=None):
+        assert retrieval_service is not None
         return terminal
 
     result = _run(
@@ -321,7 +321,7 @@ def test_solve_time_gate_stops_before_model_construction(
         raise AssertionError("Model settings must not be loaded.")
 
     def forbidden_memory():
-        raise AssertionError("Memory settings must not be loaded.")
+        raise AssertionError("Retrieval settings must not be loaded.")
 
     async def forbidden_solve(request, orchestrator, settings):
         raise AssertionError("Solver must not run.")
@@ -333,7 +333,7 @@ def test_solve_time_gate_stops_before_model_construction(
         checkout,
         solve_runner=forbidden_solve,
         settings_factory=forbidden_settings,
-        memory_service_factory=forbidden_memory,
+        retrieval_service_factory=forbidden_memory,
     )
 
     assert result.outcome is expected
@@ -346,8 +346,8 @@ def test_runtime_failure_is_safely_classified_and_does_not_publish(tmp_path: Pat
     invocation = _invocation(base_sha)
     client = FakeClient(invocation)
 
-    async def failing_solve(request, orchestrator, settings, *, memory_service=None):
-        assert memory_service is not None
+    async def failing_solve(request, orchestrator, settings, *, retrieval_service=None):
+        assert retrieval_service is not None
         raise AgentRuntimeError("provider detail must stay in logs")
 
     with pytest.raises(AgentRuntimeError):
@@ -375,8 +375,8 @@ def test_publication_failure_preserves_safe_terminal_and_run_artifacts(tmp_path:
     invocation = _invocation(base_sha)
     client = FakeClient(invocation)
 
-    async def solve_runner(request, orchestrator, settings, *, memory_service=None):
-        assert memory_service is not None
+    async def solve_runner(request, orchestrator, settings, *, retrieval_service=None):
+        assert retrieval_service is not None
         return _solve_result(
             tmp_path,
             base_sha,
@@ -435,7 +435,7 @@ def _run(
     *,
     solve_runner,
     settings_factory=None,
-    memory_service_factory=None,
+    retrieval_service_factory=None,
     orchestrator_factory=None,
     publisher=None,
 ):
@@ -452,7 +452,7 @@ def _run(
             runner_temp=tmp_path / "runner",
             status_comment_id=client.status_comment_id,
             settings_factory=settings_factory or (lambda: _settings(tmp_path)),
-            memory_service_factory=memory_service_factory or (lambda: object()),
+            retrieval_service_factory=retrieval_service_factory or (lambda: object()),
             orchestrator_factory=orchestrator_factory or (lambda settings: object()),
             solve_runner=solve_runner,
             publisher=publisher or (

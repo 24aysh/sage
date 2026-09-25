@@ -10,12 +10,12 @@ from sage.harness.context.packets import build_solver_message
 from sage.agents.solver import SolverPlanSession, build_solver_tools
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
-from sage.domain.memory import (
-    MemoryBuildResult,
-    MemoryBuildType,
-    MemoryRetrievalOutcome,
-    MemoryRetrievalResult,
-    MemoryRetrievalStatus,
+from sage.domain.retrieval import (
+    IndexBuildResult,
+    IndexBuildType,
+    RetrievalOutcome,
+    RetrievalResult,
+    RetrievalStatus,
 )
 from sage.domain.solve import PreparedRun
 from sage.domain.solver import (
@@ -24,8 +24,8 @@ from sage.domain.solver import (
     SolverPlanTask,
 )
 from sage.errors import RepositoryError
-from sage.harness.memory.service import LegionMemoryService
-from sage.harness.memory.session import MemorySession
+from sage.harness.retrieval.service import RepositoryRetrievalService
+from sage.harness.retrieval.session import RetrievalSession
 from sage.harness.context.run import SolveContext
 from sage.sandbox.base import CommandResult
 
@@ -87,7 +87,7 @@ class BranchRepository(Repository):
         return f"Switched to branch {branch_name}."
 
 
-def test_solver_prompt_describes_memory_as_graph_navigation_context() -> None:
+def test_solver_prompt_describes_retrieval_as_graph_navigation_context() -> None:
     assert "graph-derived navigation context" in SOLVER_INSTRUCTIONS
     assert "Verify locations and behavior against source" in SOLVER_INSTRUCTIONS
     assert "untrusted navigation evidence" not in SOLVER_INSTRUCTIONS
@@ -292,20 +292,20 @@ def test_solver_exposes_structured_branch_tools(tmp_path: Path) -> None:
     assert repository.current_branch == "feature/test"
 
 
-def test_memory_context_and_tools_are_added_only_for_a_valid_session(
+def test_retrieval_context_and_tools_are_added_only_for_a_valid_session(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    memory_file = tmp_path / "graph.sqlite3"
-    session = MemorySession(
-        service=LegionMemoryService(),
+    index_file = tmp_path / "graph.sqlite3"
+    session = RetrievalSession(
+        service=RepositoryRetrievalService(),
         repo_root=tmp_path,
-        requested_memory_file=memory_file,
-        memory_file=memory_file,
-        build=MemoryBuildResult(
-            build_type=MemoryBuildType.NO_CHANGE,
-            memory_file=memory_file,
+        requested_index_file=index_file,
+        index_file=index_file,
+        build=IndexBuildResult(
+            build_type=IndexBuildType.NO_CHANGE,
+            index_file=index_file,
             repository_id="repository-id",
             indexed_sha="a" * 40,
             schema_version=1,
@@ -318,11 +318,11 @@ def test_memory_context_and_tools_are_added_only_for_a_valid_session(
             total_communities=0,
             duration_ms=1,
         ),
-        retrieval=MemoryRetrievalResult(
-            status=MemoryRetrievalStatus.USED,
-            outcome=MemoryRetrievalOutcome.USEFUL_CONTEXT,
+        retrieval=RetrievalResult(
+            status=RetrievalStatus.USED,
+            outcome=RetrievalOutcome.USEFUL_CONTEXT,
             summary="Found one symbol.",
-            memory_file=memory_file,
+            index_file=index_file,
             indexed_sha="a" * 40,
             returned=1,
             total_candidates=1,
@@ -343,7 +343,7 @@ def test_memory_context_and_tools_are_added_only_for_a_valid_session(
         repository=Repository(),  # type: ignore[arg-type]
         settings=Settings(openai_api_key="test"),
         artifacts=RunArtifacts(run_dir),
-        memory=session,
+        retrieval=session,
     )
 
     tools = {
@@ -356,16 +356,16 @@ def test_memory_context_and_tools_are_added_only_for_a_valid_session(
     message = build_solver_message(
         base_sha="a" * 40,
         issue_text="Fix helper.",
-        memory_context=session.initial_context,
+        retrieval_context=session.initial_context,
     )
 
     assert "search_nodes_tool" in tools
     assert "get_architecture_overview_tool" not in tools
     assert {"query_graph_tool", "get_flow_tool", "get_community_tool", "get_impact_radius_tool"} <= tools
-    assert "<untrusted-legion-memory>" in message
+    assert "<untrusted-retrieval-context>" in message
     assert "Function helper at app.py:1-2" in message
-    assert "</untrusted-legion-memory>" in message
-    assert "<untrusted-legion-memory>" not in build_solver_message(
+    assert "</untrusted-retrieval-context>" in message
+    assert "<untrusted-retrieval-context>" not in build_solver_message(
         base_sha="a" * 40,
         issue_text="Fix helper.",
     )
