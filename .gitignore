@@ -29,6 +29,7 @@ jev_sage_integration_analysis.md
 .sage/publication-smoke
 .sage/legion-memory/
 .sage/embeddings
+.sage/retrieval
 
 # Editors / OS
 .DS_Store
