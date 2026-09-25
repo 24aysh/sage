@@ -402,6 +402,19 @@ mode automatically; no separate cold/warm command is needed.
 The corresponding automated tests exercise these transitions in isolated
 temporary repositories. They are preferable to copying a large manual fixture.
 
+Go (`.go`), Rust (`.rs`), C++ (`.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`,
+`.ipp`, `.tpp`), HTML (`.html`, `.htm`), and CSS (`.css`) support lexical symbol
+and path retrieval. `.h` retains the existing C grammar. Try an Issue naming a
+real function, struct, element ID, or selector; namespaced C++ implementations
+use the function name, not a parameter name. Parser version 6 automatically
+rebuilds older indexes. This is structural retrieval, not compiler-level name
+resolution or macro expansion. Focused checks:
+
+```bash
+uv run --project apps/agent pytest apps/agent/tests/harness/memory/test_parsing.py \
+  apps/agent/tests/harness/memory/test_retrieval.py
+```
+
 For an HTML/CSS repository, commit an `.html` page and its `.css` files before
 building, then confirm `Languages` includes `html` and `css`. A selector named
 in an Issue (for example, `.checkout-button`) should appear in retrieval, while

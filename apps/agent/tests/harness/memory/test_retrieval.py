@@ -19,6 +19,32 @@ from sage.harness.memory.store import GraphStore
 from .conftest import apply_files, commit_all
 
 
+@pytest.mark.parametrize("path,source,symbol,language", [
+    ("orders.go", "package shop\nfunc ProcessOrder(customerID int) int { return customerID }\n", "ProcessOrder", "go"),
+    ("orders.rs", "pub fn process_order(customer_id: i32) -> i32 { customer_id }\n", "process_order", "rust"),
+    ("orders.cpp", "int process_order(int customer_id) { return customer_id; }\n", "process_order", "cpp"),
+    ("orders.hxx", "struct OrderRecord { int customer_id; };\n", "OrderRecord", "cpp"),
+    ("orders.html", '<main id="order-summary">Order</main>\n', "order-summary", "html"),
+    ("orders.css", ".order-summary { color: red; }\n", ".order-summary", "css"),
+])
+def test_multilingual_symbols_and_paths_are_lexically_retrievable(
+    fixture_repo, tmp_path, path, source, symbol, language,
+):
+    (fixture_repo / path).write_text(source)
+    commit_all(fixture_repo, "add language fixture")
+    service = LegionMemoryService(data_root=tmp_path / "languages")
+    build = service.build_or_update_graph_tool(repo_root=fixture_repo)
+    for issue in (f"Fix `{symbol}`.", f"Fix the behavior in {path}."):
+        result = service.retrieve_issue_context(
+            issue_text=issue, repo_root=fixture_repo, memory_file=build.memory_file,
+        )
+        assert result.status is MemoryRetrievalStatus.USED
+        assert any(item.file_path == path and item.language == language for item in result.items)
+    assert symbol in {item.name for item in service.retrieve_issue_context(
+        issue_text=f"Fix `{symbol}`.", repo_root=fixture_repo, memory_file=build.memory_file,
+    ).items}
+
+
 def _retrieve(
     fixture_repo: Path,
     built_memory: tuple[LegionMemoryService, Path],

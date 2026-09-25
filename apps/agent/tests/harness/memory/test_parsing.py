@@ -142,3 +142,18 @@ def test_html_and_css_extract_stable_elements_selectors_and_resources():
     assert {edge.target_qualified for edge in css.edges if edge.kind == "IMPORTS_FROM"} == {
         "./theme.css"
     }
+
+
+@pytest.mark.parametrize("declaration", [
+    "int process_order(int customer_id) { return customer_id; }",
+    "int *process_order(int *customer_id) { return customer_id; }",
+    "int Worker::process_order(int customer_id) const { return customer_id; }",
+])
+def test_cpp_function_name_is_not_its_parameter(declaration):
+    parsed = CodeParser().parse_bytes(declaration.encode(), relative_path="orders.cpp")
+    assert [n.name for n in parsed.nodes if n.kind == "Function"] == ["process_order"]
+
+
+@pytest.mark.parametrize("extension", [".hxx", ".ipp", ".tpp"])
+def test_cpp_header_suffixes(extension):
+    assert detect_language("orders" + extension) == "cpp"

@@ -18,14 +18,14 @@ from tree_sitter_language_pack import get_parser
 from sage.harness.memory.symbol_metadata import python_metadata, tree_metadata
 from sage.harness.memory.tsconfig import parse_tsconfig
 
-PARSER_VERSION = "legion-tree-sitter-v5"
+PARSER_VERSION = "legion-tree-sitter-v6"
 MAX_FILE_BYTES = 2_000_000
 
 _LANGUAGE_EXTENSIONS = {
     "json": ".json .jsonc", "python": ".py", "javascript": ".js .jsx .mjs",
     "typescript": ".ts", "tsx": ".tsx", "html": ".html .htm", "css": ".css",
     "go": ".go", "rust": ".rs", "java": ".java", "csharp": ".cs", "ruby": ".rb",
-    "cpp": ".cpp .cc .cxx .hpp .hh", "c": ".c .h", "kotlin": ".kt .kts",
+    "cpp": ".cpp .cc .cxx .hpp .hh .hxx .ipp .tpp", "c": ".c .h", "kotlin": ".kt .kts",
     "swift": ".swift", "php": ".php", "scala": ".scala", "dart": ".dart",
     "lua": ".lua", "bash": ".sh .bash .zsh", "elixir": ".ex .exs", "zig": ".zig",
     "julia": ".jl", "hcl": ".tf .hcl", "sql": ".sql", "yaml": ".yaml .yml",
@@ -441,6 +441,12 @@ class _Extractor:
             return _clean_name(self._text(direct))
         declarator = node.child_by_field_name("declarator")
         if declarator is not None:
+            # C/C++ names are nested inside declarators, not the last identifier
+            # in a signature (which is often a parameter or trailing qualifier).
+            while nested := declarator.child_by_field_name("declarator"):
+                declarator = nested
+            if declarator.type in {"qualified_identifier", "scoped_identifier"}:
+                declarator = declarator.child_by_field_name("name") or declarator
             declarator_text = self._text(declarator)
             identifiers = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", declarator_text)
             if identifiers:
