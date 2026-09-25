@@ -9,7 +9,7 @@ permissions: {}
 # Repository-owned, non-secret Sage configuration. Keep credential values in
 # GitHub Secrets and edit these strings to tune the installed workflow.
 env:
-  SAGE_LEGION_INITIAL_CONTEXT_CHARS: "4000"
+  SAGE_RETRIEVAL_INITIAL_CONTEXT_CHARS: "4000"
   OPENAI_MAX_RETRIES: "2"
   SAGE_GOOGLE_MODEL_CONTEXT_APPROVED: "true"
   SOLVER_MODEL: "gpt-5.4-mini"
@@ -115,7 +115,7 @@ jobs:
             ${{ steps.solve.outputs.diagnostics-path }}/changed-files.json
             ${{ steps.solve.outputs.diagnostics-path }}/diff.patch
             ${{ steps.solve.outputs.diagnostics-path }}/usage.json
-            ${{ steps.solve.outputs.diagnostics-path }}/legion-memory.json
+            ${{ steps.solve.outputs.diagnostics-path }}/repository-retrieval.json
             ${{ steps.solve.outputs.diagnostics-path }}/relevance-filter.json
             ${{ steps.solve.outputs.diagnostics-path }}/terminal.json
             ${{ steps.solve.outputs.diagnostics-path }}/verification-summary.json

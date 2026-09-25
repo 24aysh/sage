@@ -39,45 +39,48 @@ def test_run_status_disables_the_git_pager() -> None:
     assert 'git --no-pager -C "$$run_dir/repo" diff --check' in target
 
 
-def test_legion_memory_target_uses_bound_repository_and_optional_database() -> None:
+def test_retrieval_build_uses_bound_repository_and_optional_index() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    target = makefile.split("legion-memory:", 1)[1].split("\nnew-issue:", 1)[0]
+    target = makefile.split("retrieval-build:", 1)[1].split("\nlegion-memory:", 1)[0]
 
-    assert 'args=(memory build --repo "$(REPO)")' in target
-    assert '--memory-file "$(MEMORY_FILE)"' in target
+    assert 'args=(retrieval build --repo "$(REPO)")' in target
+    assert '--index-file "$(INDEX_FILE)"' in target
     assert "LANGSMITH_TRACING=false" in target
     assert "OPENAI_API_KEY" not in target
 
 
-def test_legion_retrieve_target_requires_issue_and_explicit_database() -> None:
+def test_retrieval_preview_requires_issue_and_explicit_index() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    target = makefile.split("legion-retrieve:", 1)[1].split("\nnew-issue:", 1)[0]
+    target = makefile.split("retrieval-preview:", 1)[1].split("\nlegion-retrieve:", 1)[0]
 
-    assert "REPO, ISSUE, and MEMORY are required" in target
-    assert "sage memory retrieve" in target
+    assert "REPO, ISSUE, and INDEX are required" in target
+    assert "sage retrieval retrieve" in target
     assert '--repo "$(REPO)"' in target
     assert '--issue-file "$(ISSUE)"' in target
-    assert '--memory-file "$(MEMORY)"' in target
+    assert '--index-file "$(INDEX)"' in target
     assert "LANGSMITH_TRACING=false" in target
     assert "OPENAI_API_KEY" not in target
 
 
-def test_legion_solve_reuses_baseline_solve_with_explicit_memory() -> None:
+def test_retrieval_solve_reuses_solve_with_explicit_index() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
     solve_target = makefile.split("solve:", 1)[1].split("\nsolve-debug:", 1)[0]
-    legion_target = makefile.split("legion-solve:", 1)[1].split(
+    retrieval_target = makefile.split("retrieval-solve:", 1)[1].split(
+        "\nlegion-solve:", 1
+    )[0]
+    legacy_target = makefile.split("legion-solve:", 1)[1].split(
         "\nrun-status:", 1
     )[0]
 
-    assert "LEGION_SOLVE ?= false" in makefile
-    assert 'if [[ "$(LEGION_SOLVE)" == "true" ]]' in solve_target
-    assert 'memory_args=(--memory-file "$(MEMORY)")' in solve_target
-    assert '"$${memory_args[@]}"' in solve_target
-    assert "LEGION_SOLVE := true" in makefile
-    assert "solve ## Run a live solve with Legion Memory enabled." in legion_target
+    assert "RETRIEVAL_SOLVE ?= false" in makefile
+    assert 'if [[ "$(RETRIEVAL_SOLVE)" == "true" ]]' in solve_target
+    assert 'index_args=(--index-file "$(INDEX)")' in solve_target
+    assert '"$${index_args[@]}"' in solve_target
+    assert "RETRIEVAL_SOLVE := true" in retrieval_target
+    assert "INDEX := $(MEMORY)" in legacy_target
 
 
-def test_solve_baseline_forces_jev_off_and_omits_memory(tmp_path: Path) -> None:
+def test_solve_baseline_forces_jev_off_and_omits_retrieval(tmp_path: Path) -> None:
     makefile = tmp_path / "Makefile"
     makefile.write_text((REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8"), encoding="utf-8")
     env_file = tmp_path / "baseline.env"
@@ -91,20 +94,20 @@ def test_solve_baseline_forces_jev_off_and_omits_memory(tmp_path: Path) -> None:
 
     result = subprocess.run(["make", "solve-baseline", f"ENV_FILE={env_file}",
         f"REPO={tmp_path / 'repo'}", f"ISSUE={tmp_path / 'issue.md'}",
-        f"MEMORY={tmp_path / 'graph.sqlite3'}", "LEGION_SOLVE=true", "BASELINE_SOLVE=false"],
+        f"INDEX={tmp_path / 'graph.sqlite3'}", "RETRIEVAL_SOLVE=true", "BASELINE_SOLVE=false"],
         cwd=tmp_path, env={**os.environ, "PATH": f"{binaries}{os.pathsep}{os.environ['PATH']}"},
         text=True, capture_output=True, check=False)
 
     assert result.returncode == 0, result.stderr
     assert "jev=off" in result.stdout
-    assert "--memory-file" not in result.stdout
+    assert "--index-file" not in result.stdout
 
 
 @pytest.mark.parametrize(
     ("target", "directory_name"),
     (
         ("clean-runs", "runs"),
-        ("clean-legion-memory", "legion-memory"),
+        ("clean-retrieval", "retrieval"),
     ),
 )
 def test_clean_target_removes_only_contents_and_preserves_parent(

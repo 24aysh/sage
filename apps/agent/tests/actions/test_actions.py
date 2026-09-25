@@ -91,7 +91,6 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
     assert "SAGE_V2_SOLVER_MODEL" not in body
     assert "SAGE_V2_REVIEWER_MODEL" not in body
     assert "SAGE_GITHUB_TOKEN: ${{ inputs.github-token }}" in body
-    assert "QDRANT" not in body
     assert 'sandbox_image="${SAGE_SANDBOX_IMAGE:-sage-sandbox:v2}"' in body
     assert "docker build" in body
     assert "sage github solve" in body
@@ -110,7 +109,6 @@ def test_solve_action_uses_exact_credential_free_target_checkout() -> None:
         assert "GEMINI_API_KEY" not in rendered
         assert "TYPESAFE_API_KEY" not in rendered
         assert "LANGSMITH_API_KEY" not in rendered
-        assert "SAGE_LEGION_QDRANT" not in rendered
     assert "docker build" not in yaml.safe_dump(solve_step["env"])
 
 
@@ -163,11 +161,9 @@ def test_workflow_configures_every_non_secret_example_value_in_yaml() -> None:
     assert not SECRET_CONFIGURATION & configuration.keys()
     assert configuration["SOLVER_MODEL"] == "gpt-5.4-mini"
     assert configuration["REVIEWER_MODEL"] == "gemini-3.5-flash"
-    assert not any("EMBEDDING" in key or "QDRANT" in key for key in configuration)
     assert configuration["SAGE_JEV_NAVIGATION_MODE"] == "off"
     assert configuration["SAGE_JEV_LOG_INPUT"] == "false"
     assert configuration["SAGE_JEV_CAPTURE"] == "false"
-    assert "SAGE_LEGION_QDRANT_PATH" not in configuration
 
 
 def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> None:
@@ -191,14 +187,10 @@ def test_workflow_pins_sage_and_external_actions_and_scopes_model_secret() -> No
     assert "TYPESAFE_API_KEY" not in yaml.safe_dump(jobs["finalize"])
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["gate"])
     assert "LANGSMITH_API_KEY" not in yaml.safe_dump(jobs["finalize"])
-    assert "SAGE_LEGION_QDRANT" not in yaml.safe_dump(jobs["gate"])
-    assert "SAGE_LEGION_QDRANT" not in yaml.safe_dump(jobs["finalize"])
     assert "secrets.OPENAI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.GEMINI_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.TYPESAFE_API_KEY" in yaml.safe_dump(jobs["solve"])
     assert "secrets.LANGSMITH_API_KEY" in yaml.safe_dump(jobs["solve"])
-    assert "QDRANT" not in yaml.safe_dump(jobs["solve"])
-    assert "secrets.SAGE_LEGION_EMBEDDINGS_ENABLED" not in body
     assert "vars." not in body
     solve_action = next(
         step
@@ -234,7 +226,7 @@ def test_workflow_uploads_only_allowlisted_diagnostics() -> None:
         "changed-files.json",
         "diff.patch",
         "usage.json",
-        "legion-memory.json",
+        "repository-retrieval.json",
         "relevance-filter.json",
         "terminal.json",
         "verification-summary.json",
