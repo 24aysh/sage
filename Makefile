@@ -15,6 +15,8 @@ INDEX ?=
 MEMORY_FILE ?=
 MEMORY ?=
 ISSUE ?=
+ISSUE_COUNT ?=
+GRAPH ?=
 BASE_REF ?= HEAD
 RUN_DIR ?=
 PATCH ?=
@@ -30,6 +32,7 @@ DEBUG_FLAG :=
 	sandbox-smoke test github-test github-event-check actions-check \
 	compile check graph new-issue solve solve-baseline solve-debug \
 	retrieval-build retrieval-preview retrieval-solve \
+	eval-retrieval \
 	legion-memory legion-retrieve legion-solve run-status run-test \
 	clean-runs clean-retrieval clean-legion-memory
 
@@ -61,6 +64,8 @@ help: ## Show the available commands and variables.
 		'                        Build or update the local repository index.' \
 		'  make retrieval-preview REPO=... ISSUE=... INDEX=...' \
 		'                        Print Issue-relevant context from a ready index.' \
+		'  make eval-retrieval REPO=... ISSUE=... ISSUE_COUNT=N GRAPH=...' \
+		'                        Evaluate retrieval noise before/after Jev filtering.' \
 		'  make clean-runs       Delete run contents while preserving .sage/runs.' \
 		'  make clean-retrieval' \
 		'                        Delete index contents while preserving .sage/retrieval.' \
@@ -325,7 +330,7 @@ sandbox-smoke: ## Start a disposable sandbox and verify its required tools.
 		bash -lc 'git --version && python3 --version && pytest --version && python3 -m pytest --version && node --version && npm --version && node --eval "const test = require(\"node:test\"); test(\"sandbox node test runner\", () => {});" && rg --version'
 
 test: ## Run deterministic unit tests (no API call required).
-	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" \
+	@cd "$(ROOT_DIR)" && LANGSMITH_TRACING=false uv run --project "$(AGENT_PROJECT)" --group eval \
 		pytest -c "$(AGENT_PROJECT)/pyproject.toml" "$(AGENT_PROJECT)/tests"
 
 github-test: ## Run deterministic GitHub integration tests (no live API/model call).
@@ -419,6 +424,20 @@ retrieval-preview: ## Preview Issue context; log Jev-retained files and discard 
 legion-retrieve: override INDEX := $(MEMORY)
 legion-retrieve: retrieval-preview ## Deprecated alias for retrieval-preview.
 	@echo "NOTE: legion-retrieve is deprecated; use retrieval-preview."
+
+eval-retrieval: ## Evaluate lexical/graph retrieval noise before and after Jev filtering.
+	@set -euo pipefail; \
+	cd "$(ROOT_DIR)"; \
+	if [[ -z "$(REPO)" || -z "$(ISSUE)" || -z "$(ISSUE_COUNT)" || -z "$(GRAPH)" ]]; then \
+		echo "ERROR: REPO, ISSUE, ISSUE_COUNT, and GRAPH are required." >&2; \
+		echo 'Use: make eval-retrieval REPO="/path/to/repo" ISSUE="/path/to/issues" ISSUE_COUNT=10 GRAPH="/path/to/graph.sqlite3"' >&2; \
+		exit 1; \
+	fi; \
+	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
+	args=(--repo "$(REPO)" --issues-dir "$(ISSUE)" --issue-count "$(ISSUE_COUNT)" --graph "$(GRAPH)"); \
+	if [[ -n "$(OUTPUT_DIR)" ]]; then args+=(--output-dir "$(OUTPUT_DIR)"); fi; \
+	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-retrieval-eval-uv-cache \
+		uv run --project "$(AGENT_PROJECT)" --group eval python -m evals.retrieval "$${args[@]}"
 
 new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
 	@set -euo pipefail; \

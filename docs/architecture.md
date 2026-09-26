@@ -135,11 +135,13 @@ sanitizes the nested filter report in retrieval diagnostics.
 The benefits are fewer tool-loop API round trips and a smaller initial context;
 neither guarantees an end-to-end improvement. Metadata-only judgments can reject
 useful code or accept irrelevant symbols in an otherwise relevant file. Evaluate
-fixed Issue/base/model pairs with independent outcome checks. The evaluator
-supports `off`, `shadow`, and `on`; it refuses historical navigation artifacts
-instead of comparing incompatible pipelines silently. See
-[testing](testing.md#jev-relevance-filter) and the
-[implementation plan](relevance-filter-plan.md).
+fixed Issue/base/model pairs with independent outcome checks. The root
+`evals/retrieval/` package evaluates the production lexical/graph shortlist and
+the production on-mode Jev filter without constructing Solver, Reviewer, or a
+solve. It owns dataset labels, set metrics, graph snapshots, progress, and
+benchmark reports; production Sage never imports it. See
+[testing](testing.md#retrieval-noise-evaluation) and the
+[implementation plan](../specs/26_RETRIEVAL_NOISE_EVALUATION_IMPLEMENTATION_PLAN.md).
 
 ## Find the owner before changing code
 
@@ -159,6 +161,7 @@ Tests mirror owners under `apps/agent/tests/`.
 | Role loop execution | `agents/loop.py` | Typed, bounded model/tool loop |
 | Context and tool delivery | `harness/context/`, `harness/retrieval/tools.py` | One evidence path, immutable instructions, bounded output |
 | Jev relevance filter | `harness/jev/filter.py`, `provider.py`, `domain/relevance.py` | One batched file judgment before context; no tool execution |
+| Retrieval evaluation | repository-root `evals/retrieval/` | Reuse production retrieval/filter; keep labels and benchmark contracts outside Sage |
 | Reviewer packet and contract | `agents/reviewer.py`, `domain/review.py` | Independent judgment and complete criterion coverage |
 | File, search, Git, command operations | `repository/` | Validated paths, command allowlist, bounded output |
 | Verification | `verification/` | Deterministic checks; preflight is tooling readiness, not test evidence |

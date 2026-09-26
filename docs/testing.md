@@ -23,7 +23,7 @@ There is no separately configured formatter, linter or type-checking gate.
 Direct equivalent:
 
 ```bash
-LANGSMITH_TRACING=false uv run --project apps/agent \
+LANGSMITH_TRACING=false uv run --project apps/agent --group eval \
   pytest -c apps/agent/pyproject.toml apps/agent/tests
 uv run --project apps/agent python -m compileall -q apps/agent/src
 ```
@@ -109,19 +109,68 @@ keeps both off and sanitizes exported diagnostics.
 ```bash
 uv run --project apps/agent pytest apps/agent/tests/harness/jev \
   apps/agent/tests/harness/retrieval/test_relevance_pipeline.py
-uv run --project apps/agent python apps/agent/evals/navigation.py replay \
-  /absolute/run/relevance-filter.json
-uv run --env-file .env --project apps/agent python apps/agent/evals/navigation.py run \
-  --arm on --repo /absolute/repo --issue-file /absolute/issue.md \
-  --base-ref FIXED_SHA --index-file /absolute/index/graph.sqlite3 --allow-paid-solve
-uv run --project apps/agent python apps/agent/evals/navigation.py compare \
-  /absolute/manifest.json
 ```
 
-Run arms are `off`, `shadow`, and `on`. Use the example manifest, matching Issue,
-base, model settings, cache state and independent quality checks. Unknown token
-usage stays unknown; artifacts from the retired navigation pipeline require their historical
-evaluator. Offline tests use fakes and never establish live quality or savings.
+The retired full-solve navigation evaluator has been removed. Offline tests use
+fakes and never establish live quality or savings.
+
+## Retrieval noise evaluation
+
+The dedicated evaluator measures the same production shortlist twice: raw
+lexical/graph files before Jev, and accepted files after the production relevance
+filter. It does not run Solver, Reviewer, Docker, verification, or publication.
+Gold labels are used only after selection and are never sent to Jev.
+
+Create an Issue directory containing consecutively numbered `issue-N.md` files
+and one `correct.json` file:
+
+```json
+{
+  "issue_1": ["src/main.py", "tests/test_main.py"],
+  "issue_2": ["src/server.go"]
+}
+```
+
+Build a graph for the exact repository `HEAD`, configure `TYPESAFE_API_KEY`, then
+run the paid evaluation:
+
+```bash
+make retrieval-build REPO="/absolute/repo" \
+  INDEX_FILE="/absolute/index/graph.sqlite3"
+make eval-retrieval REPO="/absolute/repo" ISSUE="/absolute/issues" \
+  ISSUE_COUNT=2 GRAPH="/absolute/index/graph.sqlite3"
+```
+
+`eval-retrieval` forces only its copied Jev settings to mode `on`; it does not
+change `.env` or the solve default. The configured model, score threshold,
+confidence threshold, and timeout remain production-identical. Set
+`SAGE_JEV_LOG_INPUT=false` and `SAGE_JEV_CAPTURE=false` for ordinary batches.
+The command validates the entire dataset first, snapshots the ready SQLite graph,
+processes Issues sequentially with a tqdm bar, and makes at most one Jev request
+for each nonempty shortlist.
+
+By default artifacts are under `.sage/evals/retrieval/<run-id>/`; use
+`OUTPUT_DIR=/absent/or/empty/path` to override. `evals.md` contains aggregate and
+per-Issue results, `results.json` is the complete machine-readable report, and
+`issues/issue-N.json` preserves each raw/accepted/final path set and judgment.
+The run's `evals.md` is atomically rewritten after every terminal Issue and its
+final aggregate averages are the same canonical values printed by the command.
+The headline noise reduction is a percentage-point difference. Retain uses all
+gold files as its denominator; retrieved-correct survival and raw/post-Jev recall
+are displayed separately so retrieval misses cannot be mistaken for Jev drops.
+Undefined empty-set and failed-call metrics remain `N/A` and are excluded with
+explicit counts.
+
+Ctrl-C checkpoints the current Issue as interrupted, leaves remaining Issues not
+run, prints the partial summary, and exits 130. Authentication failures, stale or
+corrupt graphs, contract mismatches, and persistence failures are nonzero. A valid
+no-candidate or all-rejected observation is recorded without inventing a noise
+percentage. Run the deterministic evaluator tests with:
+
+```bash
+uv run --project apps/agent --group eval pytest \
+  -c apps/agent/pyproject.toml apps/agent/tests/evals
+```
 
 ### Interrupting a solve with Ctrl-C
 
