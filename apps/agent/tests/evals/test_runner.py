@@ -12,8 +12,9 @@ from sage.domain.relevance import RelevanceDecision, RelevanceUnavailable
 from sage.harness.jev.filter import RelevanceFilter
 from sage.harness.retrieval.service import RepositoryRetrievalService
 
-from evals.retrieval.runner import prepare_evaluation, run_evaluation
 from evals.retrieval.models import EvaluationResults
+from evals.retrieval.report import headline_summary_lines, render_markdown
+from evals.retrieval.runner import prepare_evaluation, run_evaluation
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -137,6 +138,10 @@ def test_real_retrieval_and_production_filter_are_replayed_once(tmp_path: Path) 
     assert (output / "graph.sqlite3").is_file()
     assert (output / "issues/issue-1.json").is_file()
     assert (output / "evals.md").is_file()
+    persisted_markdown = (output / "evals.md").read_text(encoding="utf-8")
+    assert persisted_markdown == render_markdown(results)
+    assert results.summary.average_noise_reduction_pp.mean is not None
+    assert all(line in persisted_markdown for line in headline_summary_lines(results))
 
 
 def test_preflight_forces_on_without_mutating_environment(tmp_path: Path) -> None:

@@ -44,6 +44,26 @@ def _paths(values: tuple[str, ...]) -> str:
     return ", ".join(f"`{value.replace('`', '')}`" for value in values) or "—"
 
 
+def headline_summary_lines(results: EvaluationResults) -> tuple[str, ...]:
+    """Render the canonical averages shared by the run report and terminal."""
+
+    summary = results.summary
+    noise, retain, survival = (
+        summary.average_noise_reduction_pp,
+        summary.average_retain_pct,
+        summary.average_retrieved_correct_survival_pct,
+    )
+    return (
+        f"Average noise reduction: {_number(noise.mean, ' percentage points')} "
+        f"({noise.eligible} eligible, {noise.excluded} excluded)",
+        f"Average retain: {_number(retain.mean)} "
+        f"({retain.eligible} eligible, {retain.excluded} excluded; denominator: all gold files)",
+        f"Average retrieved-correct survival: {_number(survival.mean)} "
+        f"({survival.eligible} eligible, {survival.excluded} excluded)",
+        f"Irrelevant files removed: {summary.total_irrelevant_files_removed}",
+    )
+
+
 def render_markdown(results: EvaluationResults) -> str:
     summary = results.summary
     lines = [
@@ -61,7 +81,7 @@ def render_markdown(results: EvaluationResults) -> str:
         "",
         "## Aggregate metrics",
         "",
-        _metric_line("Average noise reduction", summary.average_noise_reduction_pp, " percentage points"),
+        *(f"- {line}" for line in headline_summary_lines(results)),
         _metric_line(
             "Average noise before on the paired reduction population",
             summary.average_noise_before_pct,
@@ -70,14 +90,8 @@ def render_markdown(results: EvaluationResults) -> str:
             "Average noise after Jev on the paired reduction population",
             summary.average_noise_after_jev_pct,
         ),
-        _metric_line("Average retain (all gold files denominator)", summary.average_retain_pct),
-        _metric_line(
-            "Average retrieved-correct survival",
-            summary.average_retrieved_correct_survival_pct,
-        ),
         _metric_line("Average raw correct recall", summary.average_raw_correct_recall_pct),
         _metric_line("Average post-Jev correct recall", summary.average_post_jev_correct_recall_pct),
-        f"- Irrelevant files removed: {summary.total_irrelevant_files_removed}",
         f"- Counts: `{summary.counts}`",
         "",
         "Undefined empty-set and failed-call metrics are shown as N/A and excluded from their named averages.",
@@ -138,19 +152,9 @@ def render_markdown(results: EvaluationResults) -> str:
 
 
 def terminal_summary(results: EvaluationResults) -> str:
-    summary = results.summary
-    noise, retain, survival = (
-        summary.average_noise_reduction_pp,
-        summary.average_retain_pct,
-        summary.average_retrieved_correct_survival_pct,
+    return "\n".join(
+        (
+            *headline_summary_lines(results),
+            f"Report: {Path(results.output_dir) / 'evals.md'}",
+        )
     )
-    return "\n".join((
-        f"Average noise reduction: {_number(noise.mean, ' percentage points')} "
-        f"({noise.eligible} eligible, {noise.excluded} excluded)",
-        f"Average retain: {_number(retain.mean)} "
-        f"({retain.eligible} eligible, {retain.excluded} excluded; denominator: all gold files)",
-        f"Average retrieved-correct survival: {_number(survival.mean)} "
-        f"({survival.eligible} eligible, {survival.excluded} excluded)",
-        f"Irrelevant files removed: {summary.total_irrelevant_files_removed}",
-        f"Report: {Path(results.output_dir) / 'evals.md'}",
-    ))

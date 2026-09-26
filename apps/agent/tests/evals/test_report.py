@@ -8,7 +8,12 @@ from evals.retrieval.models import (
     IssueEvaluation,
     RunProvenance,
 )
-from evals.retrieval.report import render_markdown, terminal_summary, write_results
+from evals.retrieval.report import (
+    headline_summary_lines,
+    render_markdown,
+    terminal_summary,
+    write_results,
+)
 
 
 def _results(tmp_path: Path) -> EvaluationResults:
@@ -73,6 +78,9 @@ def test_markdown_and_terminal_use_the_same_aggregate(tmp_path: Path) -> None:
 
     assert "Average noise reduction: 50.00 percentage points" in terminal
     assert "Average noise reduction: 50.00 percentage points" in markdown
+    for line in headline_summary_lines(results):
+        assert line in terminal
+        assert line in markdown
     assert "src/noise.py" in markdown
 
 

@@ -153,6 +153,8 @@ By default artifacts are under `.sage/evals/retrieval/<run-id>/`; use
 `OUTPUT_DIR=/absent/or/empty/path` to override. `evals.md` contains aggregate and
 per-Issue results, `results.json` is the complete machine-readable report, and
 `issues/issue-N.json` preserves each raw/accepted/final path set and judgment.
+The run's `evals.md` is atomically rewritten after every terminal Issue and its
+final aggregate averages are the same canonical values printed by the command.
 The headline noise reduction is a percentage-point difference. Retain uses all
 gold files as its denominator; retrieved-correct survival and raw/post-Jev recall
 are displayed separately so retrieval misses cannot be mistaken for Jev drops.
