@@ -41,7 +41,7 @@ def test_run_status_disables_the_git_pager() -> None:
 
 def test_retrieval_build_uses_bound_repository_and_optional_index() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    target = makefile.split("retrieval-build:", 1)[1].split("\nlegion-memory:", 1)[0]
+    target = makefile.split("retrieval-build:", 1)[1].split("\nretrieval-preview:", 1)[0]
 
     assert 'args=(retrieval build --repo "$(REPO)")' in target
     assert '--index-file "$(INDEX_FILE)"' in target
@@ -51,7 +51,7 @@ def test_retrieval_build_uses_bound_repository_and_optional_index() -> None:
 
 def test_retrieval_preview_requires_issue_and_explicit_index() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    target = makefile.split("retrieval-preview:", 1)[1].split("\nlegion-retrieve:", 1)[0]
+    target = makefile.split("retrieval-preview:", 1)[1].split("\neval-retrieval:", 1)[0]
 
     assert "REPO, ISSUE, and INDEX are required" in target
     assert "sage retrieval retrieve" in target
@@ -66,9 +66,6 @@ def test_retrieval_solve_reuses_solve_with_explicit_index() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
     solve_target = makefile.split("solve:", 1)[1].split("\nsolve-debug:", 1)[0]
     retrieval_target = makefile.split("retrieval-solve:", 1)[1].split(
-        "\nlegion-solve:", 1
-    )[0]
-    legacy_target = makefile.split("legion-solve:", 1)[1].split(
         "\nrun-status:", 1
     )[0]
 
@@ -77,7 +74,15 @@ def test_retrieval_solve_reuses_solve_with_explicit_index() -> None:
     assert 'index_args=(--index-file "$(INDEX)")' in solve_target
     assert '"$${index_args[@]}"' in solve_target
     assert "RETRIEVAL_SOLVE := true" in retrieval_target
-    assert "INDEX := $(MEMORY)" in legacy_target
+
+
+def test_deprecated_legion_make_targets_and_variables_are_absent() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+
+    for name in ("legion-memory", "legion-retrieve", "legion-solve", "clean-legion-memory"):
+        assert f"{name}:" not in makefile
+    assert "MEMORY_FILE ?=" not in makefile
+    assert "MEMORY ?=" not in makefile
 
 
 def test_solve_baseline_forces_jev_off_and_omits_retrieval(tmp_path: Path) -> None:

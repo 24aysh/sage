@@ -344,6 +344,11 @@ make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md \
   INDEX=/absolute/index/graph.sqlite3
 ```
 
+The deprecated `legion-memory`, `legion-retrieve`, `legion-solve`, and
+`clean-legion-memory` Make aliases have been removed. Use the retrieval targets
+above, `make retrieval-solve` for a retrieval-enabled solve, and
+`make clean-retrieval` to clear the local index.
+
 Current schema-4 databases remain readable. An older partial schema is rejected
 because the SQLite file is a disposable derivative of committed source: move or
 remove that specific index, then build it again. Repeat a build at the same SHA

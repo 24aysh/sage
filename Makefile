@@ -12,8 +12,6 @@ SANDBOX_IMAGE ?=
 REPO ?=
 INDEX_FILE ?=
 INDEX ?=
-MEMORY_FILE ?=
-MEMORY ?=
 ISSUE ?=
 ISSUE_COUNT ?=
 GRAPH ?=
@@ -33,8 +31,8 @@ DEBUG_FLAG :=
 	compile check graph new-issue solve solve-baseline solve-debug \
 	retrieval-build retrieval-preview retrieval-solve \
 	eval-retrieval \
-	legion-memory legion-retrieve legion-solve run-status run-test \
-	clean-runs clean-retrieval clean-legion-memory
+	run-status run-test \
+	clean-runs clean-retrieval
 
 help: ## Show the available commands and variables.
 	@printf '%s\n' \
@@ -385,9 +383,6 @@ clean-retrieval:
 	find "$$directory" -mindepth 1 -delete; \
 	echo "Cleared $$directory (directory preserved)."
 
-clean-legion-memory: clean-retrieval ## Deprecated alias for clean-retrieval.
-	@echo "NOTE: clean-legion-memory is deprecated; use clean-retrieval."
-
 retrieval-build: ## Build or update the repository index for REPO; INDEX_FILE is optional.
 	@set -euo pipefail; \
 	cd "$(ROOT_DIR)"; \
@@ -401,10 +396,6 @@ retrieval-build: ## Build or update the repository index for REPO; INDEX_FILE is
 	if [[ -n "$(INDEX_FILE)" ]]; then args+=(--index-file "$(INDEX_FILE)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-retrieval-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage "$${args[@]}"
-
-legion-memory: override INDEX_FILE := $(MEMORY_FILE)
-legion-memory: retrieval-build ## Deprecated alias for retrieval-build.
-	@echo "NOTE: legion-memory is deprecated; use retrieval-build."
 
 retrieval-preview: ## Preview Issue context; log Jev-retained files and discard counts.
 	@set -euo pipefail; \
@@ -420,10 +411,6 @@ retrieval-preview: ## Preview Issue context; log Jev-retained files and discard 
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-retrieval-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" sage retrieval retrieve \
 		--repo "$(REPO)" --issue-file "$(ISSUE)" --index-file "$(INDEX)"
-
-legion-retrieve: override INDEX := $(MEMORY)
-legion-retrieve: retrieval-preview ## Deprecated alias for retrieval-preview.
-	@echo "NOTE: legion-retrieve is deprecated; use retrieval-preview."
 
 eval-retrieval: ## Evaluate lexical/graph retrieval noise before and after Jev filtering.
 	@set -euo pipefail; \
@@ -514,11 +501,6 @@ solve-debug: solve ## Run a live solve with debug logs and tracebacks.
 
 retrieval-solve: override RETRIEVAL_SOLVE := true
 retrieval-solve: solve ## Run a live solve with repository retrieval enabled.
-
-legion-solve: override RETRIEVAL_SOLVE := true
-legion-solve: override INDEX := $(MEMORY)
-legion-solve: solve ## Deprecated alias for retrieval-solve.
-	@echo "NOTE: legion-solve is deprecated; use retrieval-solve."
 
 run-status: ## Validate and summarize a completed run directory.
 	@set -euo pipefail; \

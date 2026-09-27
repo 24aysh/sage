@@ -220,8 +220,8 @@ inheritance is bounded; package-based or multiple-parent inheritance is unsuppor
 ### Retrieval and exposure
 
 Local `make solve` has no repository index. Explicit `make retrieval-solve`
-enables repository retrieval. The former `legion-*` Make targets remain
-deprecated aliases for one migration window.
+enables repository retrieval. The deprecated `legion-*` Make aliases have been
+removed; use `retrieval-build`, `retrieval-preview`, and `retrieval-solve`.
 Accepted GitHub solves always build a fresh SQLite graph under runner temporary
 storage; that database is not cached or uploaded.
 
