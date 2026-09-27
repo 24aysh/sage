@@ -1,11 +1,11 @@
 # Agent harness
 
 Start with `context/run.py`: one accepted repository, settings, artifacts,
-immutable role guidance, optional retrieval, and optional relevance filtering. There is no
+optional retrieval, and optional relevance filtering. There is no
 runtime selector or hidden global state.
 
-- `context/instructions.py` loads each role's guidance once; `packets.py` builds
-  Issue, repair and review envelopes; `tools.py` binds source operations and
+- `context/packets.py` builds Issue, repair and review envelopes;
+  `context/tools.py` binds source operations and
   delivers deterministic graph additions when filtering is off/shadow, without replacing source.
 - `retrieval/preparation.py` validates the accepted-base snapshot and initial
   retrieval. `indexing.py` owns committed Git input; `service.py` validates

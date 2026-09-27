@@ -211,7 +211,7 @@ Paths in this table are relative to `apps/agent/tests/`.
 | --- | --- |
 | CLI dispatch, help, output, exit policy | `test_cli.py`, `cli/` |
 | Plan gate and model tool loop | `agents/` |
-| Role instructions, packet limits and context lifetime | `harness/context/` |
+| Packet limits and context lifetime | `harness/context/` |
 | Jev decisions, transport, budgets and evaluation | `harness/jev/` |
 | Candidate, verification/review/repair routing | `orchestration/` |
 | File paths, diffs and command execution | `repository/`, `verification/` |
@@ -370,33 +370,6 @@ stores are not changed.
 
 ## Sandbox and local solve
 
-### Persistent role instructions
-
-Commit `sage-solver.md` and `sage-reviewer.md` in the target repository. Sage
-discovers them automatically at the selected base SHA and includes each only
-in its role's system message on every call, including repairs and rereviews.
-The contents are loaded once before sandbox startup; editing them during a solve
-does not change the active policy. Missing files are allowed. Keep them concise:
-they consume input tokens each call, and each file is capped at 12,000 UTF-8 bytes.
-
-Configure alternate repository-relative paths in `.env` or `sage.yml`:
-
-```yaml
-env:
-  SAGE_SOLVER_INSTRUCTIONS_FILE: "sage-solver.md"
-  SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
-```
-
-No enable switch is needed. `make solve`, `make solve-baseline`, `make retrieval-solve`
-and GitHub use the same role context path. The baseline still disables repository
-retrieval and Jev. To verify instruction lifetime and isolation without paid calls:
-
-```bash
-uv run --project apps/agent pytest apps/agent/tests/harness/context \
-  apps/agent/tests/orchestration/test_solve_orchestrator.py \
-  apps/agent/tests/workflows/test_solve_workflow.py
-```
-
 ### Run a local solve
 
 ```bash
@@ -499,8 +472,6 @@ boundary unchanged. For example:
 env:
   SOLVER_MODEL: "gpt-5.4-mini"
   REVIEWER_MODEL: "gemini-3.5-flash"
-  SAGE_SOLVER_INSTRUCTIONS_FILE: "sage-solver.md"
-  SAGE_REVIEWER_INSTRUCTIONS_FILE: "sage-reviewer.md"
   SAGE_JEV_NAVIGATION_MODE: "off"         # change only for an explicit canary
   SAGE_JEV_RELEVANCE_SCORE_THRESHOLD: "2.0"
   SAGE_JEV_RELEVANCE_CONFIDENCE_THRESHOLD: "0.5"

@@ -20,7 +20,7 @@ resource lifecycles are in `sage/workflows/`; agent behavior is in
 `sage/orchestration/solve.py`.
 
 `sage/harness/` owns the support an agent receives throughout an Issue:
-`context/` assembles bounded packets and persistent role guidance; `retrieval/`
+`context/` assembles bounded packets and tool context; `retrieval/`
 indexes committed source and supplies lexical graph navigation; `jev/` optionally
 filters retrieved files before Solver context assembly. Repository retrieval
 requires no credentials or external store. Orchestration retains all plan,

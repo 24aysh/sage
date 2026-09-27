@@ -44,31 +44,25 @@ a single question to answer:
 
 | Layer | Question | Owner |
 | --- | --- | --- |
-| Task and policy | What must this role accomplish and obey? | Issue, `agents/prompts.py`, `harness/context/instructions.py` |
+| Task and policy | What must this role accomplish and obey? | Issue, `agents/prompts.py` |
 | Context | What evidence belongs in this invocation? | `harness/context/packets.py`, `run.py`, `tools.py` |
 | Retrieval | Where should I inspect, and why? | `harness/retrieval/` |
 | Optional judgment | Which retrieved files belong in initial context? | `harness/jev/` |
 | Current facts | What does the candidate actually contain? | `repository/` |
 | Decision and proof | Is the candidate verified, reviewed, and safe to publish? | `orchestration/`, `verification/`, `artifacts/` |
 
-The flow is one accepted base, immutable role guidance, bounded initial graph
+The flow is one accepted base, static role prompts, bounded initial graph
 context, current source reads, optional attributed enrichment, a saved plan,
 edits with stale-location invalidation, verification, and independent review.
-Every repair gets a fresh history with the same role guidance and base identity.
+Every repair gets a fresh history with the same role prompt and base identity.
 Evidence deduplication resets with that history; it must not suppress facts that
 the new session has never seen. Within a history, previously exposed graph facts
 are not repeatedly appended. Source reads retain priority when budgets run out.
 
-`sage-solver.md` and `sage-reviewer.md` are discovered automatically in the
-accepted checkout. `SAGE_SOLVER_INSTRUCTIONS_FILE` and
-`SAGE_REVIEWER_INSTRUCTIONS_FILE` in `sage.yml` (or local `.env`) select relative
-paths. Missing files mean no additional role guidance. Files are UTF-8, capped
-at 12,000 bytes each, and cannot escape the repository. They are read once before
-models start and kept in each role's system message for every invocation,
-including repairs and rereviews. This costs input tokens on each request;
-keep guidance concise. No implicit summarizer or extra model call is added.
-Sage's role, Issue scope, plan gate, verification, safety, and output contracts
-take precedence. Edits during a solve cannot rewrite its active guidance.
+Solver and Reviewer system instructions are static in `agents/prompts.py`.
+The harness assembles bounded Issue, repair, and review packets; it does not
+load repository-authored role prompts. No implicit summarizer or extra model
+call is added.
 
 The harness is composed of focused capabilities, not a global state manager.
 Its context object is frozen; mutable visibility and budgets belong to explicit
@@ -159,7 +153,7 @@ Tests mirror owners under `apps/agent/tests/`.
 | Candidate truth | `orchestration/candidate.py` | Git-derived paths/diff and final digest guard |
 | Solver role and mutation gate | `agents/solver.py`, `prompts.py` | Persist implementable plan before mutation |
 | Role loop execution | `agents/loop.py` | Typed, bounded model/tool loop |
-| Context and tool delivery | `harness/context/`, `harness/retrieval/tools.py` | One evidence path, immutable instructions, bounded output |
+| Context and tool delivery | `harness/context/`, `harness/retrieval/tools.py` | One evidence path and bounded output |
 | Jev relevance filter | `harness/jev/filter.py`, `provider.py`, `domain/relevance.py` | One batched file judgment before context; no tool execution |
 | Retrieval evaluation | repository-root `evals/retrieval/` | Reuse production retrieval/filter; keep labels and benchmark contracts outside Sage |
 | Reviewer packet and contract | `agents/reviewer.py`, `domain/review.py` | Independent judgment and complete criterion coverage |

@@ -1,4 +1,6 @@
-> Follow-up: [Jev relevance filtering](relevance-filter-plan.md) replaces the
+> Historical plan: repository-authored role markdown described below has since
+> been removed. See [architecture.md](architecture.md) for current role prompts.
+> [Jev relevance filtering](relevance-filter-plan.md) also replaces the
 > tool-triggered Jev behavior preserved by this earlier harness refactor.
 >
 > Current naming: the derived source index and its runtime session now live in

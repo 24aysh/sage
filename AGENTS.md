@@ -109,7 +109,7 @@ cross-run state engine.
 - `sage/cli/` — command parsing, output, and exit policy; `__init__.py` only
   re-exports `main` to preserve the installed entrypoint;
 - `sage/repository/`, `sage/verification/` — deterministic capabilities;
-- `sage/harness/context/` — immutable role instructions, bounded message envelopes,
+- `sage/harness/context/` — bounded message envelopes,
   run capabilities, and repository tool context delivery;
 - `sage/harness/retrieval/` — rebuildable committed-source navigation: `indexing.py`
   owns provenance/builds, `service.py` validated queries, `ranking.py` Issue
