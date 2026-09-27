@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "github-readme-generator": {
+      "source": "pekral/github-readme-generator",
+      "sourceType": "github",
+      "skillPath": "skills/github-readme-generator/SKILL.md",
+      "computedHash": "4c51593ac9f0bcb691702807654cbc94a2ee75f787ad52472b15bbe2bb648ec6"
+    },
     "gpt-taste": {
       "source": "Leonxlnx/taste-skill",
       "sourceType": "github",
