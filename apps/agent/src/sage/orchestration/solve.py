@@ -228,7 +228,6 @@ class SolveOrchestrator:
                         plan=plans.saved,
                         calls=calls,
                         rereview=review_version > 1,
-                        repository_instructions=context.instructions.reviewer,
                     ),
                 )
                 artifacts.write_review(review, version=review_version)

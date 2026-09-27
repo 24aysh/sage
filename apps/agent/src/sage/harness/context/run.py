@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, Any
 from pathlib import Path
 
 from sage.domain.solve import AgentFinalOutput, PreparedRun
-from sage.harness.context.instructions import RoleInstructions
 
 if TYPE_CHECKING:
     from sage.artifacts.store import RunArtifacts
@@ -25,7 +24,6 @@ class SolveContext:
     settings: Settings
     artifacts: RunArtifacts
     retrieval: RetrievalSession | None = None
-    instructions: RoleInstructions = field(default_factory=RoleInstructions)
 
 
 class SolveEngine(Protocol):
@@ -53,7 +51,6 @@ class SolverContext(RepositoryContext, Protocol):
     prepared_run: PreparedRun
     settings: Settings
     retrieval: SolverRetrievalSession | None
-    instructions: RoleInstructions
 
 
 class SolverRetrievalSession(Protocol):

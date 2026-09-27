@@ -112,8 +112,6 @@ class Settings(BaseModel):
     sandbox_image: str = "sage-sandbox:v2"
     command_timeout_seconds: int = Field(default=60, ge=1)
     max_tool_output_chars: int = Field(default=12_000, ge=1_000)
-    solver_instructions_file: str = Field(default="sage-solver.md", min_length=1, max_length=240)
-    reviewer_instructions_file: str = Field(default="sage-reviewer.md", min_length=1, max_length=240)
     max_rate_limit_retries_per_call: int = Field(default=1, ge=0, le=1)
     max_retry_after_seconds: int = Field(default=30, ge=0, le=60)
     model_request_timeout_seconds: int = Field(default=600, ge=1, le=900)
@@ -176,8 +174,6 @@ class Settings(BaseModel):
         try:
             return cls(
                 jev=JevSettings.from_env(values),
-                solver_instructions_file=values.get("SAGE_SOLVER_INSTRUCTIONS_FILE", "sage-solver.md").strip(),
-                reviewer_instructions_file=values.get("SAGE_REVIEWER_INSTRUCTIONS_FILE", "sage-reviewer.md").strip(),
                 openai_api_key=api_key,
                 gemini_api_key=gemini_api_key,
                 langsmith_api_key=langsmith_api_key,

@@ -23,6 +23,7 @@ REMOVED_PATHS = {
     "orchestration/context.py",
     "agents/retrieval_tools.py",
     "agents/repository_tools.py",
+    "harness/context/instructions.py",
     "harness/jev/session.py",
     "harness/jev/candidates.py",
 }

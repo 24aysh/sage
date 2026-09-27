@@ -16,7 +16,6 @@ from sage.agents.loop import recursion_limit
 from sage.harness.context.run import SolverContext
 from sage.harness.context.packets import prepare_solver_message
 from sage.agents.prompts import SOLVER_INSTRUCTIONS
-from sage.harness.context.instructions import with_repository_instructions
 from sage.harness.context.tools import (
     build_context_tools,
     build_show_diff_tool,
@@ -124,7 +123,7 @@ class SolverAgent:
             model=model,
             tools=tools,
             max_turns=self._settings.max_turns,
-            instructions=with_repository_instructions(SOLVER_INSTRUCTIONS, context.instructions.solver),
+            instructions=SOLVER_INSTRUCTIONS,
             output_schema=output_schema,
             graph_name=f"{SOLVE_GRAPH_NAME}_{stage.replace('-', '_')}",
             role_name=ModelRole.SOLVER.value.capitalize(),

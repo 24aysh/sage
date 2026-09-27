@@ -9,7 +9,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from sage.agents.prompts import REVIEWER_INSTRUCTIONS
 from sage.harness.context.packets import build_review_message
-from sage.harness.context.instructions import with_repository_instructions
 from sage.config import Settings
 from sage.domain.review import ReviewResult, ReviewVerdict
 from sage.domain.solver import CandidateSnapshot, SavedSolverPlan
@@ -37,7 +36,6 @@ class ReviewerAgent:
         plan: SavedSolverPlan,
         calls: ModelCalls,
         rereview: bool,
-        repository_instructions: str = "",
     ) -> ReviewResult:
         packet = build_review_message(
             issue_text=issue_text,
@@ -51,7 +49,7 @@ class ReviewerAgent:
         result = await calls.invoke_reviewer(
             stage="rereview" if rereview else "review",
             messages=[
-                SystemMessage(content=with_repository_instructions(REVIEWER_INSTRUCTIONS, repository_instructions)),
+                SystemMessage(content=REVIEWER_INSTRUCTIONS),
                 HumanMessage(content=packet),
             ],
             schema=ReviewResult,

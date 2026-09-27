@@ -15,6 +15,7 @@ from langchain_core.runnables import Runnable
 
 from sage.agents.reviewer import ReviewerAgent
 from sage.agents.solver import SolverAgent, SolverPlanSession
+from sage.agents.prompts import REVIEWER_INSTRUCTIONS, SOLVER_INSTRUCTIONS
 from sage.artifacts.store import RunArtifacts
 from sage.config import Settings
 from sage.domain.review import (
@@ -32,7 +33,6 @@ from sage.domain.retrieval import (
 from sage.domain.solve import PreparedRun, SolveOutcome
 from sage.domain.solver import SolverFinalResult, SolverOutcome
 from sage.harness.context.run import SolveContext
-from sage.harness.context.instructions import RoleInstructions
 from sage.orchestration.solve import SolveOrchestrator
 from sage.providers.base import ProviderResult
 from sage.providers.calls import ModelCalls
@@ -227,7 +227,6 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
                 repository=repository,
                 settings=settings,
                 artifacts=RunArtifacts(prepared.run_dir),
-                instructions=RoleInstructions(solver="Solver policy", reviewer="Reviewer policy"),
             ),
         )
     )
@@ -245,11 +244,9 @@ def test_solver_and_reviewer_complete_two_feedback_repairs(
     assert all(t.duration_ms >= 0 for t in result.provenance.agent_timings)
     assert len(result.provenance.calls) > 6
     assert len(reviewer.messages) == 3
-    assert all("Reviewer policy" in message and "Solver policy" not in message
-               for message in reviewer.system_messages)
+    assert reviewer.system_messages == [REVIEWER_INSTRUCTIONS] * 3
     assert solver.inputs
-    assert all("Solver policy" in messages[0].content and "Reviewer policy" not in messages[0].content
-               for messages in solver.inputs)
+    assert all(messages[0].content == SOLVER_INSTRUCTIONS for messages in solver.inputs)
     assert "Change app.py" in reviewer.messages[0]
     assert "saved-solver-plan" in reviewer.messages[0]
     assert "actual-git-diff" in reviewer.messages[0]

@@ -17,7 +17,6 @@ from sage.harness.retrieval.session import RetrievalSession
 from sage.harness.retrieval.preparation import prepare_retrieval
 from sage.observability import log_retrieval
 from sage.harness.context.run import SolveContext, SolveEngine
-from sage.harness.context.instructions import RoleInstructions
 from sage.repository.service import Repository
 from sage.repository.workspace import prepare_run
 from sage.sandbox.base import Sandbox
@@ -63,7 +62,6 @@ async def solve_issue(
     retrieval_artifact: RetrievalRunArtifact | None = None
     sandbox: Sandbox | None = None
     try:
-        instructions = RoleInstructions.load(prepared.workspace_dir, effective_settings)
         build_sandbox = sandbox_factory or _build_docker_sandbox
         sandbox = build_sandbox(prepared, effective_settings)
         sandbox.start()
@@ -97,7 +95,6 @@ async def solve_issue(
             settings=effective_settings,
             artifacts=run_artifacts,
             retrieval=retrieval_session,
-            instructions=instructions,
         )
         final_output = await orchestrator.solve(issue_text=issue_text, context=context)
         diff = repository.get_complete_diff()
