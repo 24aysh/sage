@@ -30,6 +30,18 @@ Install the locked backend environment from the repository root:
 make setup
 ```
 
+To install the Sage GitHub workflow in another repository, run this from that
+repository's root:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/24aysh/sage/e5534e4d5130e1229979ed85b53648d8ac40c4b2/.github/workflows/sage.yml \
+  -o .github/workflows/sage.yml
+```
+
+The URL pins the workflow to an immutable Sage commit. Upgrade it by replacing
+the SHA only after reviewing the newer workflow.
+
 For the complete setup procedure, Docker image preparation, and platform notes,
 use the [setup and testing guide](docs/testing.md#setup-and-complete-gate). GitHub
 installation is documented separately in
@@ -57,7 +69,12 @@ secret values out of version control. The main optional controls are defined in
 
 `sage/config.py` is the only backend environment-loading boundary. The GitHub
 workflow keeps non-secret values in `.github/workflows/sage.yml` and credentials
-in GitHub Secrets.
+in GitHub Secrets. Add `OPENAI_API_KEY` and `GEMINI_API_KEY` as repository or
+environment Secrets. `TYPESAFE_API_KEY` is required only when Jev mode is
+`shadow` or `on`; `LANGSMITH_API_KEY` is required only when tracing is enabled.
+Configure non-secret GitHub settings in the workflow's top-level `env:` block.
+See [GitHub publication and installation](docs/testing.md#github-publication-and-installation)
+for permissions, optional settings, and validation commands.
 
 ## Local solve
 
@@ -372,7 +389,6 @@ terminal status after interruption.
 │   │   ├── tests/             # Tests mirrored by production responsibility
 │   │   ├── pyproject.toml     # Package metadata and dependency boundaries
 │   │   └── uv.lock            # Locked Python environment
-│   └── web/                   # Independent Next.js presentation site
 ├── docker/sandbox/            # Network-disabled execution image
 ├── docs/
 │   ├── architecture.md        # Detailed ownership and extension guide
@@ -380,12 +396,9 @@ terminal status after interruption.
 ├── evals/retrieval/           # Offline dataset handling and live Jev evaluation
 ├── specs/                     # Retained design and implementation history
 ├── .env.example               # Safe configuration template
-├── Makefile                   # Supported setup, solve, retrieval, and check commands
+├── Makefile                   # Setup, retrieval, artifact, and check commands
 └── README.md                  # Architectural entry point
 ```
-
-The web application is not part of backend solve control. Its development and
-visual verification procedure is in [`apps/web/TESTING.md`](apps/web/TESTING.md).
 
 ## Backend module ownership
 
