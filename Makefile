@@ -21,15 +21,10 @@ PATCH ?=
 OUTPUT_DIR ?=
 ISSUE_NUMBER ?= 17
 TEST_COMMAND ?= python3 -m unittest discover -v
-REQUIRE_COMPLETED ?= false
-RETRIEVAL_SOLVE ?= false
-BASELINE_SOLVE ?= false
-DEBUG_FLAG :=
 
-.PHONY: help env setup bootstrap first-run github-smoke doctor github-doctor sandbox-build \
+.PHONY: help env setup bootstrap github-smoke doctor github-doctor sandbox-build \
 	sandbox-smoke test github-test github-event-check actions-check \
-	compile check graph new-issue solve solve-baseline solve-debug \
-	retrieval-build retrieval-preview retrieval-solve \
+	compile check graph retrieval-build retrieval-preview \
 	eval-retrieval \
 	run-status run-test \
 	clean-runs clean-retrieval
@@ -39,8 +34,6 @@ help: ## Show the available commands and variables.
 		'Sage helper commands' \
 		'' \
 		'Getting started:' \
-		'  make first-run REPO=... ISSUE=...' \
-		'                        Configure, verify, and run a live solve.' \
 		'  make github-smoke      Test branch/commit/draft-PR publication with no APIs.' \
 		'  make github-smoke REPO=... PATCH=... BASE_REF=...' \
 		'                        Test a saved patch against a local clone and Git remote.' \
@@ -68,14 +61,7 @@ help: ## Show the available commands and variables.
 		'  make clean-retrieval' \
 		'                        Delete index contents while preserving .sage/retrieval.' \
 		'' \
-		'Manual solve:' \
-		'  make new-issue ISSUE=/absolute/path/to/issue.md' \
-		'  make solve REPO=/absolute/path/to/repo ISSUE=/absolute/path/to/issue.md' \
-		'  make solve-baseline REPO=... ISSUE=...' \
-		'                        Solve with repository tools, without Jev or retrieval context.' \
-		'  make retrieval-solve REPO=... ISSUE=... INDEX=...' \
-		'                        Solve with repository indexing and Issue retrieval.' \
-		'  make solve-debug REPO=... ISSUE=...' \
+		'Run artifacts:' \
 		'  make run-status RUN_DIR=/absolute/path/to/run' \
 		'  make run-test RUN_DIR=... TEST_COMMAND="python3 -m unittest -v"' \
 		'' \
@@ -111,95 +97,6 @@ bootstrap: ## Perform the complete one-time setup in order.
 	@$(MAKE) --no-print-directory sandbox-build
 	@$(MAKE) --no-print-directory sandbox-smoke
 	@$(MAKE) --no-print-directory doctor
-
-first-run: ## Configure, verify, and run a live solve.
-	@set -euo pipefail; \
-	cd "$(ROOT_DIR)"; \
-	requested_repo="$(REPO)"; \
-	requested_issue="$(ISSUE)"; \
-	if [[ -z "$$requested_repo" || -z "$$requested_issue" ]]; then \
-		echo "ERROR: REPO and ISSUE must be provided together." >&2; \
-		echo "Use: make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md" >&2; \
-		exit 1; \
-	fi; \
-	[[ -d "$$requested_repo" ]] || { echo "ERROR: repository path does not exist: $$requested_repo" >&2; exit 1; }; \
-	[[ -f "$$requested_issue" ]] || { echo "ERROR: issue file does not exist: $$requested_issue" >&2; exit 1; }; \
-	inherited_openai_api_key="$${OPENAI_API_KEY:-}"; \
-	inherited_gemini_api_key="$${GEMINI_API_KEY:-}"; \
-	inherited_context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-}"; \
-	inherited_langsmith_api_key="$${LANGSMITH_API_KEY:-}"; \
-	inherited_langsmith_tracing="$${LANGSMITH_TRACING:-}"; \
-	inherited_langsmith_project="$${LANGSMITH_PROJECT:-}"; \
-	inherited_langsmith_workspace_id="$${LANGSMITH_WORKSPACE_ID:-}"; \
-	if [[ -f "$(ENV_PATH)" ]]; then \
-		echo "Loading configuration from $(ENV_PATH)"; \
-		set -a; source "$(ENV_PATH)"; set +a; \
-	fi; \
-	if [[ -n "$$inherited_openai_api_key" ]]; then export OPENAI_API_KEY="$$inherited_openai_api_key"; fi; \
-	if [[ -n "$$inherited_gemini_api_key" ]]; then export GEMINI_API_KEY="$$inherited_gemini_api_key"; fi; \
-	if [[ -n "$$inherited_context_approval" ]]; then export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED="$$inherited_context_approval"; fi; \
-	if [[ -n "$$inherited_langsmith_api_key" ]]; then export LANGSMITH_API_KEY="$$inherited_langsmith_api_key"; fi; \
-	if [[ -n "$$inherited_langsmith_tracing" ]]; then export LANGSMITH_TRACING="$$inherited_langsmith_tracing"; fi; \
-	if [[ -n "$$inherited_langsmith_project" ]]; then export LANGSMITH_PROJECT="$$inherited_langsmith_project"; fi; \
-	if [[ -n "$$inherited_langsmith_workspace_id" ]]; then export LANGSMITH_WORKSPACE_ID="$$inherited_langsmith_workspace_id"; fi; \
-	for key_name in OPENAI_API_KEY GEMINI_API_KEY; do \
-		if [[ -z "$${!key_name:-}" ]]; then \
-			if [[ ! -t 0 ]]; then \
-				echo "ERROR: $$key_name is not configured and no interactive terminal is available." >&2; \
-				echo "Set it in $(ENV_FILE) or export it before running make." >&2; \
-				exit 1; \
-			fi; \
-			read -r -s -p "$$key_name (input hidden; used only for this run): " key_value; \
-			echo; \
-			if [[ -z "$$key_value" ]]; then \
-				echo "ERROR: $$key_name cannot be empty." >&2; \
-				exit 1; \
-			fi; \
-			printf -v "$$key_name" '%s' "$$key_value"; \
-			export "$$key_name"; \
-		fi; \
-	done; \
-	context_approval="$${SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true}"; \
-	case "$${context_approval,,}" in \
-		1|true|yes|on) export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true ;; \
-		*) \
-			if [[ ! -t 0 ]]; then \
-				echo "ERROR: SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true is required." >&2; \
-				exit 1; \
-			fi; \
-			read -r -p "Allow the selected Issue and repository context to be sent to the configured Google model? [y/N] " context_approval; \
-			case "$${context_approval,,}" in \
-				y|yes) export SAGE_GOOGLE_MODEL_CONTEXT_APPROVED=true ;; \
-				*) echo "ERROR: Google model context use was not approved." >&2; exit 1 ;; \
-			esac ;; \
-	esac; \
-	: "$${LANGSMITH_TRACING:=false}"; export LANGSMITH_TRACING; \
-	: "$${LANGSMITH_PROJECT:=sage-v2}"; export LANGSMITH_PROJECT; \
-	: "$${SAGE_SANDBOX_IMAGE:=$(DEFAULT_SANDBOX_IMAGE)}"; export SAGE_SANDBOX_IMAGE; \
-	echo "Step 1/8: syncing the Python environment"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null setup; \
-	echo "Step 2/8: building the Docker sandbox"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-build; \
-	echo "Step 3/8: smoke-testing the Docker sandbox"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null sandbox-smoke; \
-	echo "Step 4/8: checking solve prerequisites"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null doctor; \
-	echo "Step 5/8: running deterministic checks"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null check; \
-	echo "Step 6/8: using the requested repository and Issue"; \
-	mkdir -p "$(ROOT_DIR)/.sage/runs"; \
-	manual_run_root="$$(mktemp -d "$(ROOT_DIR)/.sage/runs/manual.XXXXXX")"; \
-	export SAGE_RUNS_DIR="$$manual_run_root"; \
-	echo "Step 7/8: solving the Issue"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null REQUIRE_COMPLETED=true solve \
-		REPO="$$requested_repo" ISSUE="$$requested_issue" BASE_REF="$(BASE_REF)"; \
-	run_dir="$$(find "$$manual_run_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
-	[[ -n "$$run_dir" ]] || { echo "ERROR: solve did not create a run directory." >&2; exit 1; }; \
-	echo "Step 8/8: validating the completed run artifacts and candidate diff"; \
-	$(MAKE) --no-print-directory ENV_FILE=/dev/null run-status RUN_DIR="$$run_dir"; \
-	echo; \
-	echo "Local workflow succeeded."; \
-	echo "Inspect the candidate and artifacts at: $$run_dir"
 
 github-smoke: ## Exercise production publication locally without model or network calls.
 	@set -euo pipefail; \
@@ -425,82 +322,6 @@ eval-retrieval: ## Evaluate lexical/graph retrieval noise before and after Jev f
 	if [[ -n "$(OUTPUT_DIR)" ]]; then args+=(--output-dir "$(OUTPUT_DIR)"); fi; \
 	env LANGSMITH_TRACING=false UV_CACHE_DIR=/tmp/sage-retrieval-eval-uv-cache \
 		uv run --project "$(AGENT_PROJECT)" --group eval python -m evals.retrieval "$${args[@]}"
-
-new-issue: ## Copy the issue template to ISSUE; refuses to overwrite files.
-	@set -euo pipefail; \
-	cd "$(ROOT_DIR)"; \
-	if [[ -z "$(ISSUE)" ]]; then \
-		echo "ERROR: ISSUE is required. Example: make new-issue ISSUE=/tmp/my-issue.md" >&2; \
-		exit 1; \
-	fi; \
-	issue_path="$(ISSUE)"; \
-	if [[ -e "$$issue_path" ]]; then \
-		echo "ERROR: refusing to overwrite existing file: $$issue_path" >&2; \
-		exit 1; \
-	fi; \
-	mkdir -p "$$(dirname "$$issue_path")"; \
-	cp examples/issue.md "$$issue_path"; \
-	echo "Created issue template: $$issue_path"; \
-	echo "Edit it before running 'make solve'."
-
-solve: ## Run a live solve. CLI exit code 2 is shown as a warning, not a Make failure.
-	@set -euo pipefail; \
-	cd "$(ROOT_DIR)"; \
-	if [[ -z "$(REPO)" ]]; then \
-		echo "ERROR: REPO is required. Use an absolute path to a Git repository." >&2; \
-		exit 1; \
-	fi; \
-	if [[ -z "$(ISSUE)" ]]; then \
-		echo "ERROR: ISSUE is required. Use an absolute path to a Markdown or text file." >&2; \
-		exit 1; \
-	fi; \
-	if [[ -f "$(ENV_PATH)" ]]; then set -a; source "$(ENV_PATH)"; set +a; fi; \
-	if [[ -z "$${OPENAI_API_KEY:-}" ]]; then \
-		echo "ERROR: OPENAI_API_KEY is empty. Run 'make env' and edit $(ENV_FILE)." >&2; \
-		exit 1; \
-	fi; \
-	image_args=(); \
-	if [[ -n "$(SANDBOX_IMAGE)" ]]; then image_args=(--sandbox-image "$(SANDBOX_IMAGE)"); fi; \
-	index_args=(); \
-	if [[ "$(BASELINE_SOLVE)" == "true" ]]; then \
-		export SAGE_JEV_NAVIGATION_MODE=off; \
-	elif [[ "$(RETRIEVAL_SOLVE)" == "true" ]]; then \
-		if [[ -z "$(INDEX)" ]]; then \
-			echo "ERROR: INDEX is required for retrieval-solve." >&2; \
-			echo "Use: make retrieval-solve REPO=/absolute/repo ISSUE=/absolute/issue.md INDEX=/absolute/graph.sqlite3" >&2; \
-			exit 1; \
-		fi; \
-		index_args=(--index-file "$(INDEX)"); \
-	fi; \
-	set +e; \
-	uv run --project "$(AGENT_PROJECT)" sage solve \
-		--repo "$(REPO)" \
-		--issue-file "$(ISSUE)" \
-		--base-ref "$(BASE_REF)" \
-		"$${image_args[@]}" \
-		"$${index_args[@]}" \
-		$(DEBUG_FLAG); \
-	status=$$?; \
-	set -e; \
-	if [[ "$$status" -eq 2 ]]; then \
-		if [[ "$(REQUIRE_COMPLETED)" == "true" ]]; then \
-			echo "ERROR: this solve requires a completed, non-empty candidate (CLI exit code 2)." >&2; \
-			exit 2; \
-		fi; \
-		echo; \
-		echo "WARNING: the agent completed successfully but produced no repository change (CLI exit code 2)."; \
-		exit 0; \
-	fi; \
-	exit "$$status"
-
-solve-baseline: override BASELINE_SOLVE := true
-solve-baseline: solve ## Run a live solve with tools only; disable Jev and retrieval context.
-
-solve-debug: DEBUG_FLAG := --debug
-solve-debug: solve ## Run a live solve with debug logs and tracebacks.
-
-retrieval-solve: override RETRIEVAL_SOLVE := true
-retrieval-solve: solve ## Run a live solve with repository retrieval enabled.
 
 run-status: ## Validate and summarize a completed run directory.
 	@set -euo pipefail; \

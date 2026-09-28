@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -10,25 +9,6 @@ import pytest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _first_run_target() -> str:
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    return makefile.split("first-run:", 1)[1].split("\ngithub-smoke:", 1)[0]
-
-
-def test_first_run_preserves_opt_in_langsmith_tracing() -> None:
-    target = _first_run_target()
-
-    assert "export LANGSMITH_TRACING=false" not in target
-    assert 'LANGSMITH_TRACING:=false' in target
-    assert 'LANGSMITH_PROJECT:=sage-v2' in target
-
-
-def test_first_run_defaults_google_context_approval_to_true() -> None:
-    target = _first_run_target()
-
-    assert 'SAGE_GOOGLE_MODEL_CONTEXT_APPROVED:-true' in target
 
 
 def test_run_status_disables_the_git_pager() -> None:
@@ -62,20 +42,6 @@ def test_retrieval_preview_requires_issue_and_explicit_index() -> None:
     assert "OPENAI_API_KEY" not in target
 
 
-def test_retrieval_solve_reuses_solve_with_explicit_index() -> None:
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-    solve_target = makefile.split("solve:", 1)[1].split("\nsolve-debug:", 1)[0]
-    retrieval_target = makefile.split("retrieval-solve:", 1)[1].split(
-        "\nrun-status:", 1
-    )[0]
-
-    assert "RETRIEVAL_SOLVE ?= false" in makefile
-    assert 'if [[ "$(RETRIEVAL_SOLVE)" == "true" ]]' in solve_target
-    assert 'index_args=(--index-file "$(INDEX)")' in solve_target
-    assert '"$${index_args[@]}"' in solve_target
-    assert "RETRIEVAL_SOLVE := true" in retrieval_target
-
-
 def test_deprecated_legion_make_targets_and_variables_are_absent() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
 
@@ -83,29 +49,6 @@ def test_deprecated_legion_make_targets_and_variables_are_absent() -> None:
         assert f"{name}:" not in makefile
     assert "MEMORY_FILE ?=" not in makefile
     assert "MEMORY ?=" not in makefile
-
-
-def test_solve_baseline_forces_jev_off_and_omits_retrieval(tmp_path: Path) -> None:
-    makefile = tmp_path / "Makefile"
-    makefile.write_text((REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8"), encoding="utf-8")
-    env_file = tmp_path / "baseline.env"
-    env_file.write_text("OPENAI_API_KEY=test\nSAGE_JEV_NAVIGATION_MODE=on\n", encoding="utf-8")
-    binaries = tmp_path / "bin"
-    binaries.mkdir()
-    uv = binaries / "uv"
-    uv.write_text("#!/bin/sh\nprintf 'jev=%s\\n' \"$SAGE_JEV_NAVIGATION_MODE\"\nprintf 'args=%s\\n' \"$*\"\n",
-                  encoding="utf-8")
-    uv.chmod(0o755)
-
-    result = subprocess.run(["make", "solve-baseline", f"ENV_FILE={env_file}",
-        f"REPO={tmp_path / 'repo'}", f"ISSUE={tmp_path / 'issue.md'}",
-        f"INDEX={tmp_path / 'graph.sqlite3'}", "RETRIEVAL_SOLVE=true", "BASELINE_SOLVE=false"],
-        cwd=tmp_path, env={**os.environ, "PATH": f"{binaries}{os.pathsep}{os.environ['PATH']}"},
-        text=True, capture_output=True, check=False)
-
-    assert result.returncode == 0, result.stderr
-    assert "jev=off" in result.stdout
-    assert "--index-file" not in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -148,36 +91,3 @@ def test_clean_target_removes_only_contents_and_preserves_parent(
     assert target_directory.is_dir()
     assert list(target_directory.iterdir()) == []
     assert (sibling / "keep").read_text(encoding="utf-8") == "keep"
-
-
-def test_first_run_validates_inputs_before_credentials(tmp_path: Path) -> None:
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    issue = tmp_path / "issue.md"
-    issue.write_text("# Test issue\n", encoding="utf-8")
-    environment = os.environ.copy()
-    for name in (
-        "OPENAI_API_KEY",
-        "GEMINI_API_KEY",
-        "SAGE_GOOGLE_MODEL_CONTEXT_APPROVED",
-    ):
-        environment.pop(name, None)
-
-    result = subprocess.run(
-        [
-            "make",
-            "first-run",
-            f"REPO={repository}",
-            f"ISSUE={issue}",
-            "ENV_FILE=/dev/null",
-        ],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=environment,
-    )
-
-    assert result.returncode != 0
-    assert "OPENAI_API_KEY is not configured" in result.stdout + result.stderr
