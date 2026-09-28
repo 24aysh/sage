@@ -101,7 +101,7 @@ Oversized input is explicitly withheld, not silently truncated and approved.
 
 The old navigation policy, action thresholds, follow-up count, and run-wait
 settings are retired; enabled modes reject them with migration guidance. Off
-mode ignores retired settings so `solve-baseline` remains usable.
+mode ignores retired settings.
 
 One request uses the existing two-second maximum timeout, no retries, strict
 answer IDs/distributions/score validation, and actual API token accounting.
@@ -213,9 +213,9 @@ inheritance is bounded; package-based or multiple-parent inheritance is unsuppor
 
 ### Retrieval and exposure
 
-Local `make solve` has no repository index. Explicit `make retrieval-solve`
-enables repository retrieval. The deprecated `legion-*` Make aliases have been
-removed; use `retrieval-build`, `retrieval-preview`, and `retrieval-solve`.
+Local `sage solve` has no repository index unless the caller supplies
+`--index-file`. The deprecated `legion-*` Make aliases have been removed; use
+`retrieval-build` and `retrieval-preview` for index construction and inspection.
 Accepted GitHub solves always build a fresh SQLite graph under runner temporary
 storage; that database is not cached or uploaded.
 
@@ -321,4 +321,4 @@ Keep the regression demonstrating a failure beside its owner. Share repeated
 fixture setup, not unrelated assertions. Test names describe behavior rather than
 implementation phases. Update this map and the [testing guide](testing.md) in the
 same change. Preserve numbered specifications as historical rationale; the
-[refactor plan](refactor-plan.md) records current simplification and verification.
+[specification index](../specs/README.md) identifies current and superseded records.

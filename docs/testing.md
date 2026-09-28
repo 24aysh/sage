@@ -63,16 +63,14 @@ calibration on actual Issues, not interpretation as solve-success probabilities.
 make retrieval-build REPO=/absolute/repo INDEX_FILE=/absolute/index/graph.sqlite3
 make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md \
   INDEX=/absolute/index/graph.sqlite3
-make retrieval-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  INDEX=/absolute/index/graph.sqlite3
-make solve-baseline REPO=/absolute/repo ISSUE=/absolute/issue.md
+uv run --env-file .env --project apps/agent sage solve \
+  --repo /absolute/repo --issue-file /absolute/issue.md --base-ref HEAD \
+  --index-file /absolute/index/graph.sqlite3
 ```
 
-Make loads the selected `ENV_FILE` (default `.env`), so edit that file to select
-mode; a shell variable can be overwritten by values sourced from the env file.
-`solve-baseline` forcibly disables Jev and omits retrieval. Plain `make solve`
-also omits retrieval, while retaining the configured Jev mode for other future
-uses; use `retrieval-solve` to bind an explicit index.
+Make retrieval targets load the selected `ENV_FILE` (default `.env`). The direct
+solve command loads `.env` through `uv`; omit `--index-file` for a tools-only
+solve without retrieval or Jev filtering.
 
 `retrieval-preview` prints candidate-file count, relevant files after filtering,
 discarded retrieval-item and file counts, unjudged/withheld counts, context-budget
@@ -174,14 +172,14 @@ uv run --project apps/agent --group eval pytest \
 
 ### Interrupting a solve with Ctrl-C
 
-Run either `make solve` or `make retrieval-solve` as above. Once the run is
+Run the `sage solve` command shown below. Once the run is
 initialized, press **Ctrl-C once** while the Solver, Jev, or Reviewer is working.
 The CLI prints `Solve interrupted` with the run/workspace paths, recorded token
 and tool usage, and the same Solver/Jev/Reviewer timing breakdown. The last time
 line is `Elapsed time at interruption`, measured when cancellation reaches the
 workflow, before sandbox/retrieval cleanup. No candidate is declared completed,
 verified, or unchanged. Wait for cleanup to finish; the CLI retains its nonzero
-interruption exit (1), and Make reports a failed/interrupted command.
+interruption exit (1).
 
 Token totals include known Solver, Reviewer **and Jev** input/output usage.
 `Model calls` counts generative requests; `Jev calls` is separate. Cancelled
@@ -346,7 +344,7 @@ make retrieval-preview REPO=/absolute/repo ISSUE=/absolute/issue.md \
 
 The deprecated `legion-memory`, `legion-retrieve`, `legion-solve`, and
 `clean-legion-memory` Make aliases have been removed. Use the retrieval targets
-above, `make retrieval-solve` for a retrieval-enabled solve, and
+above, pass `--index-file` to `sage solve` for a retrieval-enabled solve, and use
 `make clean-retrieval` to clear the local index.
 
 Current schema-4 databases remain readable. An older partial schema is rejected
@@ -375,10 +373,9 @@ stores are not changed.
 ```bash
 make env
 # Set OPENAI_API_KEY and GEMINI_API_KEY in .env.
-make sandbox-build
-make sandbox-smoke
-make doctor
-make first-run REPO=/absolute/repo ISSUE=/absolute/issue.md BASE_REF=HEAD
+make bootstrap
+uv run --env-file .env --project apps/agent sage solve \
+  --repo /absolute/repo --issue-file /absolute/issue.md --base-ref HEAD
 ```
 
 The sandbox smoke uses the canonical `sage-sandbox:v2` image with networking
@@ -405,13 +402,12 @@ Repository-specific Python and Node packages are intentionally not installed at
 solve time because the sandbox has no network access. Projects needing packages
 beyond the baseline must use a prepared image via `SAGE_SANDBOX_IMAGE` (or
 `SANDBOX_IMAGE` for Make targets) with those locked dependencies already
-installed. `first-run` validates inputs, runs offline checks, performs a live
-solve and inspects its evidence. For subsequent solves:
+installed. Add an explicit retrieval index when needed:
 
 ```bash
-make solve REPO=/absolute/repo ISSUE=/absolute/issue.md
-make retrieval-solve REPO=/absolute/repo ISSUE=/absolute/issue.md \
-  INDEX=/absolute/index/graph.sqlite3
+uv run --env-file .env --project apps/agent sage solve \
+  --repo /absolute/repo --issue-file /absolute/issue.md --base-ref HEAD \
+  --index-file /absolute/index/graph.sqlite3
 make run-status RUN_DIR=/absolute/run-directory
 make run-test RUN_DIR=/absolute/run-directory \
   TEST_COMMAND="python3 -m unittest discover -v"
@@ -424,8 +420,8 @@ model calls. Preflight checks installed tooling without importing repository cod
 running tests, installing dependencies or enabling networking.
 
 CLI exit 0 requires a completed nonempty candidate. Other valid solve outcomes
-return 2; Make reports 2 as a warning unless `REQUIRE_COMPLETED=true`. Failures
-return 1. Inspect the terminal outcome and evidence, not the Make exit alone.
+return 2, and failures return 1. Inspect the terminal outcome and evidence, not
+the exit code alone.
 
 ## GitHub publication and installation
 

@@ -10,8 +10,6 @@ under `docs/` for present behavior and commands.
 | --- | --- |
 | [`../docs/architecture.md`](../docs/architecture.md) | Implemented behavior, ownership, and dependency boundaries |
 | [`../docs/testing.md`](../docs/testing.md) | Current setup, verification, live solve, and troubleshooting |
-| [`../docs/refactor-plan.md`](../docs/refactor-plan.md) | Harness consolidation, repository-retrieval naming, and verification record |
-| [`../docs/relevance-filter-plan.md`](../docs/relevance-filter-plan.md) | Multilingual lexical retrieval and the replacement Jev file-filter pipeline |
 
 ## Current evaluation work
 

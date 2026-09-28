@@ -1,7 +1,7 @@
 > Superseded on `feat/jev-relevance-filter`: the excerpt/action pipeline below is
 > historical. Current behavior is lexical retrieval → batched Jev file relevance
-> filtering → Solver context. See [the implementation plan](../docs/relevance-filter-plan.md)
-> and [architecture](../docs/architecture.md#jev-file-relevance-filter).
+> filtering → Solver context. See the current
+> [architecture](../docs/architecture.md#jev-file-relevance-filter).
 
 # Jev Integration with Sage: Implementation and Evaluation Plan
 
